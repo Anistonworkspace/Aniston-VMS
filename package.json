@@ -6,8 +6,7 @@
   "workspaces": [
     "frontend",
     "backend",
-    "shared",
-    "agent-desktop"
+    "shared"
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",

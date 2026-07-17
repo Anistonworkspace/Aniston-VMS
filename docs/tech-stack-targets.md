@@ -65,6 +65,8 @@ but are **out of scope for Aniston VMS v1** (a control-room web app).
 
 ## Deferred targets (boilerplate capability, not VMS v1)
 
-PWA/Workbox, Capacitor 6 (Android/iOS), Electron (`agent-desktop/`) build configs are retained
-from the boilerplate and may be activated later (e.g. a field-engineer mobile app). Do not delete
-their configs; just don't target them in Stages 1–10 unless the plan docs change.
+PWA/Workbox and Capacitor 6 (Android/iOS) build configs are retained from the boilerplate and
+may be activated later (e.g. a field-engineer mobile app); just don't target them in Stages 1–10
+unless the plan docs change. The Electron desktop shell (`agent-desktop/`) was removed from this
+project — Aniston VMS is web-only. Restore it from the boilerplate repo if a desktop target is
+ever needed.
