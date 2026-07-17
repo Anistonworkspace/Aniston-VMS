@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json.schemastore.org/mcp",
+  "_note": "Auto-wired MCP servers for this project. See .claude/mcp-recommended.md for the full 12-server catalog and how to add opt-in servers (playwright, browserbase, context7, perplexity, fetch, shadcn-ui-mcp, figma, sequential-thinking).",
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "${workspaceFolder}"]
+    },
+    "postgres": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-postgres", "${env:DATABASE_URL}"]
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${env:GITHUB_TOKEN}"
+      }
+    },
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"]
+    }
+  }
+}

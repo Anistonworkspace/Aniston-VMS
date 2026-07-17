@@ -1,0 +1,193 @@
+{
+  "project": {
+    "name": "boilerplate-app",
+    "description": "Production-grade fullstack PWA boilerplate by Aniston Technologies LLP",
+    "type": "fullstack-web-app"
+  },
+  "context": {
+    "primaryLanguage": "TypeScript",
+    "frameworks": ["React 18", "Express.js 4", "Prisma ORM 5", "Vite 5"],
+    "database": "PostgreSQL 16",
+    "caching": "Redis 7",
+    "styling": "Tailwind CSS v3 + Boilerplate Design System (primary #0073ea, Poppins/Figtree fonts, floating-card shell, see .claude/skills/skill-ui-ux-checklist.md)",
+    "stateManagement": "Redux Toolkit + RTK Query",
+    "animations": "Framer Motion",
+    "taskQueue": "BullMQ",
+    "realtime": "Socket.io",
+    "testing": "Vitest + Playwright",
+    "pwa": "Workbox service worker (injectManifest strategy)",
+    "mobile": "Capacitor (Android APK/AAB + iOS IPA)",
+    "desktop": "Electron (Windows EXE)"
+  },
+  "conventions": {
+    "codeStyle": "TypeScript strict, ESM modules",
+    "architecture": "MVC — Controller (thin) → Service (business logic) → Prisma (model) + React (view)",
+    "apiPattern": "REST with { success, data, error, meta } envelope",
+    "backendModulePattern": "controller / service / routes / validation per feature",
+    "componentPattern": "Function components with hooks only",
+    "namingConvention": "camelCase variables/functions, PascalCase components/types, SCREAMING_SNAKE enums",
+    "idFormat": "UUID v4",
+    "dateFormat": "ISO 8601",
+    "currencyFormat": "INR with en-IN locale",
+    "sensitiveFields": "suffix with Encrypted, use AES-256-GCM via backend/src/utils/encryption.ts"
+  },
+  "worktree": {
+    "disabled": true,
+    "reason": "All agent changes must appear in the main working tree. Never use isolation:worktree."
+  },
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(npm install)",
+      "Bash(npm install *)",
+      "Bash(npm ci)",
+      "Bash(npm test)",
+      "Bash(npm test *)",
+      "Bash(npm i *)",
+      "Bash(npm uninstall *)",
+      "Bash(npx *)",
+      "Bash(node *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git status)",
+      "Bash(git show *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git checkout *)",
+      "Bash(git branch *)",
+      "Bash(git pull *)",
+      "Bash(git fetch *)",
+      "Bash(git merge *)",
+      "Bash(git stash *)",
+      "Bash(cd * && *)",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(mv *)",
+      "Bash(touch *)",
+      "Bash(echo *)",
+      "Bash(chmod *)",
+      "Bash(grep *)",
+      "Bash(find *)",
+      "Bash(rm *)",
+      "Bash(docker *)",
+      "Bash(docker compose *)",
+      "Bash(docker-compose *)",
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Bash(pm2 *)",
+      "Bash(ssh *)",
+      "Bash(scp *)",
+      "Bash(kill *)",
+      "Bash(lsof *)",
+      "Bash(ps *)",
+      "Bash(sed *)",
+      "Bash(awk *)",
+      "Bash(sort *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(which *)",
+      "Bash(pwd)",
+      "Bash(env)",
+      "Bash(date)",
+      "Bash(pip *)",
+      "Bash(pip3 *)",
+      "Bash(python *)",
+      "Bash(python3 *)",
+      "Bash(pipx *)",
+      "Bash(uv *)",
+      "Bash(uvx *)",
+      "Bash(pxpipe *)",
+      "Bash(headroom *)",
+      "Bash(graphify *)",
+      "Read(**)",
+      "Write(**)",
+      "Edit(**)",
+      "MultiEdit(**)",
+      "Glob(**)",
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_take_screenshot",
+      "mcp__playwright__browser_snapshot",
+      "mcp__playwright__browser_click",
+      "mcp__playwright__browser_fill_form",
+      "mcp__playwright__browser_type",
+      "mcp__playwright__browser_press_key",
+      "mcp__playwright__browser_hover",
+      "mcp__playwright__browser_select_option",
+      "mcp__playwright__browser_navigate_back",
+      "mcp__playwright__browser_tabs",
+      "mcp__playwright__browser_close",
+      "mcp__playwright__browser_wait_for",
+      "mcp__playwright__browser_console_messages",
+      "mcp__playwright__browser_network_requests",
+      "mcp__playwright__browser_resize",
+      "mcp__playwright__browser_evaluate",
+      "mcp__playwright__browser_drag",
+      "mcp__playwright__browser_handle_dialog",
+      "mcp__playwright__browser_file_upload"
+    ],
+    "deny": [
+      "Bash(rm -rf /)",
+      "Bash(rm -rf /*)",
+      "Bash(curl * | bash)",
+      "Bash(wget * | bash)",
+      "Bash(git push * --force *)",
+      "Bash(git push *--force*)",
+      "Bash(git push *-f *)",
+      "Bash(git push *-f)",
+      "Bash(git push * --mirror *)",
+      "Bash(git push *--mirror*)",
+      "Bash(git worktree add *)",
+      "Bash(git reset --hard*)",
+      "Bash(git clean -fd*)",
+      "Bash(git clean -fdx*)",
+      "Read(.env.production)",
+      "Write(.env.production)",
+      "Write(.env.local)",
+      "Bash(echo * > .env*)",
+      "Bash(printf * > .env*)",
+      "Bash(npx prisma db push --*prod*)",
+      "Bash(npx prisma migrate reset*)",
+      "Bash(npx prisma db push *--force-reset*)",
+      "Bash(npm publish)",
+      "Bash(npm publish *)",
+      "Bash(docker system prune*)",
+      "Bash(docker volume prune*)",
+      "Bash(docker container prune*)"
+    ]
+  },
+  "model": "opus",
+  "autoMemoryEnabled": true,
+  "includeGitInstructions": true,
+  "respectGitignore": true,
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [{ "type": "command", "command": "bash .claude/hooks/on-prompt.sh" }]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "bash .claude/hooks/pre-command.sh" }]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [{ "type": "command", "command": "bash .claude/hooks/lint-on-save.sh" }]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [{ "type": "command", "command": "bash .claude/hooks/on-stop.sh" }]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [{ "type": "command", "command": "bash .claude/hooks/pre-compact.sh pre-compact" }]
+      }
+    ]
+  }
+}

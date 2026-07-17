@@ -1,0 +1,80 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - ".claude/**"
+      - "memory/**"
+
+jobs:
+  deploy:
+    name: Build → Migrate → Deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Build frontend
+        run: npm run build
+        working-directory: frontend
+        env:
+          VITE_API_URL: ${{ secrets.PROD_API_URL }}
+
+      - name: Build backend
+        run: npm run build
+        working-directory: backend
+
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Copy files to EC2
+        run: |
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/deploy_key" \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='.env' \
+            ./ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:${{ secrets.EC2_APP_PATH }}/
+
+      - name: Install production dependencies on EC2
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
+            "cd ${{ secrets.EC2_APP_PATH }} && npm ci --omit=dev --workspaces"
+
+      - name: Run database migrations
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
+            "cd ${{ secrets.EC2_APP_PATH }} && DATABASE_URL=${{ secrets.PROD_DATABASE_URL }} npx prisma migrate deploy"
+
+      - name: Reload PM2
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
+            "cd ${{ secrets.EC2_APP_PATH }} && pm2 reload ecosystem.config.cjs --update-env"
+
+      - name: Verify health check
+        run: |
+          sleep 5
+          curl --fail --silent ${{ secrets.PROD_API_URL }}/health || exit 1
+
+      - name: Notify on failure
+        if: failure()
+        run: echo "Deploy failed — check PM2 logs on EC2"

@@ -1,0 +1,15 @@
+{
+  "auth": {
+    "login": "Sign in",
+    "logout": "Log out",
+    "email": "Email",
+    "password": "Password",
+    "welcome": "Welcome back"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "loading": "Loading…"
+  }
+}

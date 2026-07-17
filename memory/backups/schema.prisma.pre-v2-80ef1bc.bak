@@ -1,0 +1,242 @@
+// Boilerplate App — Prisma Schema
+// Conventions enforced by .claude/rules/database.md:
+//   - Every model has: id (UUID), organizationId (where applicable), createdAt, updatedAt, deletedAt
+//   - All enums mirrored in shared/src/enums.ts
+//   - @@index on organizationId + commonly filtered fields
+//   - Sensitive fields suffixed with Encrypted
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// ENUMS — keep in sync with shared/src/enums.ts
+// ============================================================================
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  MANAGER
+  EMPLOYEE
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING_VERIFICATION
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERN
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  EXPORT
+  IMPORT
+  APPROVE
+  REJECT
+}
+
+enum NotificationType {
+  INFO
+  WARNING
+  ERROR
+  SUCCESS
+}
+
+// ============================================================================
+// MODELS
+// ============================================================================
+
+model Organization {
+  id        String    @id @default(uuid())
+  name      String
+  slug      String    @unique
+  domain    String?
+  logoUrl   String?
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  users         User[]
+  departments   Department[]
+  designations  Designation[]
+  employees     Employee[]
+  auditLogs     AuditLog[]
+  refreshTokens RefreshToken[]
+  notifications Notification[]
+
+  @@index([slug])
+  @@index([deletedAt])
+}
+
+model User {
+  id             String     @id @default(uuid())
+  organizationId String
+  email          String
+  passwordHash   String
+  fullName       String
+  role           UserRole   @default(EMPLOYEE)
+  status         UserStatus @default(PENDING_VERIFICATION)
+  lastLoginAt    DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  deletedAt      DateTime?
+
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employee      Employee?
+  refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]
+  notifications Notification[]
+
+  @@unique([organizationId, email])
+  @@index([organizationId])
+  @@index([organizationId, role])
+  @@index([deletedAt])
+}
+
+model RefreshToken {
+  id             String    @id @default(uuid())
+  organizationId String
+  userId         String
+  tokenHash      String    @unique
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  userAgent      String?
+  ipAddress      String?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Department {
+  id             String    @id @default(uuid())
+  organizationId String
+  name           String
+  description    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employees    Employee[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@index([deletedAt])
+}
+
+model Designation {
+  id             String    @id @default(uuid())
+  organizationId String
+  title          String
+  level          Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  employees    Employee[]
+
+  @@unique([organizationId, title])
+  @@index([organizationId])
+  @@index([deletedAt])
+}
+
+model Employee {
+  id             String         @id @default(uuid())
+  organizationId String
+  userId         String         @unique
+  employeeCode   String
+  departmentId   String?
+  designationId  String?
+  employmentType EmploymentType @default(FULL_TIME)
+  joinedAt       DateTime
+  // Sensitive PII — AES-256-GCM encrypted via utils/encryption.ts
+  aadhaarEncrypted String?
+  panEncrypted     String?
+  bankAccountEncrypted String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  deletedAt      DateTime?
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  department   Department?   @relation(fields: [departmentId], references: [id])
+  designation  Designation?  @relation(fields: [designationId], references: [id])
+
+  @@unique([organizationId, employeeCode])
+  @@index([organizationId])
+  @@index([organizationId, departmentId])
+  @@index([deletedAt])
+}
+
+model Notification {
+  id             String           @id @default(uuid())
+  organizationId String
+  userId         String
+  type           NotificationType @default(INFO)
+  title          String
+  body           String
+  isRead         Boolean          @default(false)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  deletedAt      DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+  @@index([deletedAt])
+}
+
+model AuditLog {
+  id             String      @id @default(uuid())
+  organizationId String
+  userId         String
+  action         AuditAction
+  resource       String
+  resourceId     String?
+  metadata       Json        @default("{}")
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime    @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId])
+  @@index([organizationId, resource])
+  @@index([organizationId, userId])
+  @@index([createdAt])
+}
