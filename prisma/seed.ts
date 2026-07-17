@@ -64,8 +64,8 @@ const rtspHash = (rtspUrl: string): string => {
 const encPlaceholder = (plaintext: string): string =>
   `enc:v1:seed-placeholder:${Buffer.from(plaintext, 'utf8').toString('base64')}`;
 
-// Placeholder bcrypt hash — demo logins are provisioned by the auth module;
-// this value is intentionally not a valid credential.
+// Bcrypt-format sentinel that matches no real password — demo logins are
+// provisioned by the auth module; this value is intentionally not a valid credential.
 const PASSWORD_HASH_PLACEHOLDER =
   '$2b$12$seedplaceholderseedplaceholderseedplaceholderseedplac';
 

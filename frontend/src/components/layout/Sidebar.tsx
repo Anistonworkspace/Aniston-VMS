@@ -46,7 +46,7 @@ interface StubItemProps {
   pill?: number;
 }
 
-// Placeholder nav entries — routes land in later stages.
+// Nav entries whose routes land in later stages (see docs/06-implementation-plan.md).
 function StubItem({ icon: Icon, label, pill }: StubItemProps): JSX.Element {
   return (
     <button type="button" className={cn(ITEM_BASE, ITEM_INACTIVE)}>

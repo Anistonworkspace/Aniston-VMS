@@ -1,4 +1,5 @@
-import { app, BrowserWindow, Menu, Tray, nativeImage } from 'electron';
+import { app, BrowserWindow, Menu } from 'electron';
+import type { Tray } from 'electron';
 import path from 'path';
 import { setupIpcHandlers } from './ipcHandlers.js';
 import { checkForUpdates } from './updater.js';
@@ -88,13 +89,4 @@ if (!gotLock) {
       mainWindow.focus();
     }
   });
-}
-
-// Declare app.isQuiting on the app object so the close handler can read it
-declare global {
-  namespace Electron {
-    interface App {
-      isQuiting?: boolean;
-    }
-  }
 }

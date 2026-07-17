@@ -1,4 +1,5 @@
-import { Tray, Menu, nativeImage, app, BrowserWindow } from 'electron';
+import { Tray, Menu, nativeImage, app } from 'electron';
+import type { BrowserWindow } from 'electron';
 import path from 'path';
 
 export function createTray(mainWindow: BrowserWindow | null): Tray {
@@ -20,7 +21,7 @@ export function createTray(mainWindow: BrowserWindow | null): Tray {
     {
       label: 'Quit',
       click: () => {
-        (app as any).isQuiting = true;
+        app.isQuiting = true;
         app.quit();
       },
     },
