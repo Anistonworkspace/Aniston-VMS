@@ -1,5 +1,20 @@
-import 'dotenv/config';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { config as loadEnv } from 'dotenv';
 import { z } from 'zod';
+
+// The .env file lives at the monorepo root, but `npm run dev --workspace=backend`
+// sets cwd to backend/ — so plain `import 'dotenv/config'` misses it.
+// Load order (dotenv never overrides vars that are already set):
+//   1. cwd/.env            — explicit local override
+//   2. repo root .env      — ../../../ from src/config (dev via tsx)
+//   3. repo root .env      — ../../ from backend/dist (compiled build)
+// Missing files are silently ignored, so Docker (env_file/environment) is unaffected.
+const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+loadEnv();
+for (const rel of ['../../../.env', '../../.env']) {
+  loadEnv({ path: path.resolve(moduleDir, rel) });
+}
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -33,6 +48,15 @@ const envSchema = z.object({
 
   LOG_LEVEL: z.enum(['error', 'warn', 'info', 'http', 'debug']).default('info'),
   ALLOW_PROD_SEED: z.coerce.boolean().default(false),
+
+  // Stage 2 — health engine
+  HEALTH_SCHEDULER_ENABLED: z.coerce.boolean().default(true),
+  HEALTH_SIM_MODE: z.coerce.boolean().default(false),
+  HEALTH_CHECK_INTERVAL_MINUTES: z.coerce.number().int().min(1).default(5),
+  HEALTH_CAMS_PER_MINUTE: z.coerce.number().int().min(1).default(25),
+  HEALTH_TCP_TIMEOUT_MS: z.coerce.number().int().default(4000),
+  HEALTH_FFPROBE_TIMEOUT_MS: z.coerce.number().int().default(15_000),
+  HEALTH_RETRY_DELAY_MS: z.coerce.number().int().default(5000),
 });
 
 const parsed = envSchema.safeParse(process.env);
