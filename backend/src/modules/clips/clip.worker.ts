@@ -8,6 +8,7 @@ import {
   type ClipExportJobData,
 } from './clip.queue.js';
 import { pruneClipExports, runClipExportJob } from './clip.service.js';
+import { beat } from '../health/platform.heartbeat.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BullMQ Worker for clip.queue.ts's 'clip-export' queue. Gated by
@@ -19,6 +20,7 @@ import { pruneClipExports, runClipExportJob } from './clip.service.js';
 // ─────────────────────────────────────────────────────────────────────────────
 
 let worker: Worker<ClipExportJobData> | null = null;
+let hbTimer: NodeJS.Timeout | null = null;
 
 export function startClipExportWorker(): void {
   if (worker) return;
@@ -48,12 +50,21 @@ export function startClipExportWorker(): void {
 
   logger.info('Clip export worker started', { concurrency: env.CLIP_EXPORT_CONCURRENCY });
 
+  // BullMQ workers are event-driven, so heartbeat on a plain interval while up.
+  beat('clip-export-worker');
+  hbTimer = setInterval(() => beat('clip-export-worker'), 60_000);
+  hbTimer.unref();
+
   void scheduleRetentionSweep().catch((err: unknown) =>
     logger.error('Failed to schedule clip export retention sweep', { error: String(err) })
   );
 }
 
 export async function stopClipExportWorker(): Promise<void> {
+  if (hbTimer) {
+    clearInterval(hbTimer);
+    hbTimer = null;
+  }
   if (worker) {
     await worker.close();
     worker = null;

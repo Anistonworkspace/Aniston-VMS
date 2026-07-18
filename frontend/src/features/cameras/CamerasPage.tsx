@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 import { listContainer, pageChild, pageTransition } from '@/lib/animations';
 import { CameraCard } from './CameraCard';
 import { CameraDetailDrawer } from './CameraDetailDrawer';
-import { useListCamerasQuery, useListSitesQuery } from './cameras.api';
+import { useListCamerasQuery, useListSitesLiteQuery } from './cameras.api';
 import type { CameraStatus } from './cameras.types';
 
 const PAGE_SIZE = 24;
@@ -57,7 +57,7 @@ export function CamerasPage(): JSX.Element {
   );
 
   const { data, isLoading, isFetching, error, refetch } = useListCamerasQuery(query);
-  const { data: sites } = useListSitesQuery();
+  const { data: sites } = useListSitesLiteQuery();
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.limit)) : 1;
 

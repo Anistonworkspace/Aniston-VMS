@@ -3,6 +3,8 @@ import { prisma } from '../../lib/prisma.js';
 import { logger } from '../../lib/logger.js';
 import { ESCALATION_LADDER } from './incident.constants.js';
 import { dispatchIncidentAlerts } from './notification.service.js';
+import { beat } from '../health/platform.heartbeat.js';
+import { registerRepeatableTick, unregisterRepeatableTick } from '../../lib/scheduler.queue.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Stage 4 — escalation worker (docs/02-TRD.md §6.5).
@@ -12,24 +14,34 @@ import { dispatchIncidentAlerts } from './notification.service.js';
 // Acknowledging pauses the climb; only verified recovery closes the fault.
 // ─────────────────────────────────────────────────────────────────────────────
 
-let timer: NodeJS.Timeout | null = null;
+let registered = false;
 let running = false;
 
 export function startEscalationWorker(): void {
-  if (timer) return;
+  if (registered) return;
+  registered = true;
   logger.info('Escalation worker started', {
     intervalSeconds: env.ESCALATION_INTERVAL_SECONDS,
     ladder: ESCALATION_LADDER.map((s) => `${s.afterMinutes}m→L${s.level}`).join(' '),
+    transport: 'bullmq-repeatable',
   });
-  timer = setInterval(() => void escalationTick(), env.ESCALATION_INTERVAL_SECONDS * 1000);
+  void registerRepeatableTick(
+    'escalation-worker',
+    { every: env.ESCALATION_INTERVAL_SECONDS * 1000 },
+    async () => {
+      beat('escalation-worker');
+      await escalationTick();
+    }
+  ).catch((err: unknown) =>
+    logger.error('Escalation worker registration failed', { error: String(err) })
+  );
+  beat('escalation-worker');
   void escalationTick();
 }
 
 export function stopEscalationWorker(): void {
-  if (timer) {
-    clearInterval(timer);
-    timer = null;
-  }
+  registered = false;
+  unregisterRepeatableTick('escalation-worker');
 }
 
 export async function escalationTick(): Promise<void> {

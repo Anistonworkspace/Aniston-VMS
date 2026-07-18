@@ -1,13 +1,6 @@
 import { api } from '@/app/api';
-import type {
-  CurrentUser,
-  EvidenceSnapshot,
-  HealthSummary,
-  IncidentSummary,
-  ZoneSummary,
-} from '@/types/vms';
+import type { EvidenceSnapshot, HealthSummary, IncidentSummary, ZoneSummary } from '@/types/vms';
 import {
-  mockCurrentUser,
   mockHealthSummary,
   mockLatestEvidence,
   mockRecentIncidents,
@@ -25,11 +18,19 @@ async function fromFixture<T>(data: T): Promise<{ data: T }> {
   return { data };
 }
 
+// NOTE on endpoint names: every feature api injects into the single shared
+// `api` from @/app/api, and RTK Query keeps the FIRST endpoint registered
+// under a given name (`overrideExisting: false`), silently ignoring later
+// ones. Endpoint names here must therefore NOT collide with real endpoints
+// (e.g. auth.api `getCurrentUser`, settings.api `listZones`) — a collision
+// makes real pages receive mock-fixture shapes and crash.
 export const overviewApi = api
-  .enhanceEndpoints({ addTagTypes: ['Zone', 'Incident', 'Health', 'Evidence', 'CurrentUser'] })
+  .enhanceEndpoints({ addTagTypes: ['Zone', 'Incident', 'Health', 'Evidence'] })
   .injectEndpoints({
     endpoints: (builder) => ({
-      listZones: builder.query<ZoneSummary[], void>({
+      // Renamed from `listZones` — that name collided with the REAL paginated
+      // GET /zones endpoint in features/settings/settings.api.ts.
+      listZoneSummaries: builder.query<ZoneSummary[], void>({
         queryFn: () => fromFixture(mockZones),
         providesTags: (result) =>
           result
@@ -61,17 +62,16 @@ export const overviewApi = api
         providesTags: [{ type: 'Evidence' as const, id: 'LATEST' }],
       }),
 
-      getCurrentUser: builder.query<CurrentUser, void>({
-        queryFn: () => fromFixture(mockCurrentUser),
-        providesTags: [{ type: 'CurrentUser' as const, id: 'ME' }],
-      }),
+      // `getCurrentUser` was REMOVED here: it collided with the real
+      // GET /auth/me endpoint in features/auth/auth.api.ts and shadowed it
+      // (mock fixture has no `accessScopes`/`email`/`mfaEnabled`), crashing
+      // /settings. Use auth.api's useGetCurrentUserQuery instead.
     }),
   });
 
 export const {
-  useListZonesQuery,
+  useListZoneSummariesQuery,
   useGetHealthSummaryQuery,
   useListRecentIncidentsQuery,
   useGetLatestEvidenceQuery,
-  useGetCurrentUserQuery,
 } = overviewApi;

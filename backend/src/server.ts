@@ -12,6 +12,9 @@ import {
   stopEscalationWorker,
 } from './modules/incidents/escalation.worker.js';
 import { startClipExportWorker, stopClipExportWorker } from './modules/clips/clip.worker.js';
+import { startSelfMonitor, stopSelfMonitor } from './modules/health/platform.service.js';
+import { startStreamReaper, stopStreamReaper } from './modules/playback/playback.reaper.js';
+import { startSchedulerWorker, stopSchedulerWorker } from './lib/scheduler.queue.js';
 import { initRealtime } from './lib/realtime.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -29,6 +32,11 @@ function main(): void {
       port: env.PORT,
       health: `http://localhost:${env.PORT}/api/health`,
     });
+    if (env.NODE_ENV !== 'test') {
+      // One BullMQ Worker executes ALL registered repeatable ticks
+      // (lib/scheduler.queue.ts) — restart-safe + multi-instance safe.
+      startSchedulerWorker();
+    }
     if (env.HEALTH_SCHEDULER_ENABLED && env.NODE_ENV !== 'test') {
       startHealthScheduler();
     }
@@ -44,6 +52,10 @@ function main(): void {
     if (env.SOCKET_IO_ENABLED && env.NODE_ENV !== 'test') {
       initRealtime(httpServer);
     }
+    if (env.NODE_ENV !== 'test') {
+      startStreamReaper(); // force-ends abandoned live-view sessions
+      startSelfMonitor(); // Stage 9: watches all worker heartbeats
+    }
   });
 
   const shutdown = (signal: string): void => {
@@ -51,7 +63,10 @@ function main(): void {
     stopHealthScheduler();
     stopSnapshotScheduler();
     stopEscalationWorker();
+    stopStreamReaper();
+    stopSelfMonitor();
     void stopClipExportWorker();
+    void stopSchedulerWorker();
     httpServer.close(() => process.exit(0));
   };
 

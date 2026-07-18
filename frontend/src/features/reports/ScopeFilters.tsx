@@ -2,9 +2,9 @@ import { AlertTriangle } from 'lucide-react';
 import { Card, CardHeader, CardTitle, Input } from '@/components/ui';
 import {
   useListCameraOptionsQuery,
-  useListRegionOptionsQuery,
-  useListSiteOptionsQuery,
-  useListZoneOptionsQuery,
+  useListReportRegionOptionsQuery,
+  useListReportSiteOptionsQuery,
+  useListReportZoneOptionsQuery,
 } from './reports.api';
 import { Select, type SelectOption } from './Select';
 import { SEVERITY_VALUES } from './reports.types';
@@ -56,9 +56,9 @@ export function ScopeFilters({
 }: ScopeFiltersProps) {
   const { regionId, zoneId, siteId, cameraId, severity, startDate, endDate } = value;
 
-  const { data: regionData } = useListRegionOptionsQuery();
-  const { data: zoneData } = useListZoneOptionsQuery({ regionId: regionId || undefined });
-  const { data: siteData } = useListSiteOptionsQuery({
+  const { data: regionData } = useListReportRegionOptionsQuery();
+  const { data: zoneData } = useListReportZoneOptionsQuery({ regionId: regionId || undefined });
+  const { data: siteData } = useListReportSiteOptionsQuery({
     zoneId: zoneId || undefined,
     regionId: regionId || undefined,
   });

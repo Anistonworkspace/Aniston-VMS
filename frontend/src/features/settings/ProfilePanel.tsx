@@ -142,11 +142,14 @@ export function ProfilePanel() {
             </CardDescription>
           </div>
         </CardHeader>
-        {user.accessScopes.length === 0 ? (
+        {/* `?? []` is defensive hardening only — the real fix was removing the
+            mock `getCurrentUser` endpoint collision in overview.api.ts that
+            shadowed the real /auth/me (whose payload always has accessScopes). */}
+        {(user.accessScopes ?? []).length === 0 ? (
           <p className="text-sm text-gray-500">No access scopes assigned.</p>
         ) : (
           <div className="flex flex-wrap gap-2">
-            {user.accessScopes.map((scope, i) => (
+            {(user.accessScopes ?? []).map((scope, i) => (
               <ScopeBadge key={`${scope.scopeType}-${scope.scopeId ?? i}`} scope={scope} />
             ))}
           </div>

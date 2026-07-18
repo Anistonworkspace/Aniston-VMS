@@ -20,7 +20,7 @@ import { Skeleton } from '@/components/ui';
 import {
   useGetHealthSummaryQuery,
   useListRecentIncidentsQuery,
-  useListZonesQuery,
+  useListZoneSummariesQuery,
 } from '@/features/overview/overview.api';
 import type { ZoneState } from '@/types/vms';
 // Real auth (not the overview mock's CurrentUser) — see
@@ -46,7 +46,7 @@ const ZONE_DOT: Record<ZoneState, string> = {
 export function Sidebar(): JSX.Element {
   const [zonesOpen, setZonesOpen] = useState(true);
   const { data: user } = useGetCurrentUserQuery();
-  const { data: zones, isLoading: zonesLoading } = useListZonesQuery();
+  const { data: zones, isLoading: zonesLoading } = useListZoneSummariesQuery();
   const { data: incidents } = useListRecentIncidentsQuery();
   const { data: health } = useGetHealthSummaryQuery();
 

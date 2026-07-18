@@ -20,6 +20,8 @@ import {
   type HysteresisState,
   type StagedResults,
 } from './health.diagnosis.js';
+import { beat } from './platform.heartbeat.js';
+import { registerRepeatableTick, unregisterRepeatableTick } from '../../lib/scheduler.queue.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Jittered health scheduler (docs/02-TRD.md §2): every tick, take up to
@@ -34,27 +36,35 @@ const LAST_RUN_KEY = (cameraId: string): string => `health:lastrun:${cameraId}`;
 
 type CameraWithRouter = Camera & { router: Router };
 
-let timer: NodeJS.Timeout | null = null;
+let registered = false;
 let running = false;
 
 export function startHealthScheduler(): void {
-  if (timer) return;
-  timer = setInterval(() => {
-    void tick().catch((err: unknown) => logger.error('Health tick failed', { error: String(err) }));
-  }, 60_000);
-  timer.unref();
+  if (registered) return;
+  registered = true;
+  beat('health-scheduler');
+  // BullMQ repeatable (restart-safe, one delivery per minute across instances).
+  void registerRepeatableTick('health-scheduler', { pattern: '* * * * *' }, async () => {
+    beat('health-scheduler');
+    await tick().catch((err: unknown) =>
+      logger.error('Health tick failed', { error: String(err) })
+    );
+  }).catch((err: unknown) =>
+    logger.error('Health scheduler registration failed', { error: String(err) })
+  );
   logger.info('Health scheduler started', {
     camsPerMinute: env.HEALTH_CAMS_PER_MINUTE,
     intervalMinutes: env.HEALTH_CHECK_INTERVAL_MINUTES,
     simMode: env.HEALTH_SIM_MODE,
+    transport: 'bullmq-repeatable',
   });
   // Kick an immediate first tick so dev environments show data right away.
   void tick().catch((err: unknown) => logger.error('Health tick failed', { error: String(err) }));
 }
 
 export function stopHealthScheduler(): void {
-  if (timer) clearInterval(timer);
-  timer = null;
+  registered = false;
+  unregisterRepeatableTick('health-scheduler');
 }
 
 async function tick(): Promise<void> {

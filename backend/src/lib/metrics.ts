@@ -1,5 +1,5 @@
 import { Router, type RequestHandler } from 'express';
-import { Registry, collectDefaultMetrics, Histogram, Counter } from 'prom-client';
+import { Registry, collectDefaultMetrics, Histogram, Counter, Gauge } from 'prom-client';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -24,6 +24,22 @@ export const httpRequestsTotal = new Counter({
   name: 'http_requests_total',
   help: 'Total HTTP requests',
   labelNames: ['method', 'route', 'status_code'],
+  registers: [register],
+});
+
+// Stage 9 self-monitoring: heartbeat age per background worker + count of
+// raised self-alerts (see modules/health/platform.service.ts).
+export const workerHeartbeatAgeSeconds = new Gauge({
+  name: 'worker_heartbeat_age_seconds',
+  help: 'Seconds since each background worker last heartbeated (-1 = never)',
+  labelNames: ['worker'],
+  registers: [register],
+});
+
+export const selfAlertsTotal = new Counter({
+  name: 'self_alerts_total',
+  help: 'Self-monitoring alerts raised for stale/missing worker heartbeats',
+  labelNames: ['worker'],
   registers: [register],
 });
 

@@ -1,17 +1,20 @@
 import { Plus } from 'lucide-react';
 import { Skeleton } from '@/components/ui';
-import { canManageRegistry, type EvidenceSnapshot } from '@/types/vms';
+import type { EvidenceSnapshot } from '@/types/vms';
 import { ActivityListCard } from './ActivityListCard';
 import { DonutCard } from './DonutCard';
 import { ZoneCard } from './ZoneCard';
 import { timeAgo } from './timeAgo';
 import {
-  useGetCurrentUserQuery,
   useGetHealthSummaryQuery,
   useGetLatestEvidenceQuery,
   useListRecentIncidentsQuery,
-  useListZonesQuery,
+  useListZoneSummariesQuery,
 } from './overview.api';
+// Real auth (not the legacy vms.ts mock CurrentUser/VmsRole) — the real API's
+// role literals live in features/auth/auth.types.ts.
+import { useGetCurrentUserQuery } from '@/features/auth/auth.api';
+import { isAdminRole } from '@/features/auth/auth.types';
 
 // Overview ("/") — signature dashboard layout, docs/04-uiux-brief.md §6–7:
 // hero left · zone-cards row right · donut under hero · incidents list right.
@@ -76,7 +79,7 @@ export function OverviewPage(): JSX.Element {
     isLoading: zonesLoading,
     isError: zonesError,
     refetch: refetchZones,
-  } = useListZonesQuery();
+  } = useListZoneSummariesQuery();
   const {
     data: incidents,
     isLoading: incidentsLoading,
@@ -86,7 +89,7 @@ export function OverviewPage(): JSX.Element {
   const { data: evidence } = useGetLatestEvidenceQuery();
   const { data: user } = useGetCurrentUserQuery();
 
-  const isAdmin = user ? canManageRegistry(user.role) : false;
+  const isAdmin = isAdminRole(user?.role);
   const featuredZones = zones
     ? [...zones].sort((a, b) => b.cameraCount - a.cameraCount).slice(0, 2)
     : [];

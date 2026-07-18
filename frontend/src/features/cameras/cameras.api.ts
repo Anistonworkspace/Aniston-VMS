@@ -101,7 +101,10 @@ export const camerasApi = api
         ],
       }),
 
-      listSites: builder.query<Paginated<SiteItem>, void>({
+      // Renamed from `listSites` — that name collided with settings.api's
+      // parameterized `listSites` on the shared base api (RTK Query keeps the
+      // first-registered endpoint and silently drops the other).
+      listSitesLite: builder.query<Paginated<SiteItem>, void>({
         query: () => ({ url: '/sites', params: { page: 1, limit: 100 } }),
         transformResponse: unwrapEnvelope<Paginated<SiteItem>>,
         providesTags: [{ type: 'Site' as const, id: 'LIST' }],
@@ -118,5 +121,5 @@ export const {
   useRunCameraCheckMutation,
   useListCameraSnapshotsQuery,
   useCaptureSnapshotMutation,
-  useListSitesQuery,
+  useListSitesLiteQuery,
 } = camerasApi;

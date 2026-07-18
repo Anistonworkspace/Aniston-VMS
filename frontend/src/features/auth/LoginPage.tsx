@@ -5,15 +5,16 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { motion, useReducedMotion } from 'framer-motion';
 import toast from 'react-hot-toast';
-import { Cctv, Eye, EyeOff, KeyRound, ShieldAlert, Wand2 } from 'lucide-react';
+import { Cctv, Eye, EyeOff, KeyRound, Loader2, ShieldAlert, Wand2 } from 'lucide-react';
 import type { FetchBaseQueryError } from '@reduxjs/toolkit/query/react';
 import type { SerializedError } from '@reduxjs/toolkit';
-import { Button, Input } from '@/components/ui';
 import { getApiErrorCode, getApiErrorMessage } from '@/lib/apiError';
 import { pageTransition } from '@/lib/animations';
 import { useAppSelector } from '@/hooks/useAppStore';
+import { cn } from '@/lib/utils';
 import { useLoginMutation } from './auth.api';
 import type { LoginInput } from './auth.types';
+import { LoginIllustration } from './LoginIllustration';
 
 // Seeded by the backend demo dataset — see .claude/docs/04-uiux-brief.md.
 const DEMO_EMAIL = 'admin@anistonvms.example';
@@ -30,11 +31,10 @@ interface LocationState {
   from?: { pathname: string };
 }
 
-// Aniston VMS sign-in — docs/actual-design.png has no login mockup, so this
-// mirrors the app's own soft-SaaS canon (cream canvas, dark brand panel,
-// white elevated card) rather than inventing a new style. Access token +
-// user are held in memory only (features/auth/auth.slice.ts) — never
-// localStorage/sessionStorage.
+// Aniston VMS sign-in — split "welcome" layout mirroring .claude/docs/Login-Page.png:
+// a warm cream form panel beside a purple illustration panel with a curved seam.
+// Access token + user are held in memory only (features/auth/auth.slice.ts) —
+// never localStorage/sessionStorage.
 export function LoginPage(): JSX.Element {
   const [login, { isLoading }] = useLoginMutation();
   const [mfaRequired, setMfaRequired] = useState(false);
@@ -100,118 +100,191 @@ export function LoginPage(): JSX.Element {
     setValue('password', DEMO_PASSWORD, { shouldValidate: true });
   }
 
+  const fieldBase =
+    'peer w-full border-0 border-b bg-transparent px-0 py-2 text-sm text-[#2f2b3a] outline-none transition-colors placeholder:text-[#a9a591] focus:border-[#6c6890]';
+
   return (
-    <div className="flex min-h-screen bg-canvas">
-      {/* Brand panel */}
-      <div className="relative hidden w-[420px] shrink-0 flex-col justify-between overflow-hidden bg-sidebar p-10 lg:flex">
-        <div className="flex items-center gap-2.5">
-          <span className="grid h-8 w-8 place-items-center rounded-full bg-sage">
-            <Cctv size={18} strokeWidth={1.5} className="text-white" />
-          </span>
-          <span className="font-heading text-lg font-semibold text-white">Aniston VMS</span>
-        </div>
-        <div>
-          <p className="font-heading text-2xl font-semibold leading-snug text-white">
-            Every camera. Every zone.
-            <br />
-            One calm command center.
-          </p>
-          <p className="mt-3 max-w-sm text-sm text-sidebar-muted">
-            Monitor live feeds, triage incidents, and keep every site healthy from a single
-            dashboard.
-          </p>
-        </div>
-        <p className="text-xs text-sidebar-muted">© {new Date().getFullYear()} Aniston VMS</p>
-      </div>
+    <div className="flex min-h-screen items-center justify-center bg-[#dcd8e6] p-4 sm:p-6">
+      <motion.div
+        initial={reduceMotion ? false : 'hidden'}
+        animate="visible"
+        variants={pageTransition}
+        className="relative w-full max-w-4xl overflow-hidden rounded-3xl bg-[#efe8cf] shadow-2xl"
+      >
+        <div className="relative flex min-h-[560px] flex-col md:flex-row">
+          {/* ── Form panel (cream) ─────────────────────────────── */}
+          <div className="relative z-10 flex w-full flex-col justify-center px-7 py-10 sm:px-12 md:w-[52%]">
+            {/* Compact brand (mobile only) */}
+            <div className="mb-8 flex items-center gap-2.5 md:hidden">
+              <span className="grid h-8 w-8 place-items-center rounded-full bg-[#6c6890]">
+                <Cctv size={16} strokeWidth={1.5} className="text-white" />
+              </span>
+              <span className="font-heading text-base font-semibold text-[#2f2b3a]">
+                Aniston VMS
+              </span>
+            </div>
 
-      {/* Form panel */}
-      <div className="flex flex-1 flex-col items-center justify-center px-6 py-12">
-        <motion.div
-          initial={reduceMotion ? false : 'hidden'}
-          animate="visible"
-          variants={pageTransition}
-          className="w-full max-w-sm"
-        >
-          <div className="mb-8 flex flex-col items-center gap-2.5 lg:hidden">
-            <span className="grid h-9 w-9 place-items-center rounded-full bg-sage">
-              <Cctv size={18} strokeWidth={1.5} className="text-white" />
-            </span>
-            <span className="font-heading text-lg font-semibold text-ink">Aniston VMS</span>
-          </div>
+            <div className="mx-auto w-full max-w-xs">
+              <h1 className="text-center font-heading text-2xl font-semibold text-[#2f2b3a]">
+                Sign in
+              </h1>
 
-          <div className="rounded-card border border-hairline bg-card p-8 shadow-soft">
-            <h1 className="font-heading text-xl font-semibold text-ink">Sign in</h1>
-            <p className="mt-1 text-sm text-muted">
-              Welcome back — enter your credentials to continue.
-            </p>
-
-            {formError && (
-              <div className="mt-5 flex items-start gap-2 rounded-control border border-hairline bg-coral-soft px-3.5 py-2.5 text-sm text-coral">
-                <ShieldAlert size={16} strokeWidth={1.5} className="mt-0.5 shrink-0" />
-                <span>{formError}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleSubmit(onSubmit)} noValidate className="mt-6 space-y-4">
-              <Input
-                type="email"
-                label="Email"
-                autoComplete="username"
-                placeholder="you@example.com"
-                error={errors.email?.message}
-                {...register('email')}
-              />
-              <Input
-                type={showPassword ? 'text' : 'password'}
-                label="Password"
-                autoComplete="current-password"
-                placeholder="••••••••"
-                error={errors.password?.message}
-                rightAddon={
-                  <button
-                    type="button"
-                    tabIndex={-1}
-                    onClick={() => setShowPassword((v) => !v)}
-                    className="text-gray-400 hover:text-gray-600"
-                    aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                }
-                {...register('password')}
-              />
-              {mfaRequired && (
-                <Input
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  label="Authenticator code"
-                  placeholder="123456"
-                  hint="Enter the 6-digit code from your authenticator app"
-                  error={errors.mfaCode?.message}
-                  autoFocus
-                  maxLength={6}
-                  leftAddon={<KeyRound size={16} />}
-                  {...register('mfaCode')}
-                />
+              {formError && (
+                <div className="mt-5 flex items-start gap-2 rounded-xl border border-[#e0b7ac] bg-[#f7e2da] px-3.5 py-2.5 text-sm text-[#a64a35]">
+                  <ShieldAlert size={16} strokeWidth={1.5} className="mt-0.5 shrink-0" />
+                  <span>{formError}</span>
+                </div>
               )}
 
-              <Button type="submit" className="w-full" loading={isLoading}>
-                Sign in
-              </Button>
-            </form>
+              <form onSubmit={handleSubmit(onSubmit)} noValidate className="mt-8 space-y-6">
+                <div>
+                  <label htmlFor="login-email" className="text-xs font-medium text-[#7c7768]">
+                    Email
+                  </label>
+                  <input
+                    id="login-email"
+                    type="email"
+                    autoComplete="username"
+                    placeholder="you@example.com"
+                    className={cn(
+                      fieldBase,
+                      errors.email ? 'border-[#c0563d]' : 'border-[#c7c0a6]'
+                    )}
+                    {...register('email')}
+                  />
+                  {errors.email?.message && (
+                    <p className="mt-1 text-xs text-[#c0563d]">{errors.email.message}</p>
+                  )}
+                </div>
 
-            <button
-              type="button"
-              onClick={fillDemoCredentials}
-              className="mt-5 flex w-full items-center justify-center gap-1.5 rounded-control border border-dashed border-hairline py-2 text-xs font-medium text-muted transition-colors duration-150 hover:text-ink"
-            >
-              <Wand2 size={14} strokeWidth={1.5} />
-              Use demo credentials
-            </button>
+                <div>
+                  <label htmlFor="login-password" className="text-xs font-medium text-[#7c7768]">
+                    Password
+                  </label>
+                  <div className="relative">
+                    <input
+                      id="login-password"
+                      type={showPassword ? 'text' : 'password'}
+                      autoComplete="current-password"
+                      placeholder="••••••••"
+                      className={cn(
+                        fieldBase,
+                        'pr-8',
+                        errors.password ? 'border-[#c0563d]' : 'border-[#c7c0a6]'
+                      )}
+                      {...register('password')}
+                    />
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      onClick={() => setShowPassword((v) => !v)}
+                      className="absolute right-0 top-1.5 text-[#a9a591] transition-colors hover:text-[#6c6890]"
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                  {errors.password?.message && (
+                    <p className="mt-1 text-xs text-[#c0563d]">{errors.password.message}</p>
+                  )}
+                </div>
+
+                {mfaRequired && (
+                  <div>
+                    <label htmlFor="login-mfa" className="text-xs font-medium text-[#7c7768]">
+                      Authenticator code
+                    </label>
+                    <div className="relative">
+                      <KeyRound
+                        size={16}
+                        className="pointer-events-none absolute left-0 top-2.5 text-[#a9a591]"
+                      />
+                      <input
+                        id="login-mfa"
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        placeholder="123456"
+                        maxLength={6}
+                        autoFocus
+                        className={cn(
+                          fieldBase,
+                          'pl-6',
+                          errors.mfaCode ? 'border-[#c0563d]' : 'border-[#c7c0a6]'
+                        )}
+                        {...register('mfaCode')}
+                      />
+                    </div>
+                    <p className="mt-1 text-xs text-[#8f8a79]">
+                      Enter the 6-digit code from your authenticator app
+                    </p>
+                    {errors.mfaCode?.message && (
+                      <p className="mt-1 text-xs text-[#c0563d]">{errors.mfaCode.message}</p>
+                    )}
+                  </div>
+                )}
+
+                <div className="pt-2 text-center">
+                  <p className="mb-3 text-xs text-[#8f8a79]">
+                    You&apos;re all set — pick up where you left off.
+                  </p>
+                  <button
+                    type="submit"
+                    disabled={isLoading}
+                    className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-full bg-[#6c6890] px-6 text-sm font-medium text-white shadow-sm transition-colors hover:bg-[#5b577b] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#6c6890] focus-visible:ring-offset-2 focus-visible:ring-offset-[#efe8cf] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                    Sign in
+                  </button>
+                </div>
+              </form>
+
+              <button
+                type="button"
+                onClick={fillDemoCredentials}
+                className="mt-6 flex w-full items-center justify-center gap-1.5 rounded-full border border-dashed border-[#c7c0a6] py-2 text-xs font-medium text-[#8f8a79] transition-colors hover:text-[#6c6890]"
+              >
+                <Wand2 size={14} strokeWidth={1.5} />
+                Use demo credentials
+              </button>
+            </div>
           </div>
-        </motion.div>
-      </div>
+
+          {/* ── Illustration panel (purple, curved seam) ───────── */}
+          <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-[54%] md:block">
+            {/* Curved seam: purple shape whose left edge waves into the cream. */}
+            <svg
+              className="absolute inset-0 h-full w-full"
+              viewBox="0 0 100 100"
+              preserveAspectRatio="none"
+              aria-hidden
+            >
+              <path
+                d="M26 0 C56 16, 2 44, 24 72 C38 92, 32 96, 44 100 L100 100 L100 0 Z"
+                fill="#6c6890"
+              />
+            </svg>
+
+            <div className="pointer-events-auto absolute inset-0 flex flex-col justify-between py-10 pl-16 pr-10">
+              <div className="flex items-center justify-end gap-2 text-white/90">
+                <span className="grid h-6 w-6 place-items-center rounded-full bg-white/20">
+                  <Cctv size={13} strokeWidth={1.5} className="text-white" />
+                </span>
+                <span className="text-sm font-semibold tracking-tight">Aniston VMS</span>
+              </div>
+
+              <div className="pl-10">
+                <h2 className="font-heading text-3xl font-bold leading-tight text-white">
+                  Welcome back!
+                </h2>
+                <p className="mt-2 text-sm text-white/70">Pick up where you left off.</p>
+              </div>
+
+              <LoginIllustration className="mx-auto -mb-2 w-64 max-w-full" />
+            </div>
+          </div>
+        </div>
+      </motion.div>
     </div>
   );
 }

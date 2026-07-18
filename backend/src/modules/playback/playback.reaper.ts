@@ -2,37 +2,40 @@ import { env } from '../../config/env.js';
 import { prisma } from '../../lib/prisma.js';
 import { logger } from '../../lib/logger.js';
 import { teardownStream } from './mediamtx.adapter.js';
+import { registerRepeatableTick, unregisterRepeatableTick } from '../../lib/scheduler.queue.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Stream session reaper — setInterval worker following the same no-BullMQ
-// pattern as modules/incidents/escalation.worker.ts and
-// modules/snapshots/snapshot.scheduler.ts. Any StreamSession whose
+// Stream session reaper — BullMQ repeatable tick (lib/scheduler.queue.ts),
+// same restart-safe pattern as the other schedulers. Any StreamSession whose
 // lastHeartbeatAt is older than STREAM_SESSION_TIMEOUT_SECONDS is considered
 // abandoned (browser closed / network dropped without a clean POST
 // /streams/:id/end) and is force-ended so it stops counting against
 // STREAM_MAX_CONCURRENT_PER_CAMERA.
 // ─────────────────────────────────────────────────────────────────────────────
 
-let timer: NodeJS.Timeout | null = null;
+let registered = false;
 let running = false;
 
 export function startStreamReaper(): void {
-  if (timer) return;
+  if (registered) return;
+  registered = true;
   const intervalSeconds = Math.max(5, Math.floor(env.STREAM_SESSION_TIMEOUT_SECONDS / 2));
   logger.info('Stream session reaper started', {
     timeoutSeconds: env.STREAM_SESSION_TIMEOUT_SECONDS,
     intervalSeconds,
+    transport: 'bullmq-repeatable',
   });
-  timer = setInterval(() => void reapTick(), intervalSeconds * 1000);
-  timer.unref();
+  void registerRepeatableTick('stream-reaper', { every: intervalSeconds * 1000 }, async () => {
+    await reapTick();
+  }).catch((err: unknown) =>
+    logger.error('Stream reaper registration failed', { error: String(err) })
+  );
   void reapTick();
 }
 
 export function stopStreamReaper(): void {
-  if (timer) {
-    clearInterval(timer);
-    timer = null;
-  }
+  registered = false;
+  unregisterRepeatableTick('stream-reaper');
 }
 
 export async function reapTick(): Promise<void> {

@@ -1,28 +1,35 @@
 import { env } from '../../config/env.js';
 import { logger } from '../../lib/logger.js';
 import { captureAll, pruneSnapshots } from './snapshot.service.js';
+import { beat } from '../health/platform.heartbeat.js';
+import { registerRepeatableTick, unregisterRepeatableTick } from '../../lib/scheduler.queue.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Stage 3 snapshot scheduler: SUB frames every SNAPSHOT_SUB_INTERVAL_MINUTES,
 // EVIDENCE frames at the top of each hour, retention pass once a day (~03:10
-// IST / 21:40 UTC). Minute-resolution setInterval keeps it drift-free enough
-// for the sim fleet; BullMQ takes over when real capture workers land.
+// IST / 21:40 UTC). Runs as a BullMQ repeatable cron tick (every minute) so it
+// is restart-safe and fires exactly once per minute across all instances.
 // ─────────────────────────────────────────────────────────────────────────────
 
-let timer: NodeJS.Timeout | null = null;
+let registered = false;
 let running = false;
 
 export function startSnapshotScheduler(): void {
-  if (timer) return;
-  timer = setInterval(() => {
-    void tick().catch((err: unknown) =>
+  if (registered) return;
+  registered = true;
+  beat('snapshot-scheduler');
+  void registerRepeatableTick('snapshot-scheduler', { pattern: '* * * * *' }, async () => {
+    beat('snapshot-scheduler');
+    await tick().catch((err: unknown) =>
       logger.error('Snapshot tick failed', { error: String(err) })
     );
-  }, 60_000);
-  timer.unref();
+  }).catch((err: unknown) =>
+    logger.error('Snapshot scheduler registration failed', { error: String(err) })
+  );
   logger.info('Snapshot scheduler started', {
     subIntervalMinutes: env.SNAPSHOT_SUB_INTERVAL_MINUTES,
     retentionDays: env.SNAPSHOT_RETENTION_DAYS,
+    transport: 'bullmq-repeatable',
   });
   // Seed both kinds immediately so dev environments show strips/grids right away.
   void bootstrap().catch((err: unknown) =>
@@ -31,8 +38,8 @@ export function startSnapshotScheduler(): void {
 }
 
 export function stopSnapshotScheduler(): void {
-  if (timer) clearInterval(timer);
-  timer = null;
+  registered = false;
+  unregisterRepeatableTick('snapshot-scheduler');
 }
 
 async function bootstrap(): Promise<void> {

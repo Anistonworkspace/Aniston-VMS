@@ -69,8 +69,14 @@ export const reportsApi = api
         transformResponse: unwrapEnvelope<ReportExportResult>,
       }),
 
-      // GET /regions — region picker
-      listRegionOptions: builder.query<ScopeOption[], void>({
+      // GET /regions — region picker.
+      // NOTE: these three pickers are prefixed `listReport*` because
+      // admin.api.ts also injects `listRegionOptions`/`listZoneOptions`/
+      // `listSiteOptions` into the SAME shared base api with an INCOMPATIBLE
+      // return shape (Paginated<{items}> vs mapped ScopeOption[]). RTK Query
+      // keeps only the first-registered endpoint per name, so a collision
+      // silently feeds one page the other's shape and crashes it.
+      listReportRegionOptions: builder.query<ScopeOption[], void>({
         query: () => ({ url: '/regions', params: SCOPE_OPTION_PAGE_PARAMS }),
         transformResponse: (response: ApiEnvelope<RawListResult<ScopeOption>>) =>
           response.data.items.map(({ id, name }) => ({ id, name })),
@@ -78,7 +84,7 @@ export const reportsApi = api
       }),
 
       // GET /zones?regionId= — zone picker, optionally scoped to a region
-      listZoneOptions: builder.query<ScopeOption[], { regionId?: string } | void>({
+      listReportZoneOptions: builder.query<ScopeOption[], { regionId?: string } | void>({
         query: (arg) => ({
           url: '/zones',
           params: toQueryParams({ ...SCOPE_OPTION_PAGE_PARAMS, regionId: arg?.regionId }),
@@ -89,7 +95,10 @@ export const reportsApi = api
       }),
 
       // GET /sites?zoneId=&regionId= — site picker, optionally scoped to a zone and/or region
-      listSiteOptions: builder.query<ScopeOption[], { zoneId?: string; regionId?: string } | void>({
+      listReportSiteOptions: builder.query<
+        ScopeOption[],
+        { zoneId?: string; regionId?: string } | void
+      >({
         query: (arg) => ({
           url: '/sites',
           params: toQueryParams({
@@ -120,8 +129,8 @@ export const {
   useGetUptimeReportQuery,
   useGetIncidentsReportQuery,
   useExportReportMutation,
-  useListRegionOptionsQuery,
-  useListZoneOptionsQuery,
-  useListSiteOptionsQuery,
+  useListReportRegionOptionsQuery,
+  useListReportZoneOptionsQuery,
+  useListReportSiteOptionsQuery,
   useListCameraOptionsQuery,
 } = reportsApi;

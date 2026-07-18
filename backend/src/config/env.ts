@@ -72,6 +72,9 @@ const envSchema = z.object({
   INCIDENT_OFFLINE_MINUTES: z.coerce.number().int().min(1).default(5),
   INCIDENT_RECOVERY_CHECKS: z.coerce.number().int().min(1).default(2),
   ALERT_MOCK_MODE: z.coerce.boolean().default(true),
+  // Stage 9 drills: unlocks POST /api/platform/workers/:name/:action so the
+  // "kill a worker → self-alert" demo can stop/start loops. Never enable in prod.
+  DRILL_MODE: z.coerce.boolean().default(false),
   ESCALATION_WORKER_ENABLED: z.coerce.boolean().default(true),
   ESCALATION_INTERVAL_SECONDS: z.coerce.number().int().min(10).default(60),
 

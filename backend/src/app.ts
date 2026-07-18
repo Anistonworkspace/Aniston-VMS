@@ -26,6 +26,7 @@ import { auditLogRouter } from './modules/admin/audit-log.router.js';
 import { escalationRouter } from './modules/admin/escalation.router.js';
 import { notificationsRouter } from './modules/admin/notifications.router.js';
 import { usersRouter } from './modules/admin/users.router.js';
+import { platformRouter } from './modules/health/platform.router.js';
 import { metricsRouter, metricsMiddleware } from './lib/metrics.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -88,6 +89,7 @@ export function createApp(): Express {
   app.use('/api', escalationRouter);
   app.use('/api', notificationsRouter);
   app.use('/api', usersRouter);
+  app.use('/api', platformRouter);
   // ───────────────────────────────────────────────────────────────────────────
 
   app.use((req, _res, next) =>

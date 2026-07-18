@@ -27,6 +27,8 @@
     "db:push": "prisma db push --schema=prisma/schema.prisma",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio --schema=prisma/schema.prisma",
+    "demo:media": "node scripts/import-demo-media.mjs",
+    "demo": "npm run db:seed && npm run demo:media",
     "setup": "bash scripts/setup.sh",
     "setup:ai": "bash scripts/setup-ai-tools.sh",
     "setup:ai:win": "powershell -ExecutionPolicy Bypass -File scripts/setup-ai-tools.ps1",
