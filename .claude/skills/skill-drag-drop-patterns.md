@@ -1,339 +1,211 @@
 # Skill — Drag & Drop Patterns (dnd-kit)
 
-Sortable lists, kanban boards, file drop zones, multi-select drag. Uses
-`@dnd-kit/core` + `@dnd-kit/sortable` — accessibility-first (keyboard support
-built in) and mobile-friendly.
+Sortable Live Wall tiles, incident kanban board, evidence-photo drop zones, multi-select camera drag. Uses `@dnd-kit/core` + `@dnd-kit/sortable` — accessibility-first (keyboard support built in) and mobile-friendly.
+
+Design tokens: see `docs/04-uiux-brief.md`.
 
 Prereqs:
 
-```powershell
-npm install @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities
 ```
-
-Framer Motion for optional layout animations. Reuse design tokens (radii,
-shadows) — no ad-hoc styling.
+pnpm add @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities
+```
 
 ---
 
-## Pattern 1 — Sortable list
+## Sortable list — reorder `LiveWallGrid` tiles
 
-The core case: reorder items, persist the order via RTK Query.
-
-```typescript
-// frontend/src/features/notes/NoteList.tsx
-import {
-  DndContext, DragEndEvent, KeyboardSensor, PointerSensor,
-  closestCenter, useSensor, useSensors,
-} from '@dnd-kit/core';
-import {
-  SortableContext, arrayMove, sortableKeyboardCoordinates,
-  useSortable, verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+```tsx
+// frontend/src/features/live-wall/LiveWallGrid.tsx
 import { useState } from 'react';
-import { useReorderNotesMutation, useListNotesQuery } from './notesApi';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, arrayMove, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { useReorderWallTilesMutation } from './liveWallApi';
+import { VideoTile } from '@/components/VideoTile';
 
-export function NoteList() {
-  const { data } = useListNotesQuery();
-  const [reorder] = useReorderNotesMutation();
-  const [items, setItems] = useState(data?.data ?? []);
+export function LiveWallGrid({ tiles: initialTiles, wallId }: { tiles: WallTile[]; wallId: string }) {
+  const [tiles, setTiles] = useState(initialTiles);
+  const [reorderWallTiles] = useReorderWallTilesMutation();
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  const onDragEnd = (e: DragEndEvent) => {
+  async function onDragEnd(e: DragEndEvent) {
     const { active, over } = e;
     if (!over || active.id === over.id) return;
-    const oldIndex = items.findIndex((i) => i.id === active.id);
-    const newIndex = items.findIndex((i) => i.id === over.id);
-    const next = arrayMove(items, oldIndex, newIndex);
-    setItems(next);                    // optimistic UI
-    reorder({ ids: next.map((i) => i.id) })
-      .unwrap()
-      .catch(() => setItems(items));   // rollback on failure
-  };
+
+    const oldIndex = tiles.findIndex((t) => t.cameraId === active.id);
+    const newIndex = tiles.findIndex((t) => t.cameraId === over.id);
+    const reordered = arrayMove(tiles, oldIndex, newIndex);
+    setTiles(reordered); // optimistic — the 2x2 / 3x2 grid must never flash on drop
+
+    try {
+      await reorderWallTiles({ wallId, tileIds: reordered.map((t) => t.cameraId) }).unwrap();
+    } catch {
+      setTiles(tiles); // rollback on failure
+    }
+  }
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-      <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
-        <ul className="space-y-2">
-          {items.map((it) => <SortableRow key={it.id} note={it} />)}
-        </ul>
+      <SortableContext items={tiles.map((t) => t.cameraId)} strategy={verticalListSortingStrategy}>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          {tiles.map((t) => <SortableVideoTile key={t.cameraId} tile={t} />)}
+        </div>
       </SortableContext>
     </DndContext>
   );
 }
 
-function SortableRow({ note }: { note: Note }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: note.id });
+function SortableVideoTile({ tile }: { tile: WallTile }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: tile.cameraId });
   return (
-    <li
+    <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`floating-card flex items-center gap-3 rounded-[var(--radius-medium)] p-3 ${isDragging ? 'opacity-50' : ''}`}
-      {...attributes}
+      {...attributes} {...listeners}
+      className={`rounded-[var(--card-radius)] overflow-hidden border border-[var(--hairline)] ${isDragging ? 'opacity-50 ring-2 ring-[var(--primary-color)]' : ''}`}
     >
-      <button
-        {...listeners}
-        aria-label="Reorder"
-        className="cursor-grab touch-none text-[var(--tertiary-text-color)] active:cursor-grabbing"
-      >
-        ⋮⋮
-      </button>
-      <span>{note.title}</span>
-    </li>
+      <VideoTile cameraId={tile.cameraId} label={tile.cameraCode} status={tile.status} />
+    </div>
   );
 }
 ```
 
-**RTK Query mutation shape** for the reorder endpoint:
-
-```typescript
-reorderNotes: builder.mutation<void, { ids: string[] }>({
-  query: (body) => ({ url: '/notes/reorder', method: 'POST', body }),
-  invalidatesTags: [{ type: 'Note', id: 'LIST' }],
+```ts
+// frontend/src/features/live-wall/liveWallApi.ts
+reorderWallTiles: builder.mutation<void, { wallId: string; tileIds: string[] }>({
+  query: ({ wallId, tileIds }) => ({ url: `/walls/${wallId}/reorder`, method: 'POST', body: { tileIds } }),
+  async onQueryStarted({ wallId }, { dispatch, queryFulfilled }) {
+    try { await queryFulfilled; }
+    catch { dispatch(liveWallApi.util.invalidateTags([{ type: 'Wall', id: wallId }])); }
+  },
 }),
 ```
 
-**Backend service** — batch-update the `order` field in one transaction:
+The reorder mutation writes a `WALL_LAYOUT_UPDATED` audit entry — layout changes are low-risk but still traceable (who moved `CAM-042` to tile 1, and when).
 
-```typescript
-static async reorder(ids: string[], actor: AuthUser) {
-  await prisma.$transaction(
-    ids.map((id, index) =>
-      prisma.note.update({
-        where: { id, organizationId: actor.organizationId },
-        data: { order: index },
-      }),
-    ),
-  );
-  await auditLogger.log(/* action: 'NOTE_REORDERED' */);
-}
-```
+## Kanban board — `IncidentKanban`
 
----
+```tsx
+// frontend/src/features/incidents/IncidentKanban.tsx
+import { DndContext, closestCenter, DragOverlay, type DragStartEvent, type DragEndEvent } from '@dnd-kit/core';
 
-## Pattern 2 — Kanban board (multi-column)
+const COLUMNS: { id: IncidentStatus; label: string }[] = [
+  { id: 'ACKNOWLEDGED', label: 'Acknowledged' },
+  { id: 'ASSIGNED', label: 'Assigned' },
+  { id: 'INVESTIGATING', label: 'Investigating' },
+  { id: 'RESOLVED', label: 'Resolved' },
+];
 
-Cards can move within a column OR across columns. Two `SortableContext`s.
+export function IncidentKanban({ incidents }: { incidents: Incident[] }) {
+  const [items, setItems] = useState(incidents);
+  const [active, setActive] = useState<Incident | null>(null);
+  const [updateIncidentStatus] = useUpdateIncidentStatusMutation();
 
-```typescript
-// Types
-type Column = { id: string; title: string; cardIds: string[] };
-type Card = { id: string; title: string; columnId: string };
+  function onDragStart(e: DragStartEvent) {
+    setActive(items.find((i) => i.id === e.active.id) ?? null);
+  }
 
-// State: columns + cards, keyed by id for O(1) lookup
-
-function Kanban({ columns, cards }: { columns: Column[]; cards: Record<string, Card> }) {
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  );
-
-  const onDragEnd = (e: DragEndEvent) => {
-    const { active, over } = e;
+  async function onDragEnd(e: DragEndEvent) {
+    setActive(null);
+    const { active: a, over } = e;
     if (!over) return;
+    const targetCol = over.data.current?.columnId as IncidentStatus | undefined;
+    if (!targetCol) return;
 
-    const activeCol = columns.find((c) => c.cardIds.includes(active.id as string));
-    const overCol   = columns.find((c) => c.id === over.id || c.cardIds.includes(over.id as string));
-    if (!activeCol || !overCol) return;
+    const incident = items.find((i) => i.id === a.id);
+    if (!incident || incident.status === targetCol) return;
 
-    if (activeCol.id === overCol.id) {
-      // Reorder within column
-      const oldIndex = activeCol.cardIds.indexOf(active.id as string);
-      const newIndex = overCol.cardIds.indexOf(over.id as string);
-      activeCol.cardIds = arrayMove(activeCol.cardIds, oldIndex, newIndex);
-    } else {
-      // Move across columns
-      activeCol.cardIds = activeCol.cardIds.filter((id) => id !== active.id);
-      overCol.cardIds.push(active.id as string);
-      cards[active.id as string].columnId = overCol.id;
+    setItems((prev) => prev.map((i) => (i.id === a.id ? { ...i, status: targetCol } : i)));
+    try {
+      await updateIncidentStatus({ id: incident.id, status: targetCol }).unwrap();
+    } catch {
+      setItems(items); // rollback — a bad status change here can wrongly pause/resume escalation timers
     }
-    // Persist via RTK Query mutation…
-  };
+  }
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-      <div className="flex gap-4 overflow-x-auto p-4">
-        {columns.map((col) => (
-          <div key={col.id} className="floating-card min-w-[280px] rounded-[var(--radius-big)] p-3">
-            <h3 className="mb-2 font-medium">{col.title}</h3>
-            <SortableContext items={col.cardIds} strategy={verticalListSortingStrategy}>
-              <ul className="space-y-2">
-                {col.cardIds.map((id) => <KanbanCard key={id} card={cards[id]} />)}
-              </ul>
-            </SortableContext>
-          </div>
+    <DndContext collisionDetection={closestCenter} onDragStart={onDragStart} onDragEnd={onDragEnd}>
+      <div className="grid grid-cols-4 gap-4">
+        {COLUMNS.map((col) => (
+          <KanbanColumn key={col.id} column={col} incidents={items.filter((i) => i.status === col.id)} />
         ))}
       </div>
+      <DragOverlay>{active && <IncidentCard incident={active} />}</DragOverlay>
     </DndContext>
   );
 }
 ```
 
----
+Dragging an incident card between columns is a **status transition**, not a free-form label move — it must call the same `updateIncidentStatus` mutation the detail page uses, so state-machine guards (e.g. can't drag `Detected` straight to `Resolved` without an assignee, per `docs/03-app-flow.md` §3) apply identically. Reject the drop (snap back + toast) if the transition is invalid rather than allowing an illegal state to persist.
 
-## Pattern 3 — File drop zone
+## File drop zone — attach evidence photo to an incident
 
-Drop files onto the page, show a progress ring per file, upload via RTK
-Query mutation.
+```tsx
+// frontend/src/features/incidents/EvidencePhotoDropzone.tsx
+import { useDropzone } from 'react-dropzone';
+import { useUploadEvidencePhotoMutation } from './incidentApi';
 
-```typescript
-import { useDropzone } from 'react-dropzone';        // npm install react-dropzone
-import { useState } from 'react';
+export function EvidencePhotoDropzone({ incidentId, onUploaded }: { incidentId: string; onUploaded: (photo: EvidencePhoto) => void }) {
+  const [uploadEvidencePhoto] = useUploadEvidencePhotoMutation();
 
-export function FileDropZone({ onFiles }: { onFiles: (files: File[]) => void }) {
-  const [active, setActive] = useState(false);
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop: (files) => { setActive(false); onFiles(files); },
-    onDragEnter: () => setActive(true),
-    onDragLeave: () => setActive(false),
-    accept: { 'image/*': [], 'application/pdf': ['.pdf'] },
-    maxSize: 5 * 1024 * 1024,
+    accept: { 'image/*': ['.png', '.jpg', '.jpeg', '.webp'] },
+    maxSize: 8 * 1024 * 1024,
+    onDrop: async (files) => {
+      for (const file of files) {
+        const photo = await uploadEvidencePhoto({ incidentId, file }).unwrap();
+        onUploaded(photo);
+      }
+    },
   });
 
   return (
     <div
       {...getRootProps()}
-      className={`floating-card rounded-[var(--radius-big)] border-2 border-dashed p-8 text-center transition ${
-        active || isDragActive
-          ? 'border-[var(--primary-color)] bg-[rgba(0,115,234,0.04)]'
-          : 'border-[var(--layout-border-color)]'
-      }`}
+      className={`rounded-[var(--radius-medium)] border-2 border-dashed p-8 text-center transition-colors
+        ${isDragActive ? 'border-[var(--primary-color)] bg-[var(--base-tint)]' : 'border-[var(--hairline)]'}`}
     >
       <input {...getInputProps()} />
-      <p className="text-sm text-[var(--secondary-text-color)]">
-        {isDragActive ? 'Drop to upload…' : 'Drop files here or click to browse'}
-      </p>
-      <p className="mt-1 text-xs text-[var(--tertiary-text-color)]">
-        PNG · JPG · WebP · PDF · Max 5 MB per file
+      <p className="text-sm text-[var(--muted)]">
+        {isDragActive ? 'Drop snapshot to attach' : 'Drag a snapshot here, or click to browse'}
       </p>
     </div>
   );
 }
 ```
 
-Pair with `skill-file-upload-patterns.md` for the RTK Query upload mutation
-and progress reporting.
+## Multi-select drag — move cameras to another zone
 
----
+Shift-click / Ctrl-click builds `selectedIds`; dragging any selected tile moves the whole set. `SnapshotCompare` and "export clip" bulk actions reuse this same `selectedIds` set.
 
-## Pattern 4 — Multi-select drag
+```tsx
+function onDragStart(e: DragStartEvent) {
+  const draggedIds = selectedIds.has(e.active.id as string) ? [...selectedIds] : [e.active.id as string];
+  setDraggedIds(draggedIds);
+}
 
-Select multiple rows (shift-click), drag them as a group.
-
-```typescript
-const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-
-const onRowClick = (id: string, e: React.MouseEvent) => {
-  if (e.shiftKey) {
-    // range-select via last-clicked pivot
-  } else if (e.metaKey || e.ctrlKey) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  } else {
-    setSelectedIds(new Set([id]));
-  }
-};
-
-// In onDragStart — if active.id is in the selection, drag all selected.
-// Otherwise drag only active.
-const onDragStart = (e: DragStartEvent) => {
-  const draggedIds = selectedIds.has(e.active.id as string)
-    ? [...selectedIds]
-    : [e.active.id as string];
-  // stash in a ref, use in DragOverlay
-};
-
-// Show a "grouped" DragOverlay when > 1 item is being moved:
-<DragOverlay>
-  {activeId && (draggedIds.length > 1 ? <StackedCards count={draggedIds.length} /> : <SingleCard id={activeId} />)}
-</DragOverlay>
+function onDragEnd(e: DragEndEvent) {
+  const { over } = e;
+  if (!over) return setDraggedIds([]);
+  const targetZoneId = over.id as string;
+  moveCamerasToZone({ cameraIds: draggedIds, targetZoneId });
+  setDraggedIds([]);
+}
 ```
 
----
-
-## Pattern 5 — Persistence with optimistic update
-
-Optimistic UI = update local state immediately, then confirm with the API.
-
-```typescript
-const onDragEnd = async (e: DragEndEvent) => {
-  const before = items;                                // snapshot
-  const next   = arrayMove(items, oldIndex, newIndex);
-  setItems(next);                                      // optimistic
-
-  try {
-    await reorder({ ids: next.map((i) => i.id) }).unwrap();
-    toast.success('Order saved');
-  } catch (err) {
-    setItems(before);                                  // rollback
-    toast.error('Could not save new order — reverted');
-  }
-};
-```
-
-**Rule:** never dispatch an optimistic update without a rollback path. Users
-will get confused when a network error appears to succeed.
-
----
-
-## Accessibility notes
-
-`@dnd-kit` ships with keyboard support out of the box. Verify:
-
-- **Tab** to focus a drag handle
-- **Space** to pick up
-- **Arrow keys** to move
-- **Space** to drop
-- **Escape** to cancel
-
-Announce state changes via `<DndContext accessibility={{ announcements }}>`:
-
-```typescript
-const announcements = {
-  onDragStart: ({ active }) => `Picked up ${active.data.current?.title}.`,
-  onDragOver:  ({ active, over }) => `Moving ${active.data.current?.title} over ${over?.data.current?.title}.`,
-  onDragEnd:   ({ active, over }) => `Dropped ${active.data.current?.title} onto ${over?.data.current?.title}.`,
-  onDragCancel: ({ active }) => `Cancelled dragging ${active.data.current?.title}.`,
-};
-```
-
----
-
-## Do-not
-
-- **No PointerSensor without `activationConstraint`** — accidental drags
-  break click targets. Default: `{ distance: 8 }` (8px before drag starts) or
-  `{ delay: 250, tolerance: 5 }`.
-- **No drag handle without `touch-none`** — mobile browsers eat the touch
-  event as a scroll.
-- **No missing keyboard sensor** — accessibility failure.
-- **No optimistic update without rollback**.
-- **No `DragOverlay` for tiny items** — the "portal-rendered ghost" costs
-  more than it's worth on lists of 10-line rows. Skip it and let the row
-  animate in place.
-- **No cross-column drag without column-boundary detection** — the card
-  will attach to a random column and confuse users.
-
----
+Moving cameras to a new zone updates dashboards, wall layouts, and reports immediately — but historical incidents keep their original `zoneId` (`docs/03-app-flow.md` §8). Show the impact ("N cameras, open incidents follow to the new zone") in a confirm step before committing the drop for cross-zone moves.
 
 ## Checklist
 
-- [ ] `@dnd-kit/core` + `@dnd-kit/sortable` + `@dnd-kit/utilities` installed
-- [ ] `PointerSensor` has an activation constraint (distance or delay)
-- [ ] `KeyboardSensor` present — accessibility
-- [ ] Drag handles have `touch-none` to prevent mobile scroll conflict
-- [ ] Optimistic update pattern with explicit rollback on API failure
-- [ ] `arrayMove` used for local reorder (never mutate the array directly)
-- [ ] Backend `reorder` service updates in `prisma.$transaction`
-- [ ] `auditLogger.log` fires on reorder (per rule-backend.md)
-- [ ] `AnimatePresence` for cards that fade out on delete
-- [ ] Announcements configured for screen readers
-- [ ] Dark-mode parity — no hardcoded colors
+- [ ] `PointerSensor` has an `activationConstraint` (distance 8) so clicks on a `VideoTile`'s play/mute controls don't start a drag
+- [ ] `KeyboardSensor` with `sortableKeyboardCoordinates` present on every sortable — arrow keys must reorder tiles/cards without a mouse
+- [ ] Optimistic reorder + rollback on mutation failure — the wall/kanban never silently reverts without visual feedback
+- [ ] Kanban drops go through the real `updateIncidentStatus` mutation, not a raw column-array `setState` — invalid transitions are rejected, not just relabeled
+- [ ] `DragOverlay` renders the real card component (`IncidentCard`, `VideoTile`), never a plain ghost `<div>`
+- [ ] File dropzone validates type + size client-side before upload; server re-validates regardless
+- [ ] Layout/zone-move changes write an audit entry — matches `docs/03-app-flow.md` §8 requirement
+- [ ] Mobile: drag handles are ≥44px touch targets; `touch-action: none` on drag handles to prevent scroll hijack

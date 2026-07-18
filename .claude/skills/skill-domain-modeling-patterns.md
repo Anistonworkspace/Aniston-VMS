@@ -1,325 +1,273 @@
 # Skill: Domain Modeling Patterns (DDD)
 
+Tactical DDD for Aniston VMS: aggregates, value objects, domain events,
+repositories, anti-corruption layers. Complements
+`skill-ddd-bounded-contexts-patterns.md` (which covers where a context's
+boundary sits) and `skill-state-machine-patterns.md` (which covers the
+transition table this file's aggregate enforces). Canon: `docs/05-backend-schema.md`,
+`docs/02-TRD.md` §4.
+
+---
+
 ## Aggregate pattern
 
-An aggregate is a cluster of objects treated as a single unit for data changes.
-The **aggregate root** is the only object external code can reference directly.
+An aggregate is a cluster of objects treated as a single unit for data
+changes. The **aggregate root** is the only object external code may
+reference directly — nobody outside the `Incident` aggregate mutates an
+`IncidentEvent` row directly.
 
 ```typescript
-// shared/src/domain/aggregate.ts
+// packages/shared/src/domain/aggregate-root.ts
 export abstract class AggregateRoot<T> {
-  private _domainEvents: DomainEvent[] = [];
+  private domainEvents: DomainEvent[] = [];
+  protected constructor(public readonly id: T) {}
 
-  protected addDomainEvent(event: DomainEvent): void {
-    this._domainEvents.push(event);
+  protected addDomainEvent(event: DomainEvent) {
+    this.domainEvents.push(event);
   }
 
-  public pullDomainEvents(): DomainEvent[] {
-    const events = [...this._domainEvents];
-    this._domainEvents = [];
+  pullDomainEvents(): DomainEvent[] {
+    const events = [...this.domainEvents];
+    this.domainEvents = [];
     return events;
   }
 }
-
-export interface DomainEvent {
-  occurredAt: Date;
-  aggregateId: string;
-  eventType: string;
-  payload: Record<string, unknown>;
-}
 ```
+
+### The `Incident` aggregate
+
+`Incident` is the richest aggregate in Aniston VMS: it owns its
+`IncidentEvent` timeline, enforces the state machine from
+`skill-state-machine-patterns.md`, and is the only place the
+"acknowledge stops escalation" / "two consecutive good checks before
+recovery-verified" rules are allowed to live.
 
 ```typescript
-// backend/src/modules/item/domain/item.aggregate.ts
-import { AggregateRoot, DomainEvent } from '@boilerplate/shared/domain/aggregate.js';
-import { ItemStatus } from '@boilerplate/shared/enums.js';
-import { ConflictError, ForbiddenError } from '../../../middleware/errorHandler.js';
+// apps/api/src/modules/incidents/domain/incident.aggregate.ts
+import { AggregateRoot } from '@aniston-vms/shared';
+import { ConflictError, ForbiddenError } from '../../../common/errors/domain-errors';
+import { IncidentAcknowledged, IncidentResolved, IncidentRecoveryVerified, IncidentClosed } from './incident.events';
 
-interface ItemState {
-  id: string;
-  ownerId: string;
-  assigneeId: string;
-  status: ItemStatus;
-  startDate: Date;
-  endDate: Date;
-  organizationId: string;
-}
+export type IncidentStatus =
+  | 'DETECTED' | 'CONFIRMED' | 'ALERTED' | 'ACKNOWLEDGED'
+  | 'ASSIGNED' | 'INVESTIGATING' | 'RESOLVED' | 'RECOVERY_VERIFIED' | 'CLOSED';
 
-export class ItemAggregate extends AggregateRoot<ItemState> {
-  private constructor(private readonly state: ItemState) {
-    super();
+export class IncidentAggregate extends AggregateRoot<string> {
+  private constructor(
+    id: string,
+    public readonly incidentNumber: string, // e.g. "ANI-CAM-2026-000145"
+    public readonly cameraId: string,
+    private status: IncidentStatus,
+    private consecutiveGoodChecks: number,
+  ) {
+    super(id);
   }
 
-  static create(state: ItemState): ItemAggregate {
-    const agg = new ItemAggregate(state);
-    agg.addDomainEvent({
-      occurredAt: new Date(),
-      aggregateId: state.id,
-      eventType: 'ITEM_CREATED',
-      payload: { ownerId: state.ownerId, startDate: state.startDate, endDate: state.endDate },
-    });
-    return agg;
+  static reconstitute(row: IncidentRow): IncidentAggregate {
+    return new IncidentAggregate(row.id, row.incidentNumber, row.cameraId, row.status, row.consecutiveGoodChecks);
   }
 
-  static reconstitute(state: ItemState): ItemAggregate {
-    return new ItemAggregate(state);
+  get currentStatus() { return this.status; }
+
+  acknowledge(actorId: string) {
+    if (!['ALERTED', 'CONFIRMED'].includes(this.status)) {
+      throw new ConflictError(`Cannot acknowledge ${this.incidentNumber} from status ${this.status}`);
+    }
+    this.status = 'ACKNOWLEDGED';
+    this.addDomainEvent(new IncidentAcknowledged(this.id, actorId));
   }
 
-  approve(approverId: string): void {
-    // Self-approval guard — CRITICAL
-    if (approverId === this.state.ownerId) {
-      throw new ForbiddenError('You cannot approve your own item');
+  resolve(actorId: string) {
+    if (!['ACKNOWLEDGED', 'ASSIGNED', 'INVESTIGATING'].includes(this.status)) {
+      throw new ConflictError(`Cannot resolve ${this.incidentNumber} from status ${this.status}`);
     }
-    if (this.state.status !== ItemStatus.SUBMITTED) {
-      throw new ConflictError(`Cannot approve a record in ${this.state.status} state`);
-    }
-    this.state.status = ItemStatus.APPROVED;
-    this.addDomainEvent({
-      occurredAt: new Date(),
-      aggregateId: this.state.id,
-      eventType: 'ITEM_APPROVED',
-      payload: { approverId },
-    });
+    this.status = 'RESOLVED';
+    this.consecutiveGoodChecks = 0;
+    this.addDomainEvent(new IncidentResolved(this.id, actorId));
   }
 
-  reject(approverId: string, reason: string): void {
-    if (approverId === this.state.ownerId) {
-      throw new ForbiddenError('You cannot reject your own item');
+  /** Called by the health-probe pipeline after RESOLVED — see skill-workflow-orchestration-patterns.md */
+  recordPostResolutionCheck(passed: boolean) {
+    if (this.status !== 'RESOLVED') return;
+    this.consecutiveGoodChecks = passed ? this.consecutiveGoodChecks + 1 : 0;
+    if (this.consecutiveGoodChecks >= 2) {
+      this.status = 'RECOVERY_VERIFIED';
+      this.addDomainEvent(new IncidentRecoveryVerified(this.id));
     }
-    if (this.state.status !== ItemStatus.SUBMITTED) {
-      throw new ConflictError(`Cannot reject a record in ${this.state.status} state`);
-    }
-    this.state.status = ItemStatus.REJECTED;
-    this.addDomainEvent({
-      occurredAt: new Date(),
-      aggregateId: this.state.id,
-      eventType: 'ITEM_REJECTED',
-      payload: { approverId, reason },
-    });
   }
 
-  cancel(requesterId: string): void {
-    if (requesterId !== this.state.ownerId) {
-      throw new ForbiddenError('Only the owner can cancel their item');
+  close(actorId: string, role: 'PROJECT_ADMIN' | 'SUPER_ADMIN' | string) {
+    if (this.status !== 'RECOVERY_VERIFIED') {
+      throw new ConflictError(`Cannot close ${this.incidentNumber} before recovery is verified`);
     }
-    if (![ItemStatus.SUBMITTED, ItemStatus.APPROVED].includes(this.state.status)) {
-      throw new ConflictError('This record cannot be cancelled');
+    if (role !== 'PROJECT_ADMIN' && role !== 'SUPER_ADMIN') {
+      throw new ForbiddenError('Only PROJECT_ADMIN or SUPER_ADMIN may close an incident');
     }
-    this.state.status = ItemStatus.CANCELLED;
-    this.addDomainEvent({
-      occurredAt: new Date(),
-      aggregateId: this.state.id,
-      eventType: 'ITEM_CANCELLED',
-      payload: { requesterId },
-    });
+    this.status = 'CLOSED';
+    this.addDomainEvent(new IncidentClosed(this.id, actorId));
   }
-
-  get id() { return this.state.id; }
-  get status() { return this.state.status; }
-  get toState() { return { ...this.state }; }
 }
 ```
+
+Notice what's **not** here: no Prisma import, no HTTP status codes, no
+`req.user`. The aggregate only knows domain rules and domain errors; the
+service layer (`skill-mvc-patterns.md`) translates `ConflictError` to
+HTTP 409 and persists via the repository below.
 
 ---
 
-## Value Object pattern
+## Value objects
 
-Value objects have no identity — two with the same values are equal. Use them to avoid primitive obsession.
+A value object has no identity — two instances with the same data are
+interchangeable — and validates itself at construction so an invalid one
+can never exist inside the system.
 
 ```typescript
-// shared/src/domain/value-objects.ts
+// packages/shared/src/domain/incident-number.vo.ts
+const PATTERN = /^ANI-CAM-\d{4}-\d{6}$/; // e.g. "ANI-CAM-2026-000145"
 
-export class Money {
-  constructor(
-    public readonly amount: number,
-    public readonly currency: string = 'INR',
-  ) {
-    if (amount < 0) throw new Error('Money amount cannot be negative');
+export class IncidentNumber {
+  private constructor(public readonly value: string) {}
+
+  static create(raw: string): IncidentNumber {
+    if (!PATTERN.test(raw)) throw new ValidationError(`Invalid incident number: ${raw}`);
+    return new IncidentNumber(raw);
   }
 
-  add(other: Money): Money {
-    if (other.currency !== this.currency) throw new Error('Currency mismatch');
-    return new Money(this.amount + other.amount, this.currency);
-  }
-
-  isGreaterThan(other: Money): boolean {
-    return this.amount > other.amount;
-  }
-
-  equals(other: Money): boolean {
-    return this.amount === other.amount && this.currency === other.currency;
-  }
-
-  format(): string {
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: this.currency }).format(this.amount);
+  static next(year: number, sequence: number): IncidentNumber {
+    return new IncidentNumber(`ANI-CAM-${year}-${String(sequence).padStart(6, '0')}`);
   }
 }
 
-export class EmailAddress {
-  constructor(public readonly value: string) {
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
-      throw new Error(`Invalid email address: ${value}`);
-    }
+// packages/shared/src/domain/connection-quality.vo.ts
+export class ConnectionQuality {
+  private constructor(public readonly score: number) {}
+
+  static create(raw: number): ConnectionQuality {
+    if (raw < 0 || raw > 100 || Number.isNaN(raw)) throw new ValidationError(`Score out of range: ${raw}`);
+    return new ConnectionQuality(Math.round(raw));
   }
 
-  get domain(): string {
-    return this.value.split('@')[1];
-  }
-
-  equals(other: EmailAddress): boolean {
-    return this.value.toLowerCase() === other.value.toLowerCase();
+  get band(): 'HEALTHY' | 'WARNING' | 'CRITICAL' {
+    if (this.score >= 90) return 'HEALTHY';
+    if (this.score >= 50) return 'WARNING';
+    return 'CRITICAL';
   }
 }
+```
 
-export class DateRange {
-  constructor(
-    public readonly start: Date,
-    public readonly end: Date,
-  ) {
-    if (start >= end) throw new Error('Start date must be before end date');
+`EncryptedCredential` (wrapping `mainRtspUrlEnc`) is also a value object: it
+exposes `.encrypt()`/`.decrypt()` and refuses to be constructed from a
+plaintext RTSP URL without a key — see `skill-prisma-patterns.md` for where
+it's allowed to be decrypted.
+
+---
+
+## Repository pattern
+
+The repository is the only thing that knows how to turn Prisma rows into an
+`IncidentAggregate` and back. Services depend on the repository interface,
+never on `PrismaService` directly, when working with an aggregate that has
+real invariants (contrast with simple read-models like a `Site` list, which
+can query Prisma directly — not everything needs a repository).
+
+```typescript
+// apps/api/src/modules/incidents/domain/incident.repository.ts
+export interface IncidentRepository {
+  findById(id: string, scope: AccessScope): Promise<IncidentAggregate>;
+  save(incident: IncidentAggregate): Promise<void>;
+}
+
+@Injectable()
+export class PrismaIncidentRepository implements IncidentRepository {
+  constructor(private readonly prisma: PrismaService, private readonly dispatcher: DomainEventDispatcher) {}
+
+  async findById(id: string, scope: AccessScope): Promise<IncidentAggregate> {
+    const row = await this.prisma.incident.findFirst({ where: { id, zoneId: { in: scope.allowedZoneIds } } });
+    if (!row) throw new NotFoundError('Incident', id);
+    return IncidentAggregate.reconstitute(row);
   }
 
-  get durationDays(): number {
-    return Math.ceil((this.end.getTime() - this.start.getTime()) / (1000 * 60 * 60 * 24));
-  }
-
-  overlaps(other: DateRange): boolean {
-    return this.start < other.end && this.end > other.start;
-  }
-
-  contains(date: Date): boolean {
-    return date >= this.start && date <= this.end;
+  async save(incident: IncidentAggregate): Promise<void> {
+    await this.prisma.incident.update({
+      where: { id: incident.id },
+      data: { status: incident.currentStatus },
+    });
+    const events = incident.pullDomainEvents();
+    for (const event of events) await this.dispatcher.dispatch(event); // after commit, per skill-mvc-patterns.md
   }
 }
 ```
 
 ---
 
-## Bounded Context mapping
+## Domain event dispatcher
 
 ```typescript
-// Anti-corruption layer between Item module and Report module
-// backend/src/modules/report/infrastructure/item-acl.ts
+// packages/shared/src/domain/domain-event-dispatcher.ts
+@Injectable()
+export class DomainEventDispatcher {
+  private handlers = new Map<string, Array<(e: DomainEvent) => Promise<void>>>();
 
-import { prisma } from '../../../lib/prisma.js';
+  register(eventName: string, handler: (e: DomainEvent) => Promise<void>) {
+    const list = this.handlers.get(eventName) ?? [];
+    list.push(handler);
+    this.handlers.set(eventName, list);
+  }
 
-// Report uses its own Item concept — maps from the core Item
-export interface ReportItem {
-  id: string;
-  monthlyAmount: number;
-  secretEncrypted: string;
-  tier: 'BASIC' | 'STANDARD' | 'HIGH';
+  async dispatch(event: DomainEvent) {
+    for (const handler of this.handlers.get(event.constructor.name) ?? []) await handler(event);
+  }
+}
+```
+
+Registered handlers, e.g. in `incident.event-handlers.ts`:
+
+- `IncidentAcknowledged` → cancel the pending escalation repeat job
+  (`escalationQueue.removeRepeatableByKey`).
+- `IncidentResolved` → nothing queued yet; the health-probe pipeline itself
+  calls `recordPostResolutionCheck` on the next scheduled check.
+- `IncidentRecoveryVerified` → enqueue `notifications` job "recovery
+  confirmed", compute `downtimeSeconds` for the report rollup.
+- `IncidentClosed` → write the final `AuditLog` row, freeze the
+  `IncidentEvent` timeline from further inserts.
+
+---
+
+## Anti-corruption layer (ACL)
+
+When one bounded context needs data shaped by another (see
+`skill-ddd-bounded-contexts-patterns.md`), it never imports that context's
+Prisma model or aggregate directly — it goes through a small translator that
+owns the impedance mismatch.
+
+```typescript
+// apps/api/src/modules/reporting/acl/incident-reporting.acl.ts
+// Translates the Incidents context's IncidentAggregate into the Reporting
+// context's own read-model shape — Reporting doesn't need to know about
+// consecutiveGoodChecks or the full state machine, only the fields it reports on.
+export interface IncidentReportLine {
+  incidentNumber: string;
+  cameraCode: string;
+  diagnosis: string;
+  downtimeSeconds: number;
 }
 
-export class ItemAntiCorruptionLayer {
-  static async getReportItem(itemId: string, organizationId: string): Promise<ReportItem> {
-    const item = await prisma.item.findFirst({
-      where: { id: itemId, organizationId, deletedAt: null },
-      include: { category: true },
-    });
-    if (!item) throw new Error(`Item ${itemId} not found`);
-
-    // Translate core Item concept → Report Item concept
+@Injectable()
+export class IncidentReportingAcl {
+  toReportLine(incident: IncidentWithCamera): IncidentReportLine {
     return {
-      id: item.id,
-      monthlyAmount: item.monthlyAmountEncrypted ? decryptAmount(item.monthlyAmountEncrypted) : 0,
-      secretEncrypted: item.secretEncrypted ?? '',
-      tier: item.monthlyAmount > 100000 ? 'HIGH' : item.monthlyAmount > 50000 ? 'STANDARD' : 'BASIC',
+      incidentNumber: incident.incidentNumber,
+      cameraCode: incident.camera.cameraCode,
+      diagnosis: incident.diagnosis,
+      downtimeSeconds: incident.downtimeSeconds ?? 0,
     };
   }
 }
-
-function decryptAmount(encrypted: string): number {
-  // Use encryption utility from skill-encryption-patterns.md
-  return 0; // placeholder
-}
 ```
 
----
-
-## Domain Event dispatcher
-
-```typescript
-// backend/src/lib/domain-event-dispatcher.ts
-import { DomainEvent } from '@boilerplate/shared/domain/aggregate.js';
-import { io } from '../socket.js';
-import { auditLogger } from '../utils/auditLogger.js';
-import { prisma } from './prisma.js';
-
-type EventHandler = (event: DomainEvent, organizationId: string) => Promise<void>;
-
-const handlers: Map<string, EventHandler[]> = new Map();
-
-export const DomainEventDispatcher = {
-  register(eventType: string, handler: EventHandler) {
-    if (!handlers.has(eventType)) handlers.set(eventType, []);
-    handlers.get(eventType)!.push(handler);
-  },
-
-  async dispatch(events: DomainEvent[], organizationId: string) {
-    for (const event of events) {
-      const eventHandlers = handlers.get(event.eventType) ?? [];
-      await Promise.all(eventHandlers.map(h => h(event, organizationId)));
-    }
-  },
-};
-
-// Register handlers once at startup
-// backend/src/modules/item/item.event-handlers.ts
-DomainEventDispatcher.register('ITEM_APPROVED', async (event, organizationId) => {
-  // 1. Send notification
-  await prisma.notification.create({
-    data: {
-      userId: event.payload.ownerId as string,
-      organizationId,
-      type: 'ITEM_APPROVED',
-      message: 'Your item has been approved',
-      entityId: event.aggregateId,
-    },
-  });
-  // 2. Emit socket event
-  io.to(`org:${organizationId}`).emit('notification:new', { userId: event.payload.ownerId });
-});
-```
-
----
-
-## Repository pattern (wraps Prisma)
-
-```typescript
-// backend/src/modules/item/infrastructure/item.repository.ts
-import { prisma } from '../../../lib/prisma.js';
-import { ItemAggregate } from '../domain/item.aggregate.js';
-
-export class ItemRepository {
-  async findById(id: string, organizationId: string): Promise<ItemAggregate | null> {
-    const record = await prisma.item.findFirst({
-      where: { id, organizationId, deletedAt: null },
-    });
-    if (!record) return null;
-    return ItemAggregate.reconstitute(record);
-  }
-
-  async save(agg: ItemAggregate, tx = prisma): Promise<void> {
-    const state = agg.toState;
-    await tx.item.upsert({
-      where: { id: state.id },
-      create: state,
-      update: state,
-    });
-  }
-}
-```
-
----
-
-## When to use DDD patterns
-
-| Use | When |
-|-----|------|
-| Aggregate | Multiple objects must change together atomically |
-| Value Object | Two instances with same data should be considered equal |
-| Domain Event | Something happened that other parts of the system need to react to |
-| Repository | You want to decouple persistence from domain logic |
-| Anti-Corruption Layer | Two modules have different concepts of the "same" entity |
-| Bounded Context | Module has its own ubiquitous language and should not share models |
+This is the same shape as the `IamUser`→`AuthUser` boundary crossing
+described in `skill-ddd-bounded-contexts-patterns.md`: Identity's full user
+row (with password hash, refresh tokens) never crosses into another
+context — only a translated, minimal `AuthUser { id, role, allowedZoneIds }`
+does.

@@ -48,7 +48,7 @@
 | `agent-refactor` | Remove code duplication |
 | `agent-security` | Full security audit (OWASP Top 10) |
 | `agent-test-writer` | Write Vitest unit tests and Playwright E2E tests |
-| `agent-ui-ux` | Mobile layout, PWA, accessibility audit |
+| `agent-vms-uiux` | Mobile layout, PWA, accessibility audit |
 | `agent-electron` | Electron desktop, IPC, auto-update, NSIS installer |
 
 ## IMPORTANT — No Worktrees

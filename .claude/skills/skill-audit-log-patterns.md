@@ -1,332 +1,157 @@
-# Skill — Audit Log Patterns
-
-Write, query, and display audit logs for compliance. Every create/update/delete must be logged.
+# Skill — Audit Log Patterns (credential, stream & incident access)
 
 ---
 
-## Prisma model (already in boilerplate)
+Write, query, and display audit logs for compliance. Every credential-decrypt, stream-session start,
+incident action, and privileged CRUD must be logged. When a mutation and its audit entry both touch the
+DB, they go in the **same Prisma transaction** — an audit trail that can silently fail to write is not a
+trail.
+
+## AuditLog model (already in `docs/05-backend-schema.md`)
 
 ```prisma
 model AuditLog {
-  id             String   @id @default(uuid())
+  id             String      @id @default(uuid())
   organizationId String
-  actorId        String              // who did it
-  action         String              // e.g. 'ITEM_CREATED'
-  entity         String              // e.g. 'Item'
-  entityId       String?             // the record's ID
-  before         Json?               // state before change (for updates)
-  after          Json?               // state after change
+  actorId        String?     // null for system/BullMQ-job-initiated entries
+  action         AuditAction
+  entityType     String      // 'Camera' | 'Router' | 'Incident' | 'User' | 'OrgSettings' | ...
+  entityId       String?
+  metadata       Json?       // redacted diff / context — never raw credentials
   ipAddress      String?
   userAgent      String?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime    @default(now())
 
-  actor        User         @relation(fields: [actorId], references: [id])
-  organization Organization @relation(fields: [organizationId], references: [id])
+  @@index([organizationId, entityType, entityId])
+  @@index([organizationId, createdAt])
+}
 
-  @@index([organizationId])
-  @@index([actorId])
-  @@index([entity, entityId])
-  @@index([createdAt])
-  @@index([organizationId, createdAt])  // for paginated org-scoped listing
+enum AuditAction {
+  CAMERA_CREATED
+  CAMERA_UPDATED
+  CAMERA_DELETED
+  CAMERA_RESTORED
+  CAMERA_CREDENTIALS_VIEWED
+  ROUTER_CREDENTIALS_VIEWED
+  ROUTER_REBOOT_TRIGGERED
+  STREAM_SESSION_STARTED
+  CLIP_EXPORTED
+  INCIDENT_CREATED
+  INCIDENT_ACKNOWLEDGED
+  INCIDENT_RESOLVED
+  INCIDENT_ESCALATED
+  ROLE_CHANGED
+  ORG_SETTINGS_UPDATED
+  PASSWORD_CHANGED
+  PLATFORM_CROSS_ORG_READ
 }
 ```
 
----
-
-## auditLogger utility (already in boilerplate)
+## Redacting sensitive fields before they ever reach `metadata`
 
 ```typescript
-// backend/src/utils/auditLogger.ts
-import type { Prisma } from '@prisma/client';
+// apps/api/src/common/utils/audit-logger.ts
+const SENSITIVE_FIELDS = [
+  'passwordHash', 'rtspPasswordEncrypted', 'onvifPasswordEncrypted',
+  'adminPasswordEncrypted', 'simPinEncrypted', 'refreshToken',
+];
 
-interface LogParams {
-  action:         string;
-  entity:         string;
-  entityId?:      string;
-  actorId:        string;
-  organizationId: string;
-  before?:        object;
-  after?:         object;
-  ipAddress?:     string;
-  userAgent?:     string;
-}
-
-export const auditLogger = {
-  // Pass the transaction client so the log is part of the same transaction
-  async log(tx: Prisma.TransactionClient, params: LogParams) {
-    await tx.auditLog.create({ data: params });
-  },
-
-  // For cases where you need to log outside a transaction
-  async logDirect(params: LogParams) {
-    await prisma.auditLog.create({ data: params });
-  },
-};
-```
-
----
-
-## Service — log every state-changing operation
-
-```typescript
-// Standard logging pattern in every service method:
-
-// CREATE
-const item = await tx.item.create({ data });
-await auditLogger.log(tx, {
-  action: 'ITEM_CREATED',
-  entity: 'Item',
-  entityId: item.id,
-  actorId: actor.id,
-  organizationId: actor.organizationId,
-  after: item,                               // full record after creation
-});
-
-// UPDATE
-const before = await tx.item.findUniqueOrThrow({ where: { id } });
-const after  = await tx.item.update({ where: { id }, data: dto });
-await auditLogger.log(tx, {
-  action: 'ITEM_UPDATED',
-  entity: 'Item',
-  entityId: id,
-  actorId: actor.id,
-  organizationId: actor.organizationId,
-  before,                                    // state before — for diff view
-  after,                                     // state after
-});
-
-// DELETE (soft)
-await auditLogger.log(tx, {
-  action: 'ITEM_DELETED',
-  entity: 'Item',
-  entityId: id,
-  actorId: actor.id,
-  organizationId: actor.organizationId,
-  before: existingItem,
-});
-
-// STATUS CHANGE
-await auditLogger.log(tx, {
-  action: 'ITEM_APPROVED',
-  entity: 'Item',
-  entityId: id,
-  actorId: actor.id,
-  organizationId: actor.organizationId,
-  before: { status: 'SUBMITTED' },
-  after:  { status: 'APPROVED', approverId: actor.id },
-});
-```
-
----
-
-## Audit log action catalog
-
-```typescript
-// shared/src/enums.ts — define all actions
-export enum AuditAction {
-  // Auth
-  LOGIN             = 'LOGIN',
-  LOGOUT            = 'LOGOUT',
-  PASSWORD_CHANGED  = 'PASSWORD_CHANGED',
-
-  // Item
-  ITEM_CREATED  = 'ITEM_CREATED',
-  ITEM_UPDATED  = 'ITEM_UPDATED',
-  ITEM_DELETED  = 'ITEM_DELETED',
-  ITEM_RESTORED = 'ITEM_RESTORED',
-
-  // Item workflow
-  ITEM_SUBMITTED   = 'ITEM_SUBMITTED',
-  ITEM_APPROVED    = 'ITEM_APPROVED',
-  ITEM_REJECTED    = 'ITEM_REJECTED',
-  ITEM_CANCELLED   = 'ITEM_CANCELLED',
-
-  // Admin
-  ROLE_CHANGED      = 'ROLE_CHANGED',
-  ORG_SETTINGS_UPDATED = 'ORG_SETTINGS_UPDATED',
-}
-```
-
----
-
-## Audit log service — query with filters
-
-```typescript
-// backend/src/modules/audit/audit.service.ts
-export class AuditService {
-  static async list(query: AuditListQuery, actor: AuthUser) {
-    // Only SUPER_ADMIN and ADMIN can view audit logs
-    if (![UserRole.SUPER_ADMIN, UserRole.ADMIN].includes(actor.role)) {
-      throw new ForbiddenError('Audit logs require admin access');
-    }
-
-    const { page = 1, limit = 50, entity, entityId, actorId, action, from, to } = query;
-
-    const where: Prisma.AuditLogWhereInput = {
-      organizationId: actor.organizationId,
-    };
-
-    if (entity)   where.entity   = entity;
-    if (entityId) where.entityId = entityId;
-    if (actorId)  where.actorId  = actorId;
-    if (action)   where.action   = action;
-    if (from || to) {
-      where.createdAt = {
-        ...(from ? { gte: new Date(from) } : {}),
-        ...(to   ? { lte: new Date(to)   } : {}),
-      };
-    }
-
-    const [data, total] = await prisma.$transaction([
-      prisma.auditLog.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-        include: {
-          actor: { select: { id: true, email: true, profile: { select: { firstName: true, lastName: true } } } },
-        },
-      }),
-      prisma.auditLog.count({ where }),
-    ]);
-
-    return { data, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } };
-  }
-
-  // Get the full history for a specific record
-  static async getEntityHistory(entity: string, entityId: string, actor: AuthUser) {
-    if (![UserRole.SUPER_ADMIN, UserRole.ADMIN].includes(actor.role)) {
-      throw new ForbiddenError('Audit logs require admin access');
-    }
-    return prisma.auditLog.findMany({
-      where: { entity, entityId, organizationId: actor.organizationId },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        actor: { select: { id: true, email: true } },
-      },
-    });
-  }
-}
-```
-
----
-
-## Frontend — Audit log timeline component
-
-```typescript
-// frontend/src/features/audit/AuditTimeline.tsx
-import { formatDateTime } from '@/lib/utils';
-
-interface AuditEntry {
-  id: string;
-  action: string;
-  actor: { email: string; profile?: { firstName: string; lastName: string } };
-  before?: Record<string, unknown>;
-  after?:  Record<string, unknown>;
-  createdAt: string;
-}
-
-const ACTION_LABELS: Record<string, { label: string; color: string }> = {
-  ITEM_CREATED:  { label: 'Created',  color: 'var(--positive-color)' },
-  ITEM_UPDATED:  { label: 'Updated',  color: 'var(--primary-color)' },
-  ITEM_DELETED:  { label: 'Deleted',  color: 'var(--negative-color)' },
-  ITEM_APPROVED:    { label: 'Approved', color: 'var(--positive-color)' },
-  ITEM_REJECTED:    { label: 'Rejected', color: 'var(--negative-color)' },
-  ROLE_CHANGED:      { label: 'Role changed', color: 'var(--warning-color)' },
-};
-
-export function AuditTimeline({ entries }: { entries: AuditEntry[] }) {
-  return (
-    <div className="relative">
-      {/* Vertical line */}
-      <div className="absolute left-4 top-0 bottom-0 w-px bg-[var(--border-color)]" />
-
-      <div className="space-y-6 pl-10">
-        {entries.map(entry => {
-          const meta = ACTION_LABELS[entry.action] ?? { label: entry.action, color: 'var(--secondary-text-color)' };
-          const actorName = entry.actor.profile
-            ? `${entry.actor.profile.firstName} ${entry.actor.profile.lastName}`
-            : entry.actor.email;
-
-          return (
-            <div key={entry.id} className="relative">
-              {/* Dot */}
-              <div className="absolute -left-6 w-2.5 h-2.5 rounded-full border-2 border-white"
-                style={{ backgroundColor: meta.color, top: '6px' }} />
-
-              <div className="floating-card rounded-[var(--border-radius-medium)] p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <span className="badge" style={{ backgroundColor: `${meta.color}22`, color: meta.color }}>
-                      {meta.label}
-                    </span>
-                    <p className="text-sm text-[var(--secondary-text-color)] mt-1">
-                      by <span className="font-medium text-[var(--primary-text-color)]">{actorName}</span>
-                    </p>
-                  </div>
-                  <span className="text-xs text-[var(--text-tertiary)] whitespace-nowrap">{formatDateTime(entry.createdAt)}</span>
-                </div>
-
-                {/* Diff view for updates */}
-                {entry.before && entry.after && (
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    <div className="bg-[rgba(216,58,82,0.06)] rounded p-2">
-                      <p className="text-xs font-medium text-[var(--negative-color)] mb-1">Before</p>
-                      <pre className="text-xs text-[var(--primary-text-color)] whitespace-pre-wrap">{JSON.stringify(entry.before, null, 2)}</pre>
-                    </div>
-                    <div className="bg-[rgba(0,133,77,0.06)] rounded p-2">
-                      <p className="text-xs font-medium text-[var(--positive-color)] mb-1">After</p>
-                      <pre className="text-xs text-[var(--primary-text-color)] whitespace-pre-wrap">{JSON.stringify(entry.after, null, 2)}</pre>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
+function sanitizeForAudit(entity: Record<string, unknown>) {
+  return Object.fromEntries(
+    Object.entries(entity).map(([k, v]) => [k, SENSITIVE_FIELDS.includes(k) ? '[REDACTED]' : v]),
   );
 }
 ```
 
----
-
-## Sanitize before logging — never log sensitive fields
+## Logging pattern — audit entry created in the same transaction as the mutation
 
 ```typescript
-// backend/src/utils/auditLogger.ts — sanitize before storing
-const SENSITIVE_FIELDS = ['password', 'passwordHash', 'secretEncrypted'];
-
-function sanitize(obj: object | undefined): object | undefined {
-  if (!obj) return obj;
-  const clone = { ...obj } as Record<string, unknown>;
-  for (const key of SENSITIVE_FIELDS) {
-    if (key in clone) clone[key] = '[REDACTED]';
-  }
-  return clone;
+// apps/api/src/modules/cameras/cameras.service.ts
+async update(actor: AuthUser, id: string, dto: UpdateCameraDto) {
+  return this.prisma.$transaction(async (tx) => {
+    const before = await tx.camera.findFirstOrThrow({ where: { id, organizationId: actor.organizationId } });
+    const after = await tx.camera.update({ where: { id }, data: dto });
+    await this.auditLogger.log(tx, {
+      action: 'CAMERA_UPDATED',
+      organizationId: actor.organizationId,
+      actorId: actor.id,
+      entityType: 'Camera',
+      entityId: id,
+      metadata: { before: sanitizeForAudit(before), after: sanitizeForAudit(after) },
+    });
+    return after;
+  });
 }
-
-// In log():
-await tx.auditLog.create({
-  data: {
-    ...params,
-    before: sanitize(params.before),
-    after:  sanitize(params.after),
-  },
-});
 ```
 
----
+## Credential views and stream sessions are always logged (no silent reads)
 
-## Checklist
+```typescript
+async getDecryptedCredentials(actor: AuthUser, id: string) {
+  const camera = await this.prisma.camera.findFirstOrThrow({ where: { id, organizationId: actor.organizationId } });
+  await this.auditLogger.log({
+    action: 'CAMERA_CREDENTIALS_VIEWED',
+    organizationId: actor.organizationId,
+    actorId: actor.id,
+    entityType: 'Camera',
+    entityId: id,
+    ipAddress: actor.ip,
+  });
+  return { rtspPassword: safeDecrypt(camera.rtspPasswordEncrypted) };
+}
+```
 
-- [ ] `auditLogger.log()` called inside every `$transaction` on create/update/delete
-- [ ] `before` snapshot captured BEFORE the update query, `after` captured FROM the update result
-- [ ] Sensitive encrypted fields are sanitized to `[REDACTED]` before storing in `before`/`after`
-- [ ] `AuditLog` has `@@index([organizationId, createdAt])` for fast paginated listing
-- [ ] Audit list endpoint restricted to ADMIN and SUPER_ADMIN only
-- [ ] Entity history endpoint (by entity + entityId) available for drill-down
-- [ ] Action names defined as an enum in `shared/src/enums.ts`
-- [ ] Timeline component shows before/after diff for UPDATE actions
-- [ ] Audit log export to PDF/Excel available (use skill-report-export-patterns)
+## Querying entity history
+
+```typescript
+async getEntityHistory(organizationId: string, entityType: string, entityId: string) {
+  return this.prisma.auditLog.findMany({
+    where: { organizationId, entityType, entityId },
+    orderBy: { createdAt: 'desc' },
+    take: 100,
+  });
+}
+```
+
+## Frontend — timeline components (incident escalation, camera history)
+
+```typescript
+// frontend/src/features/audit/AuditTimeline.tsx
+const ACTION_LABELS: Record<AuditAction, string> = {
+  CAMERA_CREDENTIALS_VIEWED: 'Credentials viewed',
+  INCIDENT_ACKNOWLEDGED: 'Incident acknowledged',
+  INCIDENT_ESCALATED: 'Incident escalated',
+  ROUTER_REBOOT_TRIGGERED: 'Router reboot triggered',
+  // ... one label per AuditAction, kept in shared/src/enums.ts alongside the enum itself
+};
+
+function AuditTimeline({ entries }: { entries: AuditEntry[] }) {
+  return (
+    <ol>
+      {entries.map((entry) => (
+        <li key={entry.id} className="flex gap-3 border-l-2 pl-3">
+          <span className="text-tertiary">{formatDateTime(entry.createdAt)}</span>
+          <span className="font-medium">{ACTION_LABELS[entry.action] ?? entry.action}</span>
+          <span className="text-secondary">{entry.actorName ?? 'System'}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+```
+
+`EscalationTimeline` (incident detail page) and camera/router "credential access" history panels both
+reuse this same `AuditTimeline` component, filtered by `entityType`/`entityId`.
+
+## Rules
+
+1. Every credential decrypt, stream-session start, incident state change, role change, and org-settings
+   update writes an `AuditLog` row — grep any new mutation for a matching `auditLogger.log(...)` call
+   before merging.
+2. Mutation + audit write happen in the same `$transaction` wherever the mutation is itself transactional;
+   an audit entry must never be the thing that's missing after a partial failure.
+3. `metadata` is always passed through `sanitizeForAudit()` — `SENSITIVE_FIELDS` (password hashes, any
+   `*Encrypted` column, refresh tokens) are redacted, never stored in the clear in the audit trail.
+4. Audit log rows are scoped by `organizationId` like every other tenant model, and `SUPER_ADMIN` cross-org
+   reads (`PLATFORM_CROSS_ORG_READ`) get their own dedicated action so they're distinguishable in review.
+5. Audit history is append-only — no `update`/`delete` on `AuditLog` rows, ever.

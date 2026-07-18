@@ -1,205 +1,179 @@
 # Skill — DDD Bounded Contexts Patterns
 
 For apps with > 10 entities where a single design becomes unreadable. Splits
-the app into bounded contexts, each with its own vocabulary, its own
-persistence, and its own team-of-agents.
+Aniston VMS's `apps/api` into bounded contexts, each with its own
+vocabulary, its own module boundary, and its own team-of-agents ownership.
 
 Complements `skill-domain-modeling-patterns.md` (which covers tactical DDD
 inside a context — aggregates, value objects, repositories).
 
 ---
 
-## When to split into bounded contexts
+## The five bounded contexts
 
-Split when TWO of these are true:
+Per `docs/06-implementation-plan.md`, Aniston VMS's `apps/api` is organized
+into five contexts. They share one Postgres database (this is a modular
+monolith, not microservices — contrast with `services/media` and
+`services/image-analysis`, which genuinely are separate deployables, see
+`skill-system-design-patterns.md`), but each context owns its own NestJS
+module, its own vocabulary, and never reaches into another context's Prisma
+models directly.
 
-1. The RBAC matrix has > 20 resource-action cells (`shared/permissions.ts`)
-2. The Prisma schema has > 12 models
-3. Two roles use the same word to mean different things ("Customer" = who?)
-4. Two workflows share entity names but not entity IDs (a `Booking` in
-   billing ≠ a `Booking` in operations)
+| Context | Owns | Key entities |
+|---|---|---|
+| **Monitoring/Health** | Infrastructure inventory + live health signal | `Region`, `Site`, `Zone`, `Camera`, `Router`, `Sim`, `HealthCheck` |
+| **Incidents** | Fault lifecycle, alerting, remediation tracking | `Incident`, `IncidentEvent`, `EscalationPolicy`, `EscalationStep`, `AlertRule`, `Notification`, `MaintenanceTask` |
+| **Streaming/Playback** | Live view + SD-card recording retrieval | `StreamSession`, `ClipExport`, `SavedLayout`, `CameraPlaybackAdapter` |
+| **Reporting** | Aggregation and export, no independent write model | uptime/SLA rollups, `ReportExport`, read-models built from the other four contexts |
+| **Identity/RBAC** | Who can do what, where | `User`, `Role`, `UserAccessScope`, `RefreshToken`, `AuditLog` |
 
-Do NOT split when only ONE is true. Premature splitting adds more coordination
-cost than it saves.
+```
+apps/api/src/modules/
+  monitoring/     # Site, Zone, Camera, Router, Sim, HealthCheck
+  incidents/      # Incident, EscalationPolicy, AlertRule, Notification, MaintenanceTask
+  streaming/      # StreamSession, ClipExport, SavedLayout
+  reporting/      # read-only rollups, exports
+  identity/       # User, Role, UserAccessScope, AuditLog
+```
+
+Rule: a controller or service in one module **never** imports another
+module's Prisma model, aggregate, or repository directly. It depends on that
+module's exported *service* (via Nest's `exports: []` in the `@Module`
+decorator — see `skill-mvc-patterns.md`), or on a translator (ACL) if the
+shapes genuinely don't match.
 
 ---
 
-## Pattern — Context map (Mermaid)
+## Cross-context event flow: Monitoring/Health → Incidents
 
-Draw the contexts as bubbles, the relationships as arrows.
-
-````markdown
-```mermaid
-graph LR
-    IAM[Identity & Access] -->|Customer identity| Billing[Billing]
-    IAM -->|Member identity| Operations[Operations]
-    Billing -->|Payment confirmation| Notifications[Notifications]
-    Operations -->|Booking created| Notifications
-    Operations -->|Booking completed| Billing
-```
-````
-
-Relationship types (label the arrow):
-- `Customer/Supplier` — upstream context provides data, downstream depends on it
-- `Conformist` — downstream accepts upstream's model as-is
-- `Anti-Corruption Layer (ACL)` — downstream translates to protect its own model
-- `Shared Kernel` — both contexts share a small strictly-versioned schema
-- `Open Host Service` — upstream publishes a stable API to many consumers
-- `Partnership` — mutual dependency, coordinated release
-
----
-
-## Pattern — Ubiquitous language table (per context)
-
-The same word means different things in different contexts. Name it.
-
-```markdown
-| Word | IAM meaning | Billing meaning | Operations meaning |
-|---|---|---|---|
-| Customer | Person with a User account | Party we invoice | Person we serve |
-| Account | Login credential set | Billing profile | — |
-| Balance | — | Amount owed | — |
-| Order | — | Line item on invoice | Service booking |
-```
-
-Rows help freshers stop naming a Billing entity `Customer` when they mean
-`InvoiceRecipient`.
-
----
-
-## Pattern — File-tree layout for bounded contexts
-
-Bounded contexts map to **modules** in this boilerplate:
-
-```
-backend/src/modules/
-  iam/                       ← Identity & Access context
-    user/                    ← subdomain within IAM
-    session/
-    permission/
-  billing/                   ← Billing context
-    invoice/
-    payment/
-    subscription/
-  operations/                ← Operations context
-    booking/
-    resource/
-    schedule/
-```
-
-**Cross-context calls** happen through domain events or an explicit ACL — not
-by importing another context's Prisma types.
-
----
-
-## Pattern — Anti-Corruption Layer (ACL)
-
-Guards a context from an upstream's shape. Downstream defines its own type,
-translates on the boundary.
+The canonical cross-context example in this codebase: the Monitoring/Health
+context detects a fault; the Incidents context decides whether that's
+actionable and owns everything from there. These two contexts must **not**
+share a single `HealthCheckFailed`-does-everything god-service — each has
+its own vocabulary.
 
 ```typescript
-// backend/src/modules/billing/acl/iamAdapter.ts
+// apps/api/src/modules/monitoring/health-check.service.ts
+// Monitoring/Health context — knows about RTSP ports, ONVIF, SIM signal.
+// It does NOT know what an "incident" is, what escalation means, or who gets notified.
+@Injectable()
+export class HealthCheckService {
+  constructor(private readonly prisma: PrismaService, private readonly events: DomainEventDispatcher) {}
 
-// Billing's OWN model of what a customer is
-export interface BillingCustomer {
+  async recordResult(cameraId: string, checkType: CheckType, passed: boolean, detail: Json) {
+    const check = await this.prisma.healthCheck.create({ data: { cameraId, checkType, passed, detail } });
+    if (!passed) {
+      this.events.dispatch(new HealthCheckFailedEvent(cameraId, checkType, detail));
+    }
+    return check;
+  }
+}
+```
+
+```typescript
+// apps/api/src/modules/incidents/acl/health-to-incident.acl.ts
+// Anti-corruption layer: translates a Monitoring/Health-context event into
+// the Incidents context's own vocabulary (a "candidate" the diagnosis
+// engine and business rules in skill-business-rules-patterns.md can act on).
+// This is the same mechanic as translating a "BookingCompleted" event into
+// an "invoice" in a billing context — only the nouns changed.
+@Injectable()
+export class HealthToIncidentAcl {
+  constructor(private readonly incidents: IncidentsService) {}
+
+  @OnEvent('HealthCheckFailedEvent') // handled in apps/api/src/modules/incidents/handlers/onHealthCheckFailed.ts
+  async handle(event: HealthCheckFailedEvent) {
+    const candidate: IncidentCandidate = {
+      cameraId: event.cameraId,
+      failedCheckType: event.checkType,
+      detail: event.detail,
+    };
+    await this.incidents.createIncidentForHealthBreach(candidate);
+  }
+}
+```
+
+```typescript
+// apps/api/src/modules/incidents/incidents.service.ts (excerpt)
+// Incidents context vocabulary: "candidate", "incident", "escalation policy" —
+// never "health check" or "RTSP port" directly; those are Monitoring/Health nouns.
+async createIncidentForHealthBreach(candidate: IncidentCandidate) {
+  const diagnosis = this.diagnosisEngine.diagnose(candidate); // skill-business-rules-patterns.md
+  return this.prisma.incident.create({
+    data: { cameraId: candidate.cameraId, diagnosis, status: 'DETECTED', incidentNumber: await this.nextIncidentNumber() },
+  });
+}
+```
+
+---
+
+## Identity/RBAC as a boundary: never leak the full `User` row
+
+Every other context needs "who is this" but must never see a password hash,
+a refresh-token row, or the full `user_access_scopes` join. Identity exposes
+a translated, minimal shape.
+
+```typescript
+// apps/api/src/modules/identity/acl/identity.acl.ts
+export interface AuthUser {
   id: string;
-  displayName: string;
-  invoiceEmail: string;
-  billingAddressLine: string;
+  role: Role;
+  allowedZoneIds: string[];
 }
 
-// Translate from IAM's User model — never import User type into billing/*
-import type { User as IamUser } from '@prisma/client';
+@Injectable()
+export class IdentityAcl {
+  constructor(private readonly identity: IdentityService) {}
 
-export function toBillingCustomer(iamUser: IamUser & { billingProfile: any }): BillingCustomer {
-  return {
-    id: iamUser.id,
-    displayName: iamUser.fullName,
-    invoiceEmail: iamUser.billingProfile?.email ?? iamUser.email,
-    billingAddressLine: iamUser.billingProfile?.address ?? '',
-  };
+  async toAuthUser(userId: string): Promise<AuthUser> {
+    const user = await this.identity.getFullUserForInternalUseOnly(userId); // never exported outside identity/
+    return { id: user.id, role: user.role, allowedZoneIds: user.accessScopes.map((s) => s.zoneId) };
+  }
 }
 ```
 
-**Rule:** every Billing service that needs customer data uses `toBillingCustomer`
-— never accesses `iamUser.fullName` directly. IAM can change its user shape
-without breaking Billing.
+`ScopeGuard` (`skill-mvc-patterns.md`) is the consumer of `IdentityAcl` on
+every request — it is how the other four contexts get an `AccessScope`
+without ever importing `identity/`'s Prisma models.
 
 ---
 
-## Pattern — Domain events for cross-context communication
+## Streaming/Playback: hardware differences stay behind one interface
 
-Contexts talk via typed events, not method calls.
-
-```typescript
-// shared/src/events/operationsEvents.ts
-export type BookingCompletedEvent = {
-  type: 'BookingCompleted';
-  bookingId: string;
-  organizationId: string;
-  customerId: string;
-  amountCents: number;
-  completedAt: Date;
-};
-```
-
-Operations publishes:
+The Streaming/Playback context talks to physically different camera
+firmwares (ONVIF-compliant, Hikvision, Dahua/CPPlus, or none at all with SD
+playback support). The rest of the codebase — and the other four contexts —
+only ever see one interface:
 
 ```typescript
-// backend/src/modules/operations/booking/booking.service.ts
-await outbox.store(tx, {
-  aggregateId: booking.id,
-  aggregateType: 'Booking',
-  eventType: 'BookingCompleted',
-  payload: bookingCompletedEvent,
-  organizationId: actor.organizationId,
-});
-```
-
-Billing subscribes:
-
-```typescript
-// backend/src/modules/billing/handlers/onBookingCompleted.ts
-export async function onBookingCompleted(event: BookingCompletedEvent) {
-  await BillingService.createInvoiceForCompletedBooking(event);
+// apps/api/src/modules/streaming/adapters/camera-playback.adapter.ts
+export interface CameraPlaybackAdapter {
+  listSegments(cameraId: string, day: string): Promise<PlaybackSegment[]>;
+  getPlaybackUrl(cameraId: string, start: Date, end: Date): Promise<string>;
+  supportsScale(): boolean; // some firmwares can't do >1x scrub
 }
+// Implementations: OnvifPlaybackAdapter, HikvisionPlaybackAdapter,
+// DahuaPlaybackAdapter, UnsupportedPlaybackAdapter (graceful "no SD playback" response)
 ```
 
-See `skill-workflow-orchestration-patterns.md` for the outbox + worker
-plumbing.
+---
+
+## Reporting: read-only, no independent write model
+
+Reporting never owns a source-of-truth table for anything the other four
+contexts already own. It only builds rollups (uptime %, incident counts,
+downtime minutes) by querying across contexts through their exported
+services or dedicated read-model views, and exports them
+(`docs/05-backend-schema.md` §Reports). If a report needs a number that
+doesn't exist yet, that number is added to the owning context — never
+computed by reaching into that context's tables directly from Reporting.
 
 ---
 
-## Pattern — Naming and folder rules
+## When *not* to split further
 
-- Context folder = kebab-case business term. `iam`, not `identity_access`.
-- Subdomain folder inside a context = kebab-case business noun. `booking`, not
-  `booking-service`.
-- No shared model imports across context boundaries. Use ACL or event.
-- One `permissions.ts` entry per resource per context: `iam.users`,
-  `billing.invoices`, `operations.bookings`.
-- Migrations named with context prefix: `20260707_billing_add_invoice.sql`.
-
----
-
-## Pattern — When NOT to use DDD
-
-- App < 8 entities. Skip bounded contexts entirely.
-- Solo developer, throwaway prototype, < 6-month product life. Skip DDD tactical too.
-- No clear vocabulary conflict. If everyone means the same "Customer", don't split.
-
----
-
-## Checklist
-
-- [ ] Context map drawn (Mermaid) with labeled relationships
-- [ ] Ubiquitous language table has ≥ 3 words that mean different things
-      across contexts (else you don't need contexts)
-- [ ] Each context has its own module folder in `backend/src/modules/`
-- [ ] No context imports another context's Prisma types directly (ACL only)
-- [ ] Cross-context communication uses domain events + outbox (never direct
-      method calls)
-- [ ] Permission resource keys are prefixed with context name
-      (`iam.users`, not just `users`)
-- [ ] Each context has its own team-of-agents ownership documented in the
-      ADR (who's on-call for billing? who reviews operations?)
+Don't create a sixth context for "Escalation" or "Notification" separately
+from Incidents — they have no independent lifecycle; an `EscalationPolicy`
+and a `Notification` only ever exist in service of an `Incident`. Splitting
+below the point where a concept has its own vocabulary and its own
+persistence lifecycle just adds indirection without adding clarity.

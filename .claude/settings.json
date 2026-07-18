@@ -1,7 +1,7 @@
 {
   "project": {
-    "name": "boilerplate-app",
-    "description": "Production-grade fullstack PWA boilerplate by Aniston Technologies LLP",
+    "name": "aniston-vms",
+    "description": "Aniston VMS — CCTV monitoring PWA by Aniston Technologies LLP",
     "type": "fullstack-web-app"
   },
   "context": {
@@ -9,7 +9,7 @@
     "frameworks": ["React 18", "Express.js 4", "Prisma ORM 5", "Vite 5"],
     "database": "PostgreSQL 16",
     "caching": "Redis 7",
-    "styling": "Tailwind CSS v3 + Boilerplate Design System (primary #0073ea, Poppins/Figtree fonts, floating-card shell, see .claude/skills/skill-ui-ux-checklist.md)",
+    "styling": "Tailwind CSS v3 + Aniston VMS Design System (primary #0073ea, Poppins/Figtree fonts, floating-card shell, see .claude/skills/skill-ui-ux-checklist.md)",
     "stateManagement": "Redux Toolkit + RTK Query",
     "animations": "Framer Motion",
     "taskQueue": "BullMQ",

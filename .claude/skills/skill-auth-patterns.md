@@ -1,115 +1,156 @@
-# Skill — Authentication and RBAC Patterns
+# Skill — Authentication Patterns (NestJS JWT)
 
 ---
 
-## JWT + HttpOnly cookie flow
+## Access + refresh token flow
 
 ```
-Login → accessToken (15min, Authorization header) + refreshToken (7d, httpOnly cookie)
-Request → Bearer <accessToken> in Authorization header
-Expired → 401 → client calls /auth/refresh (cookie sent automatically) → new accessToken
-Logout → DELETE /auth/logout → server deletes refreshToken from DB
+Login    → POST /auth/login    → accessToken (15min, Authorization header) + refreshToken (7d, httpOnly cookie)
+Request  → Bearer <accessToken> in Authorization header, verified by JwtAuthGuard (passport-jwt strategy)
+Expired  → 401 → client calls POST /auth/refresh (refresh cookie sent automatically) → new accessToken + rotated refreshToken
+Logout   → POST /auth/logout  → refreshToken hash revoked in DB (RefreshToken table), cookie cleared
 ```
 
-## Auth middleware (what req.user looks like after authenticate)
+Two secrets, never reused for each other: `JWT_SECRET` signs the short-lived access token, `JWT_REFRESH_SECRET`
+signs the refresh token. Both are required env vars checked at bootstrap (`ConfigService.getOrThrow`).
+
+## AuthUser shape (attached to the request by JwtStrategy)
 
 ```typescript
-// Set by authenticate middleware from JWT payload
-req.user = {
-  id: 'user-uuid',
-  email: 'user@example.com',
-  role: 'MEMBER',              // UserRole enum
-  organizationId: 'org-uuid',  // ALWAYS use this, never trust req.body.organizationId
-  name: 'John Doe',
-};
-```
+// apps/api/src/modules/auth/strategies/jwt.strategy.ts
+export interface AuthUser {
+  id: string;
+  email: string;
+  role: UserRole;               // SUPER_ADMIN | PROJECT_ADMIN | CLIENT_VIEWER
+  organizationId: string;       // ALWAYS read from the verified JWT payload, never trust body/query
+  scopeType: ScopeType | null;  // ORG | SITE | ZONE | CAMERA — set when the user is scope-restricted
+  scopeId: string | null;       // id of the site/zone/camera the user is pinned to, if scoped
+}
 
-## requirePermission usage
+@Injectable()
+export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
+  constructor(config: ConfigService) {
+    super({
+      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      ignoreExpiration: false,
+      secretOrKey: config.getOrThrow<string>('JWT_SECRET'),
+    });
+  }
 
-```typescript
-// In routes — always the 2-arg form: requirePermission(resource, action)
-// The real signature lives at backend/src/middleware/auth.middleware.ts:37
-router.post(
-  '/',
-  authenticate,
-  requirePermission('items', 'create'),         // ✅ resource + action, never single SCREAMING_SNAKE
-  validateRequest(...),
-  controller,
-);
-
-// In service — additional granular checks if needed
-if (actor.role === 'MEMBER' && record.ownerId !== actor.id) {
-  throw new ForbiddenError('Members can only act on records they own');
+  async validate(payload: JwtPayload): Promise<AuthUser> {
+    // Re-check the user still exists / isn't deactivated on every request — do NOT trust a stale payload.
+    const user = await this.usersService.findActiveById(payload.sub);
+    if (!user) throw new UnauthorizedException('User no longer active');
+    return {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      organizationId: user.organizationId,
+      scopeType: user.scopeType ?? null,
+      scopeId: user.scopeId ?? null,
+    };
+  }
 }
 ```
 
-## Permissions matrix (shared/src/permissions.ts — the single source of truth)
+## Login + refresh service (AuthService)
 
 ```typescript
-// Add a ROW per module here BEFORE writing any route that uses its resource key.
-// hasPermission() returns false for unknown resources → route 403s.
-export type PermissionAction = 'read' | 'create' | 'update' | 'delete';
+// apps/api/src/modules/auth/auth.service.ts
+async login(email: string, password: string): Promise<{ accessToken: string; refreshToken: string }> {
+  const user = await this.prisma.user.findUnique({ where: { email } });
+  if (!user || !(await argon2.verify(user.passwordHash, password))) {
+    // Same error for "no such user" and "wrong password" — never leak which one failed
+    throw new UnauthorizedException('INVALID_CREDENTIALS');
+  }
+  const accessToken = this.signAccessToken(user);
+  const refreshToken = this.signRefreshToken(user);
+  await this.prisma.refreshToken.create({
+    data: { userId: user.id, tokenHash: sha256(refreshToken), expiresAt: addDays(new Date(), 7) },
+  });
+  return { accessToken, refreshToken };
+}
 
-export const PERMISSIONS: Record<string, Record<PermissionAction, UserRole[]>> = {
-  items: {
-    read:   [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MEMBER],
-    create: [UserRole.SUPER_ADMIN, UserRole.ADMIN],
-    update: [UserRole.SUPER_ADMIN, UserRole.ADMIN],
-    delete: [UserRole.SUPER_ADMIN, UserRole.ADMIN],
-  },
-  // ... see shared/src/permissions.ts for the full registry
-};
-
-export function hasPermission(role: UserRole, resource: string, action: PermissionAction): boolean {
-  const resourcePerms = PERMISSIONS[resource];
-  if (!resourcePerms) return false;
-  return resourcePerms[action]?.includes(role) ?? false;
+async refresh(rawRefreshToken: string) {
+  const payload = this.jwt.verify(rawRefreshToken, { secret: this.config.getOrThrow('JWT_REFRESH_SECRET') });
+  const stored = await this.prisma.refreshToken.findFirst({
+    where: { userId: payload.sub, tokenHash: sha256(rawRefreshToken), revokedAt: null },
+  });
+  if (!stored || stored.expiresAt < new Date()) throw new UnauthorizedException('REFRESH_TOKEN_INVALID');
+  // Rotate: revoke the old token and issue a new pair — prevents replay of a stolen refresh cookie
+  await this.prisma.refreshToken.update({ where: { id: stored.id }, data: { revokedAt: new Date() } });
+  return this.login(payload.sub);
 }
 ```
 
-## Self-approval prevention (MANDATORY on every approval endpoint)
+## Guard usage on controllers
 
 ```typescript
-// ✅ CORRECT — check in service, not controller
-static async approve(id: string, actor: AuthUser) {
+// apps/api/src/modules/cameras/cameras.controller.ts
+@UseGuards(JwtAuthGuard, RolesGuard, ZoneScopeGuard)
+@Controller('cameras')
+export class CamerasController {
+  @Post()
+  @Roles(UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)  // decorator-driven — never inline string role checks
+  create(@CurrentUser() actor: AuthUser, @Body() dto: CreateCameraDto) {
+    return this.camerasService.create(actor, dto);
+  }
+
+  @Get(':id/credentials')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)  // CLIENT_VIEWER must never reach decrypted RTSP creds
+  getCredentials(@CurrentUser() actor: AuthUser, @Param('id') id: string) {
+    return this.camerasService.getDecryptedCredentials(actor, id);
+  }
+}
+```
+
+`RolesGuard` and `ZoneScopeGuard` mechanics (role matrix, `scopeType`/`scopeId` enforcement) live in
+`skill-rbac-advanced-patterns.md` — this file only covers the JWT lifecycle.
+
+## Self-service checks that belong in the service, not the controller
+
+```typescript
+// ✅ CORRECT — business-rule check lives in AuthService/CamerasService, not the guard
+async approveCameraDecommission(id: string, actor: AuthUser) {
   const request = await this.getOne(id, actor);
-  if (request.requesterId === actor.id) {
-    throw new ForbiddenError('You cannot approve your own request');
+  if (request.requestedById === actor.id) {
+    throw new ForbiddenException('You cannot approve your own decommission request');
   }
   // proceed with approval
 }
 ```
 
-## Restricted-role scope (MEMBER sees only records it owns)
+## Frontend: attaching the access token (RTK Query)
 
 ```typescript
-// ✅ CORRECT — filter by ownerId for MEMBER role
-const where: Prisma.ItemWhereInput = {
-  organizationId: actor.organizationId,
-  deletedAt: null,
-  ...(actor.role === UserRole.MEMBER ? { ownerId: actor.id } : {}),
+// frontend/src/store/api/baseApi.ts
+const baseQuery = fetchBaseQuery({
+  baseUrl: import.meta.env.VITE_API_URL,
+  prepareHeaders: (headers, { getState }) => {
+    const token = (getState() as RootState).auth.accessToken;
+    if (token) headers.set('authorization', `Bearer ${token}`);
+    return headers;
+  },
+});
+
+// baseQueryWithReauth: on 401, call /auth/refresh once, retry the original request, else force logout
+export const baseQueryWithReauth: BaseQueryFn = async (args, api, extraOptions) => {
+  let result = await baseQuery(args, api, extraOptions);
+  if (result.error?.status === 401) {
+    const refreshResult = await baseQuery({ url: '/auth/refresh', method: 'POST' }, api, extraOptions);
+    if (refreshResult.data) {
+      api.dispatch(authSlice.actions.setAccessToken(refreshResult.data));
+      result = await baseQuery(args, api, extraOptions);
+    } else {
+      api.dispatch(authSlice.actions.loggedOut());
+    }
+  }
+  return result;
 };
 ```
 
-## Frontend RBAC (hide admin-only UI)
+## Encryption touchpoint
 
-```typescript
-import { hasPermission } from '@boilerplate/shared';
-
-// ✅ CORRECT — hide button if role doesn't have permission. 3-arg form: role, resource, action.
-{hasPermission(user.role, 'items', 'create') && (
-  <Button onClick={openCreateModal}>Add Item</Button>
-)}
-```
-
-## Encryption for sensitive fields
-
-```typescript
-import { encrypt, decrypt } from '../../utils/encryption.js';
-
-// On save — field name must end in Encrypted
-const secretEncrypted = encrypt(dto.secret);
-
-// On read
-const secret = decrypt(record.secretEncrypted);
-```
+Camera/router credentials (`rtspPasswordEncrypted`, `onvifPasswordEncrypted`, `routerAdminPasswordEncrypted`)
+are never carried in the JWT and never returned by `/auth/*` endpoints. See `skill-encryption-patterns.md`
+for the AES-256-GCM encrypt/decrypt utility and `ENCRYPTION_KEY` handling.

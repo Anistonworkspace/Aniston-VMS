@@ -1,260 +1,147 @@
-# Skill — Input Sanitization & XSS Prevention
-
-DOMPurify for rich text, file name sanitization, HTML stripping, safe render of user content.
+# Skill — Input Sanitization & Stream-Input Validation Patterns
 
 ---
 
-## Backend — Zod validation as the primary defense
+Backend: class-validator DTOs + a strict RTSP/ONVIF URL allow-list are the primary defense — sanitize
+**before** a value ever reaches `ffmpeg`/MediaMTX or a database query. Frontend: DOMPurify for any
+user-authored rich text (incident notes, maintenance comments), safe file-upload handling for evidence
+photos/clips. Reference: `docs/02-TRD.md` §"stream ingestion" and §"file uploads".
+
+## RTSP / ONVIF connection input validation (highest-risk surface — feeds ffmpeg/MediaMTX)
 
 ```typescript
-// All inputs validated at the route layer — BEFORE reaching the service
-// Zod strips unknown fields and enforces types — this is your first defense
+// packages/shared/src/dto/create-camera.dto.ts
+const RTSP_URL_PATTERN = /^rtsp:\/\/[a-zA-Z0-9.\-]+(:\d{1,5})?\/[\w\-./]*$/;
 
-// Good — Zod strips HTML tags from string inputs naturally via type coercion
-// But for fields that explicitly allow text, add explicit sanitization too
+export class CreateCameraDto {
+  @IsString()
+  @Matches(RTSP_URL_PATTERN, { message: 'INVALID_STREAM_PATH' })
+  // ✅ Scheme is pinned to rtsp:// — reject rtsp+shell/file:/javascript:/data: and anything with
+  // shell metacharacters (; | & $ ` \n) that could reach an ffmpeg subprocess via string interpolation.
+  rtspUrl!: string;
 
-import { z } from 'zod';
+  @IsOptional() @IsString() @MaxLength(128) @Matches(/^[^\s'"$`;|&\n]*$/)
+  rtspUsername?: string;
 
-// Plain text — strip any HTML
-const PlainTextSchema = z.string().transform(val => val.replace(/<[^>]*>/g, '').trim());
+  @IsOptional() @IsIP()
+  onvifHost?: string; // parsed/validated as an IP — never string-concatenated into a shell command
 
-// Rich text (e.g. notes field) — DOMPurify on the backend
-import createDOMPurify from 'dompurify';
-import { JSDOM } from 'jsdom';
-
-const window  = new JSDOM('').window;
-const DOMPurify = createDOMPurify(window as any);
-
-const ALLOWED_TAGS  = ['p', 'b', 'i', 'u', 'strong', 'em', 'ul', 'ol', 'li', 'br'];
-const ALLOWED_ATTRS = ['class'];
-
-export function sanitizeHtml(dirty: string): string {
-  return DOMPurify.sanitize(dirty, {
-    ALLOWED_TAGS,
-    ALLOWED_ATTR: ALLOWED_ATTRS,
-  });
-}
-
-const RichTextSchema = z.string().transform(val => sanitizeHtml(val));
-
-// Usage in validation file:
-export const CreateAnnouncementSchema = z.object({
-  title:   z.string().min(1).max(200).transform(s => s.trim()),
-  content: RichTextSchema,      // sanitized rich text
-});
-```
-
----
-
-## File name sanitization
-
-```typescript
-// backend/src/utils/fileUtils.ts
-import path from 'path';
-
-// Prevent path traversal and dangerous file names
-export function sanitizeFileName(originalName: string): string {
-  // Remove path separators, null bytes, and leading dots
-  const base = path.basename(originalName)
-    .replace(/[/\\]/g, '')
-    .replace(/\0/g, '')
-    .replace(/^\.+/, '');     // prevent hidden files like .htaccess
-
-  // Only allow safe characters
-  return base.replace(/[^a-zA-Z0-9._-]/g, '_');
-}
-
-// Generate a safe stored filename (never expose original to filesystem)
-export function generateStoredFileName(originalName: string): string {
-  const ext   = path.extname(originalName).toLowerCase();
-  const safe  = sanitizeFileName(path.basename(originalName, ext));
-  const rand  = crypto.randomBytes(16).toString('hex');
-  return `${rand}_${safe.slice(0, 40)}${ext}`;
-}
-
-// Usage in upload service:
-const storedName = generateStoredFileName(file.originalname);
-const storedPath = path.join(UPLOAD_DIR, storedName);
-```
-
----
-
-## MIME type + extension validation
-
-```typescript
-// backend/src/middleware/upload.ts
-import multer from 'multer';
-import path from 'path';
-
-const ALLOWED_MIME_TYPES = {
-  image: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
-  document: ['application/pdf', 'application/msword',
-             'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
-  spreadsheet: ['application/vnd.ms-excel',
-                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                'text/csv'],
-};
-
-const ALLOWED_EXTENSIONS: Record<string, string[]> = {
-  'image/jpeg': ['.jpg', '.jpeg'],
-  'image/png':  ['.png'],
-  'image/webp': ['.webp'],
-  'application/pdf': ['.pdf'],
-  'text/csv':   ['.csv'],
-};
-
-export function createUploadMiddleware(type: keyof typeof ALLOWED_MIME_TYPES) {
-  return multer({
-    storage: multer.memoryStorage(),
-    limits:  { fileSize: 10 * 1024 * 1024 },    // 10 MB
-    fileFilter: (req, file, cb) => {
-      const allowed = ALLOWED_MIME_TYPES[type];
-      if (!allowed.includes(file.mimetype)) {
-        return cb(new ValidationError(`File type not allowed. Allowed: ${allowed.join(', ')}`));
-      }
-
-      const ext = path.extname(file.originalname).toLowerCase();
-      const validExts = ALLOWED_EXTENSIONS[file.mimetype] ?? [];
-      if (!validExts.includes(ext)) {
-        return cb(new ValidationError(`File extension does not match type`));
-      }
-
-      cb(null, true);
-    },
-  });
+  @IsOptional() @IsInt() @Min(1) @Max(65535)
+  onvifPort?: number;
 }
 ```
 
----
-
-## SQL injection prevention — Prisma is safe by default
-
 ```typescript
-// Prisma uses parameterized queries — never string-interpolate into queries
-
-// ❌ NEVER do this (raw SQL with interpolation)
-const users = await prisma.$queryRaw`SELECT * FROM users WHERE email = '${email}'`;
-
-// ✅ CORRECT — parameterized raw query
-const users = await prisma.$queryRaw`SELECT * FROM users WHERE email = ${email}`;
-
-// ✅ BEST — use Prisma's ORM layer (safest)
-const users = await prisma.user.findMany({ where: { email } });
-
-// ✅ If you must use raw queries, use Prisma.sql tagged template
-import { Prisma } from '@prisma/client';
-const result = await prisma.$queryRaw(
-  Prisma.sql`SELECT id, email FROM users WHERE organizationId = ${orgId} LIMIT ${limit}`
-);
+// apps/api/src/modules/cameras/cameras.service.ts
+// ✅ CORRECT — ffmpeg/MediaMTX args passed as an argv array, NEVER as an interpolated shell string
+spawn('ffmpeg', ['-rtsp_transport', 'tcp', '-i', camera.rtspUrl, '-f', 'null', '-']);
+// ❌ NEVER: exec(`ffmpeg -i ${camera.rtspUrl} ...`)  — a crafted rtspUrl becomes a command-injection vector
 ```
 
----
+```typescript
+// Defense in depth: re-validate again in the service (DTO validation can be bypassed by internal callers,
+// e.g. a BullMQ health-check job re-reading the row from Prisma).
+function assertSafeRtspUrl(url: string) {
+  if (!RTSP_URL_PATTERN.test(url)) throw new BadRequestException('INVALID_STREAM_PATH');
+}
+```
 
-## Frontend — DOMPurify for user-generated content
+## SQL injection — Prisma parameterizes everything, but raw queries still need care
+
+```typescript
+// ✅ CORRECT — Prisma's query builder is safe by construction
+await this.prisma.camera.findMany({ where: { rtspUrl: { contains: userSearchTerm } } });
+
+// ✅ CORRECT — $queryRaw with tagged-template params is parameterized
+await this.prisma.$queryRaw`SELECT * FROM "Camera" WHERE "zoneId" = ${zoneId}`;
+
+// ❌ NEVER — string-built raw SQL
+await this.prisma.$queryRawUnsafe(`SELECT * FROM "Camera" WHERE "zoneId" = '${zoneId}'`);
+```
+
+## Rich text sanitization (incident notes, maintenance task comments)
 
 ```typescript
 // frontend/src/utils/sanitize.ts
-import DOMPurify from 'dompurify';
+import createDOMPurify from 'dompurify';
+const DOMPurify = createDOMPurify(window);
 
-const PURIFY_CONFIG: DOMPurify.Config = {
-  ALLOWED_TAGS:  ['p', 'b', 'i', 'u', 'strong', 'em', 'ul', 'ol', 'li', 'br', 'a'],
-  ALLOWED_ATTR:  ['href', 'target', 'rel'],
-  FORBID_SCRIPTS: true,
-  ADD_ATTR: ['target'],
-};
-
-// Force external links to open safely
-DOMPurify.addHook('afterSanitizeAttributes', (node) => {
-  if (node.tagName === 'A') {
-    node.setAttribute('target', '_blank');
-    node.setAttribute('rel', 'noopener noreferrer');
-  }
-});
+const ALLOWED_TAGS = ['b', 'i', 'em', 'strong', 'p', 'br', 'ul', 'ol', 'li', 'a'];
+const ALLOWED_ATTRS = ['href'];
 
 export function sanitizeHtml(dirty: string): string {
-  return DOMPurify.sanitize(dirty, PURIFY_CONFIG);
+  return DOMPurify.sanitize(dirty, { ALLOWED_TAGS, ALLOWED_ATTRS, FORBID_SCRIPTS: true });
 }
 
-// Safe HTML renderer component:
-export function SafeHtml({ html, className }: { html: string; className?: string }) {
-  const clean = sanitizeHtml(html);
-  return <div className={className} dangerouslySetInnerHTML={{ __html: clean }} />;
-}
-
-// NEVER render user content without sanitization:
-// ❌ <div dangerouslySetInnerHTML={{ __html: userContent }} />
-// ✅ <SafeHtml html={userContent} />
+// ✅ CORRECT — sanitize on write (server) AND render with dangerouslySetInnerHTML only after sanitizing
+<div dangerouslySetInnerHTML={{ __html: sanitizeHtml(incident.notes) }} />
 ```
 
----
-
-## URL validation — prevent javascript: and data: URIs
-
 ```typescript
-// Validate URLs before using them in <a href> or redirects
-export function isSafeUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    return ['http:', 'https:'].includes(parsed.protocol);
-  } catch {
-    return false;
-  }
+// apps/api/src/modules/incidents/dto/create-incident.dto.ts — plain-text fields never allow markup at all
+export class CreateIncidentNoteDto {
+  @IsString() @MaxLength(2000)
+  @Transform(({ value }) => sanitizeHtml(value)) // server-side sanitize before persisting, don't trust the client
+  notes!: string;
 }
-
-// Zod schema for URLs:
-const SafeUrlSchema = z.string().url().refine(
-  url => isSafeUrl(url),
-  { message: 'Only http/https URLs are allowed' },
-);
-
-// Safe redirect — never redirect to arbitrary URLs from query params
-export function safeRedirect(url: string, defaultPath = '/dashboard'): string {
-  if (!url || !url.startsWith('/') || url.startsWith('//')) return defaultPath;
-  return url;
-}
-
-// Usage in login redirect:
-const redirectTo = safeRedirect(req.query.redirect as string);
-res.redirect(redirectTo);
 ```
 
----
-
-## Content Security Policy headers
+## Evidence file uploads (snapshots, incident evidence photos, exported clips)
 
 ```typescript
-// backend/src/middleware/security.ts
-import helmet from 'helmet';
+// apps/api/src/modules/incidents/upload.config.ts
+export const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'video/mp4'];
+export const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.mp4'];
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB — clip exports are larger than snapshots
 
+export const evidenceUploadOptions: MulterOptions = {
+  storage: memoryStorage(),
+  limits: { fileSize: MAX_FILE_SIZE },
+  fileFilter: (req, file, cb) => {
+    const ext = extname(file.originalname).toLowerCase();
+    if (!ALLOWED_MIME_TYPES.includes(file.mimetype) || !ALLOWED_EXTENSIONS.includes(ext)) {
+      return cb(new BadRequestException('UNSUPPORTED_FILE_TYPE'), false);
+    }
+    cb(null, true);
+  },
+};
+
+// Never trust file.originalname for the stored path — regenerate it
+function generateStoredFileName(originalName: string): string {
+  const ext = extname(originalName).toLowerCase();
+  return `${randomBytes(16).toString('hex')}${ext}`;
+}
+```
+
+## CSP + security headers (apps/api/src/main.ts via helmet)
+
+```typescript
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc:  ["'self'"],          // no inline scripts
-      styleSrc:   ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-      imgSrc:     ["'self'", "data:", "https:"],
-      connectSrc: ["'self'", process.env.API_URL ?? ''],
-      fontSrc:    ["'self'", "https://fonts.gstatic.com"],
-      objectSrc:  ["'none'"],
-      frameSrc:   ["'none'"],
-      upgradeInsecureRequests: [],
+      imgSrc: ["'self'", 'data:', 'blob:'],          // camera snapshots render as blob: URLs
+      mediaSrc: ["'self'", 'blob:'],                  // HLS/WebRTC playback via MediaMTX
+      connectSrc: ["'self'", process.env.MEDIAMTX_WS_URL ?? ''],
+      scriptSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      frameSrc: ["'none'"],
     },
   },
-  crossOriginEmbedderPolicy: false,    // required for some PWA features
+  crossOriginEmbedderPolicy: false, // relaxed for the video player's worker/wasm decoder
 }));
 ```
 
----
+## Rules
 
-## Checklist
-
-- [ ] All string inputs trimmed and length-limited in Zod schema before reaching service
-- [ ] Rich text fields sanitized with DOMPurify (backend: jsdom, frontend: browser DOMPurify)
-- [ ] File names sanitized via `sanitizeFileName()` — never used directly in filesystem paths
-- [ ] Stored file names are random hex — never the original uploaded name
-- [ ] Both MIME type AND file extension validated on upload
-- [ ] Prisma ORM used for all DB queries — no string interpolation in `$queryRaw`
-- [ ] `SafeHtml` component used for all user-generated HTML — never raw `dangerouslySetInnerHTML`
-- [ ] External links have `rel="noopener noreferrer"` and `target="_blank"`
-- [ ] `safeRedirect()` used for all redirect-after-login flows
-- [ ] Helmet CSP configured — `script-src` does not include `'unsafe-inline'`
+1. RTSP/ONVIF host, port, username, and stream path are validated against a strict allow-list pattern
+   at the DTO layer AND re-checked in the service before being passed to `ffmpeg`/MediaMTX — always as an
+   argv array, never an interpolated shell string.
+2. Every Prisma query is parameterized by construction; `$queryRawUnsafe` / string-built SQL is banned in
+   review.
+3. Any field rendered as HTML (incident notes, maintenance comments) is sanitized server-side on write
+   with a fixed `ALLOWED_TAGS`/`ALLOWED_ATTRS` allow-list — never rendered raw.
+4. Evidence uploads (snapshots/clips) are validated by MIME type + extension + size, stored under a
+   regenerated random filename, never the client-supplied `originalname`.
+5. CSP is enabled by `helmet` on every environment, including local dev, so a missing directive is caught
+   before it ships.

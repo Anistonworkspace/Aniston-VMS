@@ -1,5 +1,6 @@
 ---
 # Git Safety Rules
+Canon: memory/alignment-dictionary.md — check it before assuming any file/module name.
 
 Pushing code:
   NEVER push code, create PRs, or trigger deployments without explicit user approval
@@ -8,7 +9,8 @@ Pushing code:
   Get an explicit "yes" from the user before pushing
 
   ONE NARROW EXCEPTION to the no-force-push rule:
-    Accidentally-committed secret cleanup per rule-secrets-policy.md.
+    Accidentally-committed secret cleanup per rule-secrets-policy.md (e.g. a leaked camera RTSP password,
+    `ENCRYPTION_KEY`, or `JWT_SECRET`).
     Sequence: (1) rotate the secret IMMEDIATELY, (2) use `git filter-repo` to purge
     history, (3) force-push the cleaned history, (4) notify the team.
     Still requires explicit user approval before the force-push.

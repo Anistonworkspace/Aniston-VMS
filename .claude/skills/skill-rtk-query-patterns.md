@@ -1,19 +1,22 @@
 # Skill — RTK Query Patterns
 
-These are the only correct ways to call APIs and manage server state in the frontend.
+These are the only correct ways to call APIs and manage server state in the
+frontend (`frontend/`) against the NestJS API (`backend/`). Canon: see
+`docs/02-TRD.md` (realtime architecture) and `docs/05-backend-schema.md`
+(Camera / Zone / Incident / HealthCheck / Escalation models).
 
 ---
 
-## API slice structure (one file per feature)
+## API slice structure (one file per domain feature)
 
 ```typescript
-// frontend/src/features/item/item.api.ts
+// frontend/src/features/cameras/cameras.api.ts
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
-import type { Item, ApiResponse, PaginationMeta } from '@boilerplate/shared';
+import type { Camera, CameraStatus, Incident, ApiResponse, PaginationMeta } from '@aniston-vms/shared';
 import type { RootState } from '@/app/store';
 
-export const itemApi = createApi({
-  reducerPath: 'itemApi',
+export const camerasApi = createApi({
+  reducerPath: 'camerasApi',
   baseQuery: fetchBaseQuery({
     baseUrl: '/api',
     prepareHeaders: (headers, { getState }) => {
@@ -22,68 +25,73 @@ export const itemApi = createApi({
       return headers;
     },
   }),
-  tagTypes: ['Item'],
+  tagTypes: ['Camera', 'Zone', 'Incident', 'HealthCheck'],
   endpoints: (builder) => ({
-    listItems: builder.query<{ data: Item[]; meta: PaginationMeta }, { page?: number; limit?: number }>({
-      query: (params) => ({ url: '/items', params }),
+    listCameras: builder.query<{ data: Camera[]; meta: PaginationMeta }, { zoneId?: string; page?: number; limit?: number }>({
+      query: (params) => ({ url: '/cameras', params }),
       providesTags: (result) =>
         result
-          ? [...result.data.map(({ id }) => ({ type: 'Item' as const, id })), { type: 'Item', id: 'LIST' }]
-          : [{ type: 'Item', id: 'LIST' }],
+          ? [...result.data.map(({ id }) => ({ type: 'Camera' as const, id })), { type: 'Camera', id: 'LIST' }]
+          : [{ type: 'Camera', id: 'LIST' }],
     }),
 
-    getItem: builder.query<Item, string>({
-      query: (id) => `/items/${id}`,
-      providesTags: (_result, _err, id) => [{ type: 'Item', id }],
+    getCamera: builder.query<Camera, string>({
+      query: (id) => `/cameras/${id}`, // e.g. CAM-042
+      providesTags: (_result, _err, id) => [{ type: 'Camera', id }],
     }),
 
-    createItem: builder.mutation<Item, Partial<Item>>({
-      query: (body) => ({ url: '/items', method: 'POST', body }),
-      invalidatesTags: [{ type: 'Item', id: 'LIST' }],
+    updateCameraStatus: builder.mutation<Camera, { id: string; status: CameraStatus }>({
+      query: ({ id, status }) => ({ url: `/cameras/${id}/status`, method: 'PATCH', body: { status } }),
+      // A status flip (e.g. -> CAMERA_OFFLINE) can also open/close an Incident — invalidate both.
+      invalidatesTags: (_result, _err, { id }) => [
+        { type: 'Camera', id },
+        { type: 'Camera', id: 'LIST' },
+        { type: 'Incident', id: 'LIST' },
+      ],
     }),
 
-    updateItem: builder.mutation<Item, { id: string; body: Partial<Item> }>({
-      query: ({ id, body }) => ({ url: `/items/${id}`, method: 'PATCH', body }),
-      invalidatesTags: (_result, _err, { id }) => [{ type: 'Item', id }, { type: 'Item', id: 'LIST' }],
+    acknowledgeIncident: builder.mutation<Incident, { id: string; note?: string }>({
+      query: ({ id, note }) => ({ url: `/incidents/${id}/acknowledge`, method: 'POST', body: { note } }),
+      invalidatesTags: (_result, _err, { id }) => [{ type: 'Incident', id }, { type: 'Incident', id: 'LIST' }],
     }),
 
-    deleteItem: builder.mutation<void, string>({
-      query: (id) => ({ url: `/items/${id}`, method: 'DELETE' }),
-      invalidatesTags: [{ type: 'Item', id: 'LIST' }],
+    deleteZone: builder.mutation<void, string>({
+      query: (id) => ({ url: `/zones/${id}`, method: 'DELETE' }),
+      invalidatesTags: [{ type: 'Zone', id: 'LIST' }],
     }),
   }),
 });
 
 export const {
-  useListItemsQuery,
-  useGetItemQuery,
-  useCreateItemMutation,
-  useUpdateItemMutation,
-  useDeleteItemMutation,
-} = itemApi;
+  useListCamerasQuery,
+  useGetCameraQuery,
+  useUpdateCameraStatusMutation,
+  useAcknowledgeIncidentMutation,
+  useDeleteZoneMutation,
+} = camerasApi;
 ```
 
 ## Component consuming RTK Query
 
-```typescript
+```tsx
 // ✅ CORRECT — handles all 3 states: loading, error, data
-export function ItemList() {
-  const { data, isLoading, isError } = useListItemsQuery({ page: 1, limit: 20 });
-  const [createItem, { isLoading: isCreating }] = useCreateItemMutation();
+export function LiveWallGrid() {
+  const { data, isLoading, isError } = useListCamerasQuery({ page: 1, limit: 20 });
+  const [acknowledgeIncident] = useAcknowledgeIncidentMutation();
 
   if (isLoading) return <Skeleton className="h-40 w-full" />;
-  if (isError) return <p className="text-red-500">Failed to load items.</p>;
+  if (isError) return <p className="text-red-500">Failed to load cameras.</p>;
 
-  const handleCreate = async (values: CreateItemInput) => {
+  const handleAcknowledge = async (incidentId: string) => {
     try {
-      await createItem(values).unwrap();
-      toast.success('Item created');
+      await acknowledgeIncident({ id: incidentId }).unwrap();
+      toast.success('Incident acknowledged');
     } catch {
-      toast.error('Failed to create item');
+      toast.error('Failed to acknowledge incident');
     }
   };
 
-  return <div>{data?.data.map(item => <ItemCard key={item.id} item={item} />)}</div>;
+  return <div>{data?.data.map((camera) => <VideoTile key={camera.id} camera={camera} onAcknowledge={handleAcknowledge} />)}</div>;
 }
 ```
 
@@ -91,15 +99,15 @@ export function ItemList() {
 
 ```typescript
 // ❌ WRONG — raw fetch instead of RTK Query
-const response = await fetch('/api/items');
+const response = await fetch('/api/cameras');
 const data = await response.json();
 
-// ❌ WRONG — copying server data into Redux slice
-dispatch(setItems(data)); // server data belongs in RTK Query cache, not Redux
+// ❌ WRONG — copying server data into a Redux slice
+dispatch(setCameras(data)); // camera/incident data belongs in RTK Query cache, not a hand-rolled slice
 
-// ❌ WRONG — mutation without invalidatesTags (list won't refresh)
-createItem: builder.mutation({
-  query: (body) => ({ url: '/items', method: 'POST', body }),
+// ❌ WRONG — mutation without invalidatesTags (Incident list won't refresh)
+acknowledgeIncident: builder.mutation({
+  query: ({ id }) => ({ url: `/incidents/${id}/acknowledge`, method: 'POST' }),
   // missing invalidatesTags!
 }),
 ```
@@ -113,3 +121,34 @@ createItem: builder.mutation({
 | create mutation | — | `[{ type: 'X', id: 'LIST' }]` |
 | update mutation | — | `[{ type: 'X', id }, { type: 'X', id: 'LIST' }]` |
 | delete mutation | — | `[{ type: 'X', id: 'LIST' }]` |
+
+`X` is `Camera`, `Zone`, `Incident`, or `HealthCheck` for this codebase. A
+mutation that crosses entities (camera status → incident) must invalidate
+both tag types — see `updateCameraStatus` above.
+
+## Real-time cache updates from the socket (health/status push)
+
+Camera health is pushed live over WebSocket by the health-check worker, not
+just polled. Don't wait for a refetch — patch the cache and/or invalidate the
+affected tag when the socket event arrives:
+
+```typescript
+// frontend/src/app/socket.ts
+socket.on('camera:status', ({ id, status }: { id: string; status: CameraStatus }) => {
+  dispatch(
+    camerasApi.util.updateQueryData('listCameras', { page: 1, limit: 20 }, (draft) => {
+      const camera = draft.data.find((c) => c.id === id);
+      if (camera) camera.status = status;
+    }),
+  );
+  dispatch(camerasApi.util.invalidateTags([{ type: 'Camera', id }]));
+});
+
+socket.on('incident:updated', ({ id }: { id: string }) => {
+  dispatch(camerasApi.util.invalidateTags([{ type: 'Incident', id }, { type: 'Incident', id: 'LIST' }]));
+});
+```
+
+Without this listener, only the actor who triggered the mutation sees fresh
+state — every other connected viewer (e.g. a `CLIENT_VIEWER` watching the
+same site's `LiveWallGrid`) is stale until their next manual refresh.

@@ -13,9 +13,9 @@ export default defineConfig({
       srcDir: 'src',
       filename: 'sw.ts',
       manifest: {
-        name: 'Boilerplate App',
-        short_name: 'Boilerplate',
-        description: 'Production-grade fullstack PWA boilerplate',
+        name: 'Aniston VMS',
+        short_name: 'Aniston VMS',
+        description: 'Aniston VMS — CCTV Video Monitoring System',
         theme_color: '#0073ea',
         background_color: '#ffffff',
         display: 'standalone',
@@ -23,8 +23,18 @@ export default defineConfig({
         icons: [
           { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
-          { src: '/icon-maskable-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
-          { src: '/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          {
+            src: '/icon-maskable-192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+          {
+            src: '/icon-maskable-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
         ],
       },
       devOptions: { enabled: false },
@@ -33,7 +43,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
-      '@boilerplate/shared': path.resolve(__dirname, '../shared/src/index.ts'),
+      '@aniston-vms/shared': path.resolve(__dirname, '../shared/src/index.ts'),
     },
   },
   server: {

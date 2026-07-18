@@ -22,7 +22,7 @@ Use the YAML frontmatter `description` field as the one-liner.
 - /health — Check that the dev environment is running correctly
 
 ### Build & ship features
-- /new-module <name> — Scaffold a complete MVC module
+- /new-module <name> — Scaffold a complete NestJS module (module/controller/service/DTO/Prisma model + RTK Query slice)
 - /add-tests <target> — Write Vitest unit + Playwright E2E tests
 - /document <target> — Write Swagger JSDoc + module README + ADR
 - /optimize <target> — Find and fix performance issues
@@ -36,11 +36,16 @@ Use the YAML frontmatter `description` field as the one-liner.
 - /release-check — Pre-release quality gate
 
 ### Database & deploy
-- /migrate <description> — Safe database migration workflow
+- /migrate <description> — Safe Prisma migration workflow (Region/Zone/Site/Camera schema)
 - /deploy — Deploy to production via CI
 
+### Context & tooling
+- /graph <sub> — Query the codebase knowledge graph (Graphify or Node fallback)
+- /graph-always — Toggle "Graphify-first" mode on/off
+- /handoff — Save a portable context capsule before compacting/switching chats
+
 ### Bootstrap
-- /project-init — Rename boilerplate for a new project
+- /project-init — Rewrite project identity when forking Aniston VMS for a new deployment/product
 
 ### Meta
 - /help — This command — list every slash command

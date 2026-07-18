@@ -2,6 +2,8 @@
 # Memory System Rules (BINDING)
 
 This project has a persistent, file-based memory system at memory/. All agents must use it.
+`memory/alignment-dictionary.md` is the authoritative Aniston-VMS-vs-boilerplate domain mapping — consult it
+whenever a rule, skill, or agent references an ambiguous term.
 
 ## Mandatory start-of-work sequence (do this before ANY code changes)
 
@@ -11,7 +13,7 @@ This project has a persistent, file-based memory system at memory/. All agents m
 4. Skim memory/coordination/shared-context.md
 5. Check memory/coordination/handoffs.md for OPEN handoffs you can pick up
 6. Check memory/plans/_active/ — if a plan covers your task, continue it instead of starting new
-7. Read relevant ADRs in memory/decisions/ for the area you are about to touch
+7. Read relevant ADRs in memory/decisions/ for the area you are about to touch (camera health, RBAC/zone scope, escalation policy, etc.)
 
 Skip this sequence ONLY for purely informational requests where no files will be modified.
 
@@ -23,7 +25,8 @@ For ANY change touching more than ~10 lines or more than 1 file:
 
 ## Mandatory file-lock registration
 
-When editing shared files (auth, RBAC, Prisma schema, shared types) OR more than 3 files at once:
+When editing shared files (auth, RBAC/zone-scope guards, Prisma schema, `packages/shared` types) OR more than
+3 files at once:
   Register a lock in memory/coordination/locks.md BEFORE editing
   Release the lock (mark RELEASED) when done
 

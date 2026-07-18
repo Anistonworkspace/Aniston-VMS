@@ -1,8 +1,10 @@
 # Skill — Codebase Knowledge Graph Patterns (Graphify)
 
-Graphify builds a queryable knowledge graph of the project — code + docs +
-diagrams — so agents can answer "what depends on this?" and "why was this
-designed this way?" without grep-only guessing.
+Graphify builds a queryable knowledge graph of the Aniston VMS monorepo —
+`backend/` (NestJS API + BullMQ workers), `frontend/` (React/RTK Query), and
+`shared/` (`@aniston-vms/shared`), plus docs — so agents can answer "what
+depends on this?" and "why was this designed this way?" without grep-only
+guessing.
 
 Reference: [`graphify.net`](https://graphify.net/) · Repo:
 [`github.com/warioddly/graphify`](https://github.com/warioddly/graphify)
@@ -14,12 +16,17 @@ Reference: [`graphify.net`](https://graphify.net/) · Repo:
 
 Every time the shape of the codebase shifts:
 
-- New Prisma model or renamed column (`schema.prisma` change)
-- New backend module (new `<name>.service.ts` or new route mount)
-- New frontend feature (new `features/<name>/` directory)
+- New Prisma model or renamed column in `prisma/schema.prisma` (e.g. a new
+  field on `Camera`, `Incident`, `HealthCheck`, or `Escalation`)
+- New backend module (new `<name>.service.ts` under `backend/src/modules/`,
+  e.g. `backend/src/modules/escalation/escalation.service.ts`, or a new
+  `@Processor` worker)
+- New frontend feature (new `frontend/src/features/<name>/` directory, e.g.
+  `features/incidents/`)
 - Big refactor that moves imports around
 
-Otherwise: weekly, or before a session where you'll be asked "what calls X?" a lot.
+Otherwise: weekly, or before a session where you'll be asked "what calls X?"
+a lot.
 
 ---
 
@@ -43,7 +50,7 @@ graphify build --root . --output .claude/graph --exclude "node_modules,dist,cove
 Produces:
 
 - `.claude/graph/graph.json` — queryable graph (nodes: functions, classes,
-  models, files, docs; edges: import, call, reference, depends-on)
+  Prisma models, files, docs; edges: import, call, reference, depends-on)
 - `.claude/graph/graph.html` — interactive visualization (open in browser)
 - `.claude/graph/graph.meta.json` — build timestamp, source-file inventory,
   detected communities
@@ -55,8 +62,8 @@ graphify build --root . --output .claude/graph --incremental
 ```
 
 Add `.claude/graph/` to `.gitignore` — it's regenerable, don't commit binary
-artifacts. (This repo's `.gitignore` already ignores it — Phase 2 of the
-boilerplate-v2 plan added the entry.)
+artifacts. (This repo's `.gitignore` already ignores it — the Stage 1 setup
+task in `docs/06-implementation-plan.md` added the entry.)
 
 ---
 
@@ -65,7 +72,7 @@ boilerplate-v2 plan added the entry.)
 ### "What depends on this symbol?"
 
 ```powershell
-graphify query deps "ItemService.approve" --graph .claude/graph/graph.json
+graphify query deps "IncidentService.acknowledge" --graph .claude/graph/graph.json
 ```
 
 Returns every function / component / test that imports or calls the symbol,
@@ -74,20 +81,21 @@ with file:line pointers.
 ### "Explain this file"
 
 ```powershell
-graphify query explain backend/src/modules/item/item.service.ts
+graphify query explain backend/src/modules/camera/camera.service.ts
 ```
 
-Returns natural-language summary of the file + inbound/outbound edges.
+Returns a natural-language summary of the file + inbound/outbound edges.
 
 ### "Find related concepts"
 
 ```powershell
-graphify query community Item
+graphify query community incident
 ```
 
 Uses graph community detection to surface the cluster of code + docs
-semantically related to `Item`. Useful for "give me everything
-touching item workflow" without hand-tracing.
+semantically related to `Incident` (service, controller, DTOs, RTK Query
+slice, `IncidentKanban`, `EscalationTimeline`, tests). Useful for "give me
+everything touching incident triage" without hand-tracing.
 
 ---
 
@@ -100,9 +108,9 @@ Two integration modes — pick per session:
 Include a specific slice of the graph in your prompt:
 
 ```powershell
-graphify query deps "createItem" | claude
+graphify query deps "createIncidentFromHealthCheck" | claude
 # or with the /graph command:
-/graph deps createItem
+/graph deps createIncidentFromHealthCheck
 ```
 
 The graph output goes into the prompt context; the model answers with the
@@ -119,7 +127,7 @@ the whole graph. Placeholder for when the MCP variant lands.
 ## Regeneration reminder
 
 `.claude/hooks/lint-on-save.sh` emits a reminder when you edit any
-`.service.ts` or `schema.prisma`:
+`.service.ts`, `.processor.ts`, or `schema.prisma`:
 
 ```
 REMINDER: Structure changed — run '/graph build' to refresh the codebase graph.
@@ -134,28 +142,28 @@ doing deep exploration; skip during rapid edit-save-edit loops.
 
 | Question | Command |
 |---|---|
-| Which components call `useDeleteItemMutation`? | `graphify query deps "useDeleteItemMutation"` |
-| What routes hit `ItemService.list`? | `graphify query inbound "ItemService.list" --type route` |
-| What's in the "auth" domain? | `graphify query community auth` |
-| Which files import `../../utils/encryption`? | `graphify query importers "utils/encryption"` |
+| Which components call `useAcknowledgeIncidentMutation`? | `graphify query deps "useAcknowledgeIncidentMutation"` |
+| What routes hit `HealthCheckService.recordCheck`? | `graphify query inbound "HealthCheckService.recordCheck" --type route` |
+| What's in the "health-monitoring" domain? | `graphify query community health` |
+| Which files import the camera-credential encryption helper (`AES-256-GCM`)? | `graphify query importers "lib/encryption"` |
 | Give me an architectural overview | `graphify report architecture --graph .claude/graph/graph.json` |
 
 ---
 
 ## Warning — don't ship graph.json publicly
 
-`graph.json` includes symbol names + docstrings + file paths from your whole
-codebase. Fine for internal use; **don't publish it with an open-source
-release** if the codebase has private business logic. Add
-`.claude/graph/` to `.gitignore` (already done) and confirm your CI doesn't
-zip it into releases.
+`graph.json` includes symbol names + docstrings + file paths from the whole
+monorepo — including camera/site naming and RBAC logic. Fine for internal
+use; **don't publish it with any public release** since the codebase has
+private business logic. Add `.claude/graph/` to `.gitignore` (already done)
+and confirm your CI doesn't zip it into release artifacts.
 
 ---
 
 ## Checklist
 
 - [ ] `.claude/graph/` is in `.gitignore`
-- [ ] `graphify build` runs after every Prisma schema or `.service.ts` change
+- [ ] `graphify build` runs after every Prisma schema or `.service.ts`/`.processor.ts` change
 - [ ] Cross-agent-relevant queries use `/graph deps` or `/graph explain`
       instead of ad-hoc grep
 - [ ] Weekly rebuild scheduled (or before every audit session)

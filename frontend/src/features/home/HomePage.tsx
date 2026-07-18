@@ -19,7 +19,7 @@ export function HomePage(): JSX.Element {
           <Rocket className="h-6 w-6 text-primary" />
         </div>
         <h1 className="font-heading text-2xl text-[var(--primary-text-color)]">
-          Boilerplate ready
+          Aniston VMS ready
         </h1>
         <p className="mt-2 text-sm text-[var(--secondary-text-color)]">
           This is a generic starter — no application code ships with it. The value is the AI-agent

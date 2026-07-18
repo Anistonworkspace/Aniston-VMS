@@ -1,325 +1,181 @@
 # Skill — Command Palette (Cmd+K) Patterns
 
-The Cmd+K palette is the modern app's control center — quick navigation, quick
-actions, quick search. Pairs with `skill-keyboard-shortcuts-patterns.md`
-(which handles the hotkey registration) and reuses the existing modal
-primitive.
+The Cmd+K palette is the control center for jumping straight to a camera (`CAM-042`), a zone, a site, or an open incident — quick navigation, quick actions, quick search. Pairs with `skill-keyboard-shortcuts-patterns.md` (which handles the hotkey registration) and reuses the existing modal primitive.
 
-Prereqs: `react-hotkeys-hook` (see keyboard-shortcuts skill), `cmdk`
-package (`npm install cmdk`), Framer Motion.
+Design tokens: see `docs/04-uiux-brief.md`. Prereqs: `react-hotkeys-hook` (see keyboard-shortcuts skill), `cmdk`.
 
 ---
 
-## Slice — `uiSlice` prerequisites
+## Command registry
 
-The `openCommandPalette` action must exist. See
-`skill-keyboard-shortcuts-patterns.md` § Prerequisites for the 30-line uiSlice
-stub — same slice used here.
+```ts
+// frontend/src/features/command-palette/commands.ts
+import type { LucideIcon } from 'lucide-react';
+import { HomeIcon, VideoIcon, MapPinIcon, AlertTriangleIcon, FileTextIcon, SettingsIcon, LogOutIcon, PlusIcon } from 'lucide-react';
 
----
+export interface Command {
+  id: string;
+  label: string;
+  group: 'Navigation' | 'Actions' | 'Account';
+  icon: LucideIcon;
+  keywords?: string[];
+  run: (ctx: CommandContext) => void;
+}
 
-## Pattern 1 — Basic palette
+export const NAV_ITEMS: Command[] = [
+  { id: 'nav-dashboard', label: 'Dashboard', group: 'Navigation', icon: HomeIcon, run: (ctx) => ctx.navigate('/dashboard') },
+  { id: 'nav-live-wall', label: 'Live Wall', group: 'Navigation', icon: VideoIcon, run: (ctx) => ctx.navigate('/live') },
+  { id: 'nav-zones', label: 'Zones', group: 'Navigation', icon: MapPinIcon, run: (ctx) => ctx.navigate('/zones') },
+  { id: 'nav-incidents', label: 'Incidents', group: 'Navigation', icon: AlertTriangleIcon, run: (ctx) => ctx.navigate('/incidents') },
+  { id: 'nav-reports', label: 'Reports', group: 'Navigation', icon: FileTextIcon, run: (ctx) => ctx.navigate('/reports') },
+];
 
-```typescript
+export const ACTIONS: Command[] = [
+  { id: 'action-add-camera', label: 'Add camera', group: 'Actions', icon: PlusIcon, keywords: ['new', 'register', 'rtsp'], run: (ctx) => ctx.dispatch(openCreateModal({ type: 'camera' })) },
+  { id: 'action-add-incident-note', label: 'Add note to open incident', group: 'Actions', icon: FileTextIcon, run: (ctx) => ctx.runAddIncidentNote() },
+  { id: 'action-settings', label: 'Settings', group: 'Account', icon: SettingsIcon, run: (ctx) => ctx.navigate('/settings') },
+  { id: 'action-logout', label: 'Log out', group: 'Account', icon: LogOutIcon, run: (ctx) => ctx.dispatch(logout()) },
+];
+
+export const ALL_ACTIONS = [...NAV_ITEMS, ...ACTIONS];
+```
+
+## Palette component
+
+```tsx
 // frontend/src/features/command-palette/CommandPalette.tsx
 import { Command } from 'cmdk';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { useSelector, useDispatch } from 'react-redux';
+import { useEffect, useState } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { AnimatePresence, motion } from 'framer-motion';
+import { useSearchEntitiesQuery } from '@/features/search/searchApi';
+import { useDebounce } from '@/hooks/useDebounce';
 import { closeCommandPalette } from '@/app/uiSlice';
-import type { RootState } from '@/app/store';
-import { useEffect } from 'react';
+import type { RootState, AppDispatch } from '@/app/store';
+import { NAV_ITEMS, ACTIONS, ALL_ACTIONS, type Command as CommandDef } from './commands';
+
+const RECENT_LS_KEY = 'vms.commandPalette.recent';
+
+function getRecent(): string[] {
+  try { return JSON.parse(localStorage.getItem(RECENT_LS_KEY) ?? '[]'); } catch { return []; }
+}
+function pushRecent(id: string) {
+  const next = [id, ...getRecent().filter((r) => r !== id)].slice(0, 5);
+  localStorage.setItem(RECENT_LS_KEY, JSON.stringify(next));
+}
 
 export function CommandPalette() {
   const open = useSelector((s: RootState) => s.ui.commandPaletteOpen);
-  const dispatch = useDispatch();
-  const reduce = useReducedMotion();
-  const close = () => dispatch(closeCommandPalette());
+  const dispatch = useDispatch<AppDispatch>();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [query, setQuery] = useState('');
+  const debounced = useDebounce(query, 200);
 
-  // Close on route change (uncomment if using react-router)
-  // useLocation().pathname // subscribe; call close() on change
+  // Entity search: camera code/name, zone, site, or incident id (ANI-CAM-2026-000145)
+  const { data: results, isFetching } = useSearchEntitiesQuery(debounced, { skip: debounced.length < 2 });
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [open]);
+  useEffect(() => { if (!open) setQuery(''); }, [open]);
+
+  function runCommand(cmd: CommandDef) {
+    pushRecent(cmd.id);
+    cmd.run({ navigate, dispatch, location, runAddIncidentNote: () => navigate('/incidents?openNote=1') });
+    dispatch(closeCommandPalette());
+  }
 
   return (
     <AnimatePresence>
       {open && (
-        <>
+        <motion.div
+          className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh] bg-[var(--backdrop-color)]"
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}
+          onClick={() => dispatch(closeCommandPalette())}
+        >
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-            onClick={close}
-            className="fixed inset-0 z-40 bg-[var(--backdrop-color)]"
-          />
-          <motion.div
-            initial={reduce ? undefined : { opacity: 0, y: -8, scale: 0.98 }}
-            animate={reduce ? undefined : { opacity: 1, y: 0, scale: 1 }}
-            exit={reduce ? undefined : { opacity: 0, y: -8, scale: 0.98 }}
-            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            className="fixed left-1/2 top-24 z-50 w-full max-w-lg -translate-x-1/2 px-4"
+            initial={{ opacity: 0, scale: 0.98, y: -8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.98 }} transition={{ duration: 0.16 }}
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-lg bg-[var(--card)] rounded-[var(--radius-big)] shadow-xl border border-[var(--hairline)] overflow-hidden"
           >
-            <Command
-              label="Command menu"
-              className="floating-card overflow-hidden rounded-[var(--radius-big)] shadow-lg"
-            >
-              <Command.Input
-                placeholder="Search actions, pages, help…"
-                className="w-full border-b border-[var(--layout-border-color)] bg-transparent px-4 py-3 text-sm outline-none placeholder:text-[var(--tertiary-text-color)]"
-                autoFocus
-              />
-              <Command.List className="max-h-80 overflow-y-auto p-2">
-                <Command.Empty className="px-3 py-6 text-center text-sm text-[var(--secondary-text-color)]">
-                  No results.
+            <Command shouldFilter={!debounced} loop>
+              <div className="flex items-center border-b border-[var(--hairline)] px-4">
+                <Command.Input
+                  autoFocus
+                  value={query}
+                  onValueChange={setQuery}
+                  placeholder="Jump to a camera (CAM-042), zone, or incident…"
+                  className="w-full py-3 bg-transparent text-sm outline-none placeholder:text-[var(--muted)]"
+                />
+              </div>
+              <Command.List className="max-h-96 overflow-y-auto p-2">
+                <Command.Empty className="py-8 text-center text-sm text-[var(--muted)]">
+                  {isFetching ? 'Searching…' : 'No matches'}
                 </Command.Empty>
-                {/* Groups below */}
+
+                {!debounced && getRecent().length > 0 && (
+                  <Command.Group heading="Recent">
+                    {getRecent().map((id) => {
+                      const cmd = ALL_ACTIONS.find((c) => c.id === id);
+                      if (!cmd) return null;
+                      return <CmdItem key={id} cmd={cmd} onSelect={() => runCommand(cmd)} />;
+                    })}
+                  </Command.Group>
+                )}
+
+                {debounced && results && (
+                  <Command.Group heading="Cameras & Zones">
+                    {results.map((r) => (
+                      <Command.Item
+                        key={r.id}
+                        value={`${r.code} ${r.name}`}
+                        onSelect={() => { pushRecent(r.id); navigate(r.type === 'camera' ? `/cameras/${r.id}` : `/zones/${r.id}`); dispatch(closeCommandPalette()); }}
+                      >
+                        <span className="font-mono text-xs text-[var(--muted)] mr-2">{r.code}</span>
+                        {r.name}
+                      </Command.Item>
+                    ))}
+                  </Command.Group>
+                )}
+
+                <Command.Group heading="Navigation">
+                  {NAV_ITEMS.map((cmd) => <CmdItem key={cmd.id} cmd={cmd} onSelect={() => runCommand(cmd)} />)}
+                </Command.Group>
+                <Command.Group heading="Actions">
+                  {ACTIONS.map((cmd) => <CmdItem key={cmd.id} cmd={cmd} onSelect={() => runCommand(cmd)} />)}
+                </Command.Group>
               </Command.List>
             </Command>
           </motion.div>
-        </>
+        </motion.div>
       )}
     </AnimatePresence>
   );
 }
-```
 
----
-
-## Pattern 2 — Grouped items with recent-first ordering
-
-Users are creatures of habit. Show recently-used actions at the top.
-
-```typescript
-import { useSelector } from 'react-redux';
-
-const RECENT_LS_KEY = 'cmdk_recent_v1';
-
-function pushRecent(key: string) {
-  try {
-    const raw = localStorage.getItem(RECENT_LS_KEY);
-    const list = raw ? (JSON.parse(raw) as string[]) : [];
-    const next = [key, ...list.filter((k) => k !== key)].slice(0, 8);
-    localStorage.setItem(RECENT_LS_KEY, JSON.stringify(next));
-  } catch { /* ignore */ }
-}
-
-function getRecent(): string[] {
-  try {
-    const raw = localStorage.getItem(RECENT_LS_KEY);
-    return raw ? (JSON.parse(raw) as string[]) : [];
-  } catch { return []; }
-}
-
-// Inside <Command.List>:
-<Command.Group heading="Recent" className="text-xs uppercase tracking-wide text-[var(--tertiary-text-color)]">
-  {getRecent().slice(0, 4).map((key) => {
-    const action = ALL_ACTIONS.find((a) => a.key === key);
-    if (!action) return null;
-    return (
-      <Command.Item
-        key={key}
-        onSelect={() => { pushRecent(key); action.run(); }}
-        className="flex items-center gap-3 rounded-[var(--radius-small)] px-3 py-2 text-sm data-[selected=true]:bg-[var(--ui-background-color)]"
-      >
-        <action.icon size={14} strokeWidth={1.8} />
-        {action.label}
-      </Command.Item>
-    );
-  })}
-</Command.Group>
-
-<Command.Group heading="Navigation" /* ... */>
-  {NAV_ITEMS.map((it) => <Command.Item key={it.key} onSelect={() => { pushRecent(it.key); navigate(it.path); }}>{it.label}</Command.Item>)}
-</Command.Group>
-
-<Command.Group heading="Actions" /* ... */>
-  {ACTIONS.map((a) => <Command.Item key={a.key} onSelect={() => { pushRecent(a.key); a.run(); }}>{a.label}</Command.Item>)}
-</Command.Group>
-```
-
----
-
-## Pattern 3 — Async loading (RTK Query / MCP)
-
-Pull results from an API as the user types. Debounce the input, show a
-skeleton while loading.
-
-```typescript
-import { useState } from 'react';
-import { useDebounce } from '@/hooks/useDebounce';           // 300ms debounce
-import { useSearchEntitiesQuery } from '@/features/search/searchApi';
-
-function AsyncResults({ query }: { query: string }) {
-  const debounced = useDebounce(query, 300);
-  const { data, isFetching } = useSearchEntitiesQuery(debounced, { skip: debounced.length < 2 });
-  if (isFetching) {
-    return (
-      <Command.Loading className="px-3 py-4">
-        <div className="skeleton h-4 w-3/4 rounded-[var(--radius-small)]" />
-      </Command.Loading>
-    );
-  }
+function CmdItem({ cmd, onSelect }: { cmd: CommandDef; onSelect: () => void }) {
+  const Icon = cmd.icon;
   return (
-    <Command.Group heading="Search results">
-      {(data ?? []).map((r) => (
-        <Command.Item key={r.id} onSelect={() => navigate(r.href)}>
-          {r.title}
-        </Command.Item>
-      ))}
-    </Command.Group>
+    <Command.Item value={cmd.label} keywords={cmd.keywords} onSelect={onSelect} className="flex items-center gap-2 px-2 py-2 rounded-[var(--radius-small)] text-sm data-[selected=true]:bg-[var(--primary-selected-color)]">
+      <Icon size={16} className="text-[var(--muted)]" />
+      {cmd.label}
+    </Command.Item>
   );
 }
 ```
 
-Wire input state:
+## Wiring the hotkey
 
-```typescript
-const [q, setQ] = useState('');
-<Command.Input value={q} onValueChange={setQ} placeholder="…" />
-{q.length >= 2 && <AsyncResults query={q} />}
-```
-
----
-
-## Pattern 4 — Keyboard hints on each item
-
-Users trust palettes more when items show their hotkeys.
-
-```typescript
-<Command.Item onSelect={runNewNote}>
-  <div className="flex flex-1 items-center gap-3">
-    <PlusIcon size={14} strokeWidth={1.8} />
-    New note
-  </div>
-  <kbd className="rounded-[var(--radius-small)] bg-[var(--ui-background-color)] px-1.5 py-0.5 text-xs font-mono text-[var(--secondary-text-color)]">
-    ⌘ N
-  </kbd>
-</Command.Item>
-```
-
----
-
-## Pattern 5 — Sub-menus (multi-step actions)
-
-When an action needs a target ("Assign to…"), open a second palette page.
-
-```typescript
-const [page, setPage] = useState<'root' | 'assignTo'>('root');
-
-<Command.List>
-  {page === 'root' && (
-    <Command.Item onSelect={() => setPage('assignTo')}>
-      Assign to teammate…
-    </Command.Item>
-  )}
-  {page === 'assignTo' && (
-    <>
-      <Command.Item onSelect={() => setPage('root')}>← Back</Command.Item>
-      {teammates.map((t) => (
-        <Command.Item key={t.id} onSelect={() => assign(t.id)}>{t.name}</Command.Item>
-      ))}
-    </>
-  )}
-</Command.List>
-```
-
-**Rule:** always provide a "Back" option and reset `page` to `root` when the
-palette closes.
-
----
-
-## Pattern 6 — Command registry (single source of truth)
-
-```typescript
-// frontend/src/features/command-palette/commands.ts
-import type { LucideIcon } from 'lucide-react';
-import { PlusIcon, SettingsIcon, LogOutIcon, HomeIcon } from 'lucide-react';
-
-export type Command = {
-  key: string;                     // stable id — used by Recent
-  label: string;
-  icon: LucideIcon;
-  keywords?: string[];             // extra tokens for fuzzy match
-  hotkey?: string;                 // "meta+n" — display + trigger
-  group: 'Navigation' | 'Actions' | 'Account';
-  requires?: (state: RootState) => boolean;   // RBAC — hide if false
-  run: (ctx: CommandContext) => void;
-};
-
-export type CommandContext = {
-  navigate: (path: string) => void;
-  dispatch: AppDispatch;
-  toast: ToastApi;
-};
-
-export const COMMANDS: Command[] = [
-  {
-    key: 'goto.home',
-    label: 'Go to Dashboard',
-    icon: HomeIcon,
-    hotkey: 'g d',
-    group: 'Navigation',
-    run: ({ navigate }) => navigate('/dashboard'),
-  },
-  {
-    key: 'create.item',
-    label: 'New item',
-    icon: PlusIcon,
-    hotkey: 'meta+n',
-    group: 'Actions',
-    run: ({ dispatch }) => dispatch(openCreateModal()),
-  },
-  // ... one entry per command
-];
-```
-
-Filter by RBAC:
-
-```typescript
-const availableCommands = COMMANDS.filter(
-  (c) => !c.requires || c.requires(state)
-);
-```
-
----
-
-## Do-not
-
-- **No commands the user can't invoke.** If a role can't do X, hide X — don't
-  show a disabled row. Palette users expect every row to work.
-- **No autofocus on mobile.** Focus inside a modal on mobile triggers the
-  keyboard and covers 50% of the screen. Use a search icon that opens the
-  input instead.
-- **No opening the palette from inside a form input.** Cmd+K inside a text
-  field should still work — that's why you set `enableOnFormTags: false` in
-  the hotkey; the palette must be reachable from anywhere.
-- **No persistent search state across close/open.** Clear on close — most
-  users start fresh.
-
----
+Registration lives in the keyboard-shortcuts skill's `useGlobalShortcuts()` — `Cmd+K` / `Ctrl+K` dispatches `openCommandPalette()`, `Escape` dispatches `closeCommandPalette()`. Don't duplicate the listener here; the palette component only reads `commandPaletteOpen` from the store.
 
 ## Checklist
 
-- [ ] `uiSlice.commandPaletteOpen` toggles from Cmd+K (hotkey registered in
-      `useGlobalShortcuts`)
-- [ ] Escape closes the palette
-- [ ] Backdrop click closes the palette
-- [ ] Route change closes the palette (subscribe to `useLocation` in the
-      component or handle in the router)
-- [ ] Recent items persist in `localStorage` (max 8 keys)
-- [ ] Every command hidden via `requires` when the user lacks permission
-- [ ] Hotkeys shown as `<kbd>` on each row
-- [ ] Async result groups have a Command.Loading skeleton
-- [ ] Fully keyboard-navigable — arrow up/down, enter to select
-- [ ] Focus trap — Tab stays inside the palette
-- [ ] `AnimatePresence` wraps the palette so exit anim runs
-- [ ] Dark-mode parity
-- [ ] Search input is `type="search"` with `autoComplete="off"` and
-      `spellCheck={false}`
+- [ ] Opening the palette never navigates until an item is selected (Enter or click) — typing alone must not trigger a side effect
+- [ ] Recent list capped at 5, deduped, persisted to `localStorage` under a namespaced key (`vms.commandPalette.recent`) — no cross-tenant leakage since it's client-only
+- [ ] Search input debounced 150–200ms before hitting `useSearchEntitiesQuery`
+- [ ] Empty state distinguishes "type to search" (query too short) vs. "searching…" vs. "no matches"
+- [ ] `Command.Empty` renders only once a real query has resolved with zero results
+- [ ] Backdrop click and `Escape` both close the palette; focus returns to whatever triggered it
+- [ ] Palette is a singleton mounted once at the app shell, not re-mounted per page
+- [ ] Icons from `lucide-react`, 16px, `var(--muted)` unless selected (`var(--primary-selected-color)` background on the active row)
+- [ ] Every entry keyboard-reachable — arrow keys + Enter, never a mouse-only action
+- [ ] Palette results respect the signed-in role's scope (`organizationId`/zone) — a `CLIENT_VIEWER` never sees cameras outside their assigned zones in search results

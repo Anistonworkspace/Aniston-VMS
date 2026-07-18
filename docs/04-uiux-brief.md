@@ -5,13 +5,13 @@
 | Doc changelog | |
 |---|---|
 | v1.0 | Dark ops-center theme |
-| v2.0 | **Full redesign to the light "soft SaaS" reference** (`docs/design-reference.jpeg`): slate sidebar, cream canvas, white rounded cards, sage/indigo/coral/sand accents, Poppins + Inter |
+| v2.0 | **Full redesign to the light "soft SaaS" reference** (`docs/actual-design.png`): slate sidebar, cream canvas, white rounded cards, sage/indigo/coral/sand accents, Poppins + Inter |
 
 ---
 
 ## 1. Design direction — replicate the reference
 
-A reference screenshot is provided at **`docs/design-reference.jpeg`** (a file-manager dashboard). **Replicate its layout system, spacing, color mood, and component shapes exactly** — but replace its content (folders/files/storage) with Aniston VMS content using the mapping in §8. The feel: light, calm, generously spaced, friendly-professional SaaS — rounded everything, soft shadows, pastel accent cards, one dark slate sidebar, dark charcoal only for video surfaces. This is a commercial product, not an admin panel.
+A reference screenshot is provided at **`docs/actual-design.png`** (a file-manager dashboard). **Replicate its layout system, spacing, color mood, and component shapes exactly** — but replace its content (folders/files/storage) with Aniston VMS content using the mapping in §8. The feel: light, calm, generously spaced, friendly-professional SaaS — rounded everything, soft shadows, pastel accent cards, one dark slate sidebar, dark charcoal only for video surfaces. This is a commercial product, not an admin panel.
 
 ## 2. Design tokens
 
@@ -34,11 +34,11 @@ A reference screenshot is provided at **`docs/design-reference.jpeg`** (a file-m
 
 **Status semantics:** Healthy `#4E9C77` on `#E7F1EA` · Warning `#E2A93B` on `#FBF3DF` · Critical `#F25B3D` on `#FDE7E1` · Maintenance `#484C89` on `#E6E7F3` · Unknown `#9AA1A9` on `#F0F0EE`. Status dots are 8 px circles, exactly like the reference's sidebar folder dots.
 
-**Type:** Display/headings **Poppins** 600–700 (page hero ~34–40 px, card titles 20 px); body/UI **Inter** 400/500/600 at 14–15 px; numbers tabular. **Icons:** lucide-react, 20 px, 1.5 px stroke, muted color. **Radii:** app frame 28 px · cards 20 px · inner tiles/list icons 14 px · buttons/inputs 12 px · pills 999. **Shadow:** `0 10px 30px rgba(33,32,30,.07)` (hover `.10`) — soft, never harsh. **Spacing:** 24 px card padding, 24 px grid gaps, whitespace is a feature. Light theme only in v1 (video chrome stays charcoal); dark mode later.
+**Type:** Display/headings **Poppins** 600–700 (page hero ~34–40 px, card titles 20 px); body/UI **Inter** 400/500/600 at 14–15 px; numbers tabular. **Icons:** lucide-react, 20 px, 1.5 px stroke, muted color. **Radii:** cards 20 px · inner tiles/list icons 14 px · buttons/inputs 12 px · pills 999 (no radius on the app frame itself — it is edge-to-edge). **Shadow:** `0 10px 30px rgba(33,32,30,.07)` (hover `.10`) — soft, never harsh. **Spacing:** 24 px card padding, 24 px grid gaps, whitespace is a feature. Light theme only in v1 (video chrome stays charcoal); dark mode later.
 
 ## 3. App frame
 
-Viewport background `--canvas`. The app sits as a **rounded-[28px] shell** (max-width ~1440 px, centered, `overflow-hidden`, soft shadow) containing sidebar + content — exactly like the reference's floating card look. Below `lg` the shell goes edge-to-edge with radius 0.
+The app is **full-viewport, edge-to-edge** — no outer rounded frame or floating card (the dark border visible in some mockup exports is the export canvas, not UI). Fixed slate sidebar full-height on the left; main column on `--canvas` background is the only scroll container. Rounding lives on the **cards inside** the canvas, not on the app itself.
 
 ## 4. Sidebar (left, ~260 px, `--sidebar`)
 

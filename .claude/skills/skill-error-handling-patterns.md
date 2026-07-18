@@ -1,447 +1,211 @@
-# Skill — Error Handling Patterns
-
-Enterprise-level error handling: typed errors in services, safe API responses, frontend error decoding.
+# Skill — Error Handling Patterns (NestJS exception filters + VMS status codes)
 
 ---
 
-## Backend — AppError class hierarchy (already in boilerplate)
+Enterprise-level error handling: typed errors, safe API responses, frontend error decoding, retry/circuit
+breaker for the external dependencies a VMS leans on (RTSP/ONVIF devices, routers/SIMs, WhatsApp
+notifications). Backend: `AppError` class hierarchy + a single global `AllExceptionsFilter`. Frontend:
+`getErrorMessage()` maps every backend code to a human sentence — no raw stack traces reach the operator.
+
+## AppError class hierarchy (packages/shared/src/errors.ts)
 
 ```typescript
-// backend/src/middleware/errorHandler.ts — already exists, do NOT recreate
 export class AppError extends Error {
-  constructor(
-    public message: string,
-    public statusCode: number,
-    public code: string,
-  ) { super(message); this.name = 'AppError'; }
+  constructor(public code: string, message: string, public statusCode: number, public fieldErrors?: Record<string, string>) {
+    super(message);
+  }
 }
 
-export class NotFoundError     extends AppError { constructor(msg = 'Not found')              { super(msg, 404, 'NOT_FOUND'); } }
-export class ConflictError     extends AppError { constructor(msg = 'Already exists')          { super(msg, 409, 'CONFLICT'); } }
-export class ValidationError   extends AppError { constructor(msg = 'Validation failed')       { super(msg, 400, 'VALIDATION_ERROR'); } }
-export class UnauthorizedError extends AppError { constructor(msg = 'Not authenticated')       { super(msg, 401, 'UNAUTHORIZED'); } }
-export class ForbiddenError    extends AppError { constructor(msg = 'Access denied')           { super(msg, 403, 'FORBIDDEN'); } }
-export class RateLimitError    extends AppError { constructor(msg = 'Too many requests')       { super(msg, 429, 'RATE_LIMITED'); } }
-export class ServerError       extends AppError { constructor(msg = 'Internal server error')   { super(msg, 500, 'SERVER_ERROR'); } }
-export class GoneError         extends AppError { constructor(msg = 'Resource no longer avail') { super(msg, 410, 'GONE'); } }
-export class UnprocessableError extends AppError { constructor(msg = 'Unprocessable entity')  { super(msg, 422, 'UNPROCESSABLE'); } }
+export class NotFoundError extends AppError       { constructor(m = 'Record not found') { super('NOT_FOUND', m, 404); } }
+export class ForbiddenError extends AppError      { constructor(m = 'Access denied') { super('FORBIDDEN', m, 403); } }
+export class UnauthorizedError extends AppError   { constructor(m = 'Not authenticated') { super('UNAUTHORIZED', m, 401); } }
+export class ConflictError extends AppError       { constructor(m = 'Conflicting state') { super('CONFLICT', m, 409); } }
+export class ValidationError extends AppError     { constructor(m: string, fe?: Record<string, string>) { super('VALIDATION_ERROR', m, 422, fe); } }
+export class RateLimitError extends AppError      { constructor(m = 'Too many requests') { super('RATE_LIMITED', m, 429); } }
 ```
 
----
-
-## Which error to throw — decision table
-
-| Situation | Throw |
-|-----------|-------|
-| Record not found (by ID) | `NotFoundError('Item not found')` |
-| Record soft-deleted (deletedAt != null) | `NotFoundError('Item not found')` |
-| Unique constraint violation (email duplicate) | `ConflictError('Email already registered')` |
-| Wrong org (IDOR attempt) | `NotFoundError` — never reveal it exists |
-| User not authenticated (no/invalid token) | `UnauthorizedError` |
-| User authenticated but missing permission | `ForbiddenError('You cannot approve your own request')` |
-| Self-approval attempt | `ForbiddenError('Self-approval is not allowed')` |
-| Status transition not allowed | `UnprocessableError('Cannot approve a rejected request')` |
-| Race condition (optimistic lock miss) | `ConflictError('Request was already processed')` |
-| Invalid file type / size | `ValidationError('Only PDF and JPEG allowed, max 5MB')` |
-| External API failed | `ServerError` (log internally, safe message externally) |
-
----
-
-## Handling Prisma errors — map to AppError
+## VMS domain status codes (device/network health, distinct from generic HTTP errors)
 
 ```typescript
-// backend/src/utils/handlePrismaError.ts
-import { Prisma } from '@prisma/client';
-import { ConflictError, NotFoundError, ServerError } from '../middleware/errorHandler.js';
+// packages/shared/src/enums.ts — surfaced by the health-check pipeline and camera/router services,
+// NOT thrown as HTTP exceptions — these are CameraStatus/RouterStatus values shown in the UI and used
+// by BullMQ health-check jobs to decide retry/escalation behavior.
+export enum CameraStatus {
+  CAMERA_REACHABLE = 'CAMERA_REACHABLE',
+  RTSP_AUTHENTICATED = 'RTSP_AUTHENTICATED',
+  VIDEO_HEALTHY = 'VIDEO_HEALTHY',
+  RECOVERY_VERIFIED = 'RECOVERY_VERIFIED',
+  CAMERA_OFFLINE = 'CAMERA_OFFLINE',
+  CAMERA_TIMEOUT = 'CAMERA_TIMEOUT',
+  CAMERA_PORT_CLOSED = 'CAMERA_PORT_CLOSED',
+  RTSP_PROTOCOL_FAILURE = 'RTSP_PROTOCOL_FAILURE',
+  INVALID_CREDENTIALS = 'INVALID_CREDENTIALS',
+  INVALID_STREAM_PATH = 'INVALID_STREAM_PATH',
+  WRONG_RESOLUTION = 'WRONG_RESOLUTION',
+  WRONG_CODEC = 'WRONG_CODEC',
+  LOW_BITRATE = 'LOW_BITRATE',
+  LOW_FPS = 'LOW_FPS',
+  STREAM_DEGRADED = 'STREAM_DEGRADED',
+  UNSTABLE_STREAM = 'UNSTABLE_STREAM',
+  IMAGE_PROBLEM = 'IMAGE_PROBLEM',
+  LENS_CLEANING = 'LENS_CLEANING',
+}
 
-export function handlePrismaError(err: unknown): never {
-  if (err instanceof Prisma.PrismaClientKnownRequestError) {
-    switch (err.code) {
-      case 'P2002': {
-        // Unique constraint violation
-        const field = (err.meta?.target as string[])?.join(', ') ?? 'field';
-        throw new ConflictError(`A record with this ${field} already exists`);
-      }
-      case 'P2025':
-        // Record not found (e.g. update/delete on non-existent ID)
-        throw new NotFoundError('Record not found');
-      case 'P2003':
-        // Foreign key constraint failure
-        throw new ConflictError('Related record does not exist');
-      case 'P2014':
-        // Required relation violation
-        throw new ConflictError('Cannot delete — other records depend on this');
-      default:
-        throw new ServerError('Database operation failed');
+export enum RouterStatus {
+  ROUTER_ONLINE = 'ROUTER_ONLINE',
+  ROUTER_OFFLINE = 'ROUTER_OFFLINE',
+  ROUTER_REBOOTED = 'ROUTER_REBOOTED',
+  PORT_FORWARDING_FAILURE = 'PORT_FORWARDING_FAILURE',
+  SITE_INTERNET_DOWN = 'SITE_INTERNET_DOWN',
+  NETWORK_UNSTABLE = 'NETWORK_UNSTABLE',
+  SIM_DISCONNECTED = 'SIM_DISCONNECTED',
+  SIM_SIGNAL_ISSUE = 'SIM_SIGNAL_ISSUE',
+  WEAK_SIGNAL = 'WEAK_SIGNAL',
+  CONFIG_ERROR = 'CONFIG_ERROR',
+}
+```
+
+## Global exception filter (apps/api/src/common/filters/all-exceptions.filter.ts)
+
+```typescript
+@Catch()
+export class AllExceptionsFilter implements ExceptionFilter {
+  catch(exception: unknown, host: ArgumentsHost) {
+    const res = host.switchToHttp().getResponse<Response>();
+    const req = host.switchToHttp().getRequest<Request>();
+
+    if (exception instanceof AppError) {
+      return res.status(exception.statusCode).json({
+        code: exception.code, message: exception.message, fieldErrors: exception.fieldErrors,
+      });
     }
-  }
-  if (err instanceof Prisma.PrismaClientValidationError) {
-    throw new ServerError('Invalid database query');
-  }
-  throw err;  // re-throw AppError or unknown
-}
-```
-
-```typescript
-// Usage in any service method
-try {
-  const record = await prisma.item.create({ data });
-} catch (err) {
-  handlePrismaError(err);   // converts Prisma errors → AppError
-}
-```
-
----
-
-## Global error handler middleware (already in boilerplate)
-
-```typescript
-// backend/src/middleware/errorHandler.ts — the catch-all
-export function globalErrorHandler(
-  err: Error,
-  _req: Request,
-  res: Response,
-  _next: NextFunction,
-) {
-  if (err instanceof AppError) {
-    return res.status(err.statusCode).json({
-      success: false,
-      error: { code: err.code, message: err.message },
-    });
-  }
-
-  // Zod validation errors from validateRequest middleware
-  if (err instanceof ZodError) {
-    return res.status(400).json({
-      success: false,
-      error: {
-        code: 'VALIDATION_ERROR',
-        message: 'Validation failed',
-        fields: err.flatten().fieldErrors,   // maps field name → error array
-      },
-    });
-  }
-
-  // Unknown — log internally, never expose
-  logger.error('[Unhandled error]', { error: err.message, stack: err.stack });
-  return res.status(500).json({
-    success: false,
-    error: { code: 'SERVER_ERROR', message: 'An unexpected error occurred' },
-  });
-}
-```
-
----
-
-## Frontend — Decode error codes to user messages
-
-```typescript
-// frontend/src/lib/errorMessages.ts
-const ERROR_MESSAGES: Record<string, string> = {
-  NOT_FOUND:        'The requested record was not found.',
-  CONFLICT:         'This record already exists.',
-  VALIDATION_ERROR: 'Please check the form fields and try again.',
-  UNAUTHORIZED:     'Your session has expired. Please log in again.',
-  FORBIDDEN:        'You do not have permission to perform this action.',
-  RATE_LIMITED:     'Too many requests. Please wait a moment.',
-  SERVER_ERROR:     'Something went wrong on our end. Please try again.',
-  UNPROCESSABLE:    'This action cannot be completed in the current state.',
-  GONE:             'This record has been deleted.',
-};
-
-export function getErrorMessage(err: unknown): string {
-  if (err && typeof err === 'object' && 'data' in err) {
-    const data = (err as { data?: { error?: { code?: string; message?: string } } }).data;
-    const code = data?.error?.code;
-    if (code && ERROR_MESSAGES[code]) return ERROR_MESSAGES[code];
-    if (data?.error?.message) return data.error.message;
-  }
-  return 'An unexpected error occurred. Please try again.';
-}
-```
-
----
-
-## Frontend — Mutation error handler with toast + field errors
-
-```typescript
-// Standard mutation error handling in a component
-import { getErrorMessage } from '@/lib/errorMessages';
-import { toast } from '@/hooks/useToast';
-
-const [createItem, { isLoading }] = useCreateItemMutation();
-
-const onSubmit = async (data: CreateItemInput) => {
-  try {
-    await createItem(data).unwrap();
-    toast.success('Item created successfully');
-    onClose();
-  } catch (err: unknown) {
-    const message = getErrorMessage(err);
-
-    // Check for field-level validation errors
-    if (err && typeof err === 'object' && 'data' in err) {
-      const fields = (err as any).data?.error?.fields;
-      if (fields) {
-        Object.entries(fields).forEach(([field, errors]) => {
-          form.setError(field as keyof CreateItemInput, {
-            message: (errors as string[])[0],
-          });
-        });
-        return;
-      }
+    if (exception instanceof PrismaClientKnownRequestError) {
+      return res.status(this.prismaStatus(exception)).json(this.prismaBody(exception));
     }
-
-    toast.error(message);
-  }
-};
-```
-
----
-
-## RTK Query — Global 401 handler (already in boilerplate)
-
-```typescript
-// frontend/src/lib/api.ts — baseQuery with auto-refresh on 401
-const baseQueryWithReauth: BaseQueryFn = async (args, api, extraOptions) => {
-  let result = await baseQuery(args, api, extraOptions);
-
-  if (result.error?.status === 401) {
-    // Try silent token refresh
-    const refreshResult = await baseQuery('/auth/refresh', api, extraOptions);
-    if (refreshResult.data) {
-      // Retry original request with new token
-      result = await baseQuery(args, api, extraOptions);
-    } else {
-      // Refresh failed — log the user out
-      api.dispatch(logout());
+    if (exception instanceof ZodError || exception instanceof BadRequestException) {
+      return res.status(422).json({ code: 'VALIDATION_ERROR', message: 'Invalid input', fieldErrors: toFieldErrors(exception) });
     }
+    // Unknown/unhandled — log full detail server-side, never leak it to the client
+    this.logger.error(exception, req.url);
+    return res.status(500).json({ code: 'SERVER_ERROR', message: 'Something went wrong. Please try again.' });
   }
 
-  return result;
-};
-```
-
----
-
-## Error boundary for React (catches render errors)
-
-```typescript
-// frontend/src/components/ErrorBoundary.tsx — already in boilerplate
-// Usage: wrap routes or feature pages
-<ErrorBoundary fallback={<div>Something went wrong. <button onClick={() => window.location.reload()}>Reload</button></div>}>
-  <ItemPage />
-</ErrorBoundary>
-```
-
----
-
-## Checklist
-
-- [ ] Every service method throws an `AppError` subclass — never raw `Error`
-- [ ] Prisma calls in services are wrapped with `handlePrismaError`
-- [ ] Controllers never contain error logic — only `try { } catch (err) { next(err); }`
-- [ ] Frontend uses `getErrorMessage()` for all mutation errors
-- [ ] Field-level Zod errors are mapped to `form.setError()`, not just a toast
-- [ ] 401 auto-refresh is wired in RTK Query base query
-- [ ] No raw Prisma errors or stack traces ever reach API consumers
-- [ ] `NOT_FOUND` is thrown for wrong-org access (never `FORBIDDEN` — don't reveal existence)
-
----
-
-## Result type (typed errors without exceptions)
-
-Use `Result<T, E>` for operations where failure is expected and the caller must handle it.
-Reserve thrown exceptions for programmer errors and truly unexpected failures.
-
-```typescript
-// shared/src/domain/result.ts
-export type Result<T, E extends string = string> =
-  | { ok: true;  value: T }
-  | { ok: false; error: E; message: string };
-
-export const Ok  = <T>(value: T): Result<T, never> => ({ ok: true, value });
-export const Err = <E extends string>(error: E, message: string): Result<never, E> => ({ ok: false, error, message });
-```
-
-```typescript
-// Usage — callers MUST check .ok before using .value
-type ImportError = 'DUPLICATE_EMAIL' | 'INVALID_CATEGORY' | 'QUOTA_EXCEEDED';
-
-static async importItem(dto: CreateItemInput, actor: AuthUser): Promise<Result<Item, ImportError>> {
-  const existing = await prisma.item.findFirst({
-    where: { email: dto.email, organizationId: actor.organizationId, deletedAt: null },
-  });
-  if (existing) return Err('DUPLICATE_EMAIL', `${dto.email} already exists`);
-
-  const category = await prisma.category.findFirst({
-    where: { id: dto.categoryId, organizationId: actor.organizationId },
-  });
-  if (!category) return Err('INVALID_CATEGORY', `Category ${dto.categoryId} not found`);
-
-  const item = await prisma.item.create({ data: { ...dto, organizationId: actor.organizationId } });
-  return Ok(item);
-}
-
-// Caller handles all error branches — no try/catch needed
-const result = await ItemService.importItem(row, actor);
-if (!result.ok) {
-  switch (result.error) {
-    case 'DUPLICATE_EMAIL':  failures.push({ row, reason: result.message }); break;
-    case 'INVALID_CATEGORY': failures.push({ row, reason: result.message }); break;
-    case 'QUOTA_EXCEEDED':   throw new ConflictError(result.message); // escalate this one
+  private prismaStatus(e: PrismaClientKnownRequestError) {
+    if (e.code === 'P2002') return 409; // unique constraint (e.g. duplicate router serial, camera name in zone)
+    if (e.code === 'P2025') return 404; // record to update/delete not found
+    return 500;
   }
-  continue;
+
+  private prismaBody(e: PrismaClientKnownRequestError) {
+    if (e.code === 'P2002') return { code: 'CONFLICT', message: `Duplicate value for ${e.meta?.target}` };
+    if (e.code === 'P2025') return { code: 'NOT_FOUND', message: 'Record not found' };
+    return { code: 'SERVER_ERROR', message: 'Database error' };
+  }
 }
-successCount++;
 ```
 
----
-
-## Circuit breaker for external services
-
-Prevent cascading failures when a third-party API (email, SMS, payment) is down.
+## Circuit breaker for external dependencies (WhatsApp notification API, MediaMTX control API)
 
 ```typescript
-// backend/src/lib/circuit-breaker.ts
-interface CircuitBreakerOptions {
-  failureThreshold: number;  // open after N consecutive failures
-  recoveryTimeMs: number;    // half-open after this duration
-  timeout: number;           // request timeout in ms
-}
-
-type CircuitState = 'CLOSED' | 'OPEN' | 'HALF_OPEN';
+// apps/api/src/common/lib/circuit-breaker.ts
+export interface CircuitBreakerOptions { failureThreshold: number; recoveryTimeMs: number; }
+export type CircuitState = 'CLOSED' | 'OPEN' | 'HALF_OPEN';
 
 export class CircuitBreaker {
   private state: CircuitState = 'CLOSED';
-  private failures = 0;
+  private failureCount = 0;
   private lastFailureTime = 0;
-
-  constructor(
-    private readonly name: string,
-    private readonly opts: CircuitBreakerOptions = { failureThreshold: 5, recoveryTimeMs: 60_000, timeout: 5000 },
-  ) {}
+  constructor(private opts: CircuitBreakerOptions) {}
 
   async call<T>(fn: () => Promise<T>): Promise<T> {
     if (this.state === 'OPEN') {
-      if (Date.now() - this.lastFailureTime > this.opts.recoveryTimeMs) {
-        this.state = 'HALF_OPEN';
-      } else {
-        throw new ServerError(`Service ${this.name} is temporarily unavailable`);
+      if (Date.now() - this.lastFailureTime < this.opts.recoveryTimeMs) {
+        throw new AppError('SERVICE_UNAVAILABLE', 'External service temporarily unavailable', 503);
       }
+      this.state = 'HALF_OPEN';
     }
-
     try {
-      const result = await Promise.race([
-        fn(),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Timeout')), this.opts.timeout)),
-      ]);
-      // Success — reset
-      this.failures = 0;
+      const result = await fn();
       this.state = 'CLOSED';
+      this.failureCount = 0;
       return result;
     } catch (err) {
-      this.failures++;
+      this.failureCount += 1;
       this.lastFailureTime = Date.now();
-      if (this.failures >= this.opts.failureThreshold) {
-        this.state = 'OPEN';
-      }
+      if (this.failureCount >= this.opts.failureThreshold) this.state = 'OPEN';
       throw err;
     }
   }
 }
 
-// One breaker per external dependency
-export const emailBreaker   = new CircuitBreaker('email-service');
-export const smsBreaker     = new CircuitBreaker('sms-service');
-export const paymentBreaker = new CircuitBreaker('payment-gateway', { failureThreshold: 3, recoveryTimeMs: 120_000, timeout: 10_000 });
-
-// Usage
-await emailBreaker.call(() => sendgrid.send(email));
+// One breaker per external dependency — a flapping WhatsApp API must never take down camera CRUD
+const whatsappBreaker = new CircuitBreaker({ failureThreshold: 5, recoveryTimeMs: 60_000 });
+const mediaMtxBreaker = new CircuitBreaker({ failureThreshold: 3, recoveryTimeMs: 30_000 });
 ```
 
----
-
-## Retry with exponential backoff + jitter
-
-For transient failures (network blips, DB connection spikes). Never retry on 4xx errors.
+## Retry with backoff for BullMQ jobs (camera health-check, notification dispatch)
 
 ```typescript
-// backend/src/lib/retry.ts
-interface RetryOptions {
-  maxAttempts: number;
-  baseDelayMs: number;
-  maxDelayMs: number;
-  retryOn?: (err: unknown) => boolean;
-}
+// apps/api/src/jobs/workers/health-check.worker.ts
+export interface RetryOptions { maxAttempts: number; baseDelayMs: number; maxDelayMs: number; shouldRetry?: (err: unknown) => boolean; }
 
-export async function withRetry<T>(fn: () => Promise<T>, opts: RetryOptions): Promise<T> {
-  const shouldRetry = opts.retryOn ?? (() => true);
-
+async function withRetry<T>(fn: () => Promise<T>, opts: RetryOptions): Promise<T> {
   for (let attempt = 1; attempt <= opts.maxAttempts; attempt++) {
     try {
       return await fn();
     } catch (err) {
-      const isLast = attempt === opts.maxAttempts;
-      if (isLast || !shouldRetry(err)) throw err;
-
-      // Exponential backoff with jitter: 2^attempt * base ± 20% random
-      const expDelay = Math.min(opts.baseDelayMs * 2 ** attempt, opts.maxDelayMs);
-      const jitter = expDelay * 0.2 * (Math.random() - 0.5);
-      await new Promise((r) => setTimeout(r, expDelay + jitter));
+      const retryable = opts.shouldRetry?.(err) ?? true;
+      if (attempt === opts.maxAttempts || !retryable) throw err;
+      const expDelay = Math.min(opts.baseDelayMs * 2 ** (attempt - 1), opts.maxDelayMs);
+      await new Promise((r) => setTimeout(r, expDelay));
     }
   }
   throw new Error('unreachable');
 }
 
-// Usage — only retry on 5xx/network errors, not on 4xx client errors
-await withRetry(
-  () => fetch(webhookUrl, { method: 'POST', body: JSON.stringify(payload) }),
-  {
-    maxAttempts: 3,
-    baseDelayMs: 500,
-    maxDelayMs: 5000,
-    retryOn: (err) => !(err instanceof AppError && err.statusCode < 500),
-  },
-);
+// BullMQ job options — maxRetriesPerJob mirrors withRetry's maxAttempts for jobs that don't self-retry
+export const healthCheckQueueOptions: QueueOptions = {
+  defaultJobOptions: { attempts: 5, backoff: { type: 'exponential', delay: 5000 } },
+};
 ```
 
----
-
-## Dead-letter queue for failed jobs
-
-BullMQ automatically moves failed jobs to a dead-letter queue after `maxRetriesPerJob` exhausted.
+## Frontend: decoding backend error codes (getErrorMessage)
 
 ```typescript
-// backend/src/jobs/workers/email.worker.ts
-import { Worker } from 'bullmq';
-import { redis } from '../../lib/redis.js';
-import { logger } from '../../lib/logger.js';
+// frontend/src/lib/errorMessages.ts
+export const ERROR_MESSAGES: Record<string, string> = {
+  CAMERA_OFFLINE: 'This camera is currently offline.',
+  RTSP_PROTOCOL_FAILURE: 'The camera rejected the stream connection. Check the RTSP path.',
+  INVALID_CREDENTIALS: 'The camera credentials were rejected. Update the RTSP/ONVIF username or password.',
+  SITE_INTERNET_DOWN: "This site's internet connection appears to be down.",
+  SIM_SIGNAL_ISSUE: 'The router’s SIM signal is weak or unstable.',
+  RATE_LIMITED: 'Too many requests — please wait a moment and try again.',
+  TENANT_NOT_FOUND: 'Your session is out of date. Please sign in again.',
+  VALIDATION_ERROR: 'Please check the highlighted fields.',
+};
 
-export const emailWorker = new Worker(
-  'email',
-  async (job) => {
-    // If this throws after all retries, job moves to failed set (the dead-letter queue)
-    await emailBreaker.call(() => sendEmail(job.data));
-  },
-  {
-    connection: redis,
-    concurrency: 5,
-  },
-);
-
-emailWorker.on('failed', (job, err) => {
-  // Alert on permanent failure (all retries exhausted)
-  logger.error('Email job permanently failed', {
-    jobId: job?.id,
-    jobName: job?.name,
-    data: job?.data,
-    error: err.message,
-    attempts: job?.attemptsMade,
-  });
-  // Optionally: push to a human-review queue, alert via Slack, etc.
-});
-
-// Queue config — retries are defined on the queue, not the worker
-// emailQueue.add('send', data, { attempts: 3, backoff: { type: 'exponential', delay: 1000 } });
+export function getErrorMessage(code: string): string {
+  return ERROR_MESSAGES[code] ?? 'Something went wrong. Please try again.';
+}
 ```
+
+```typescript
+// frontend/src/components/ErrorBoundary.tsx — catches render-time errors only; API errors are handled
+// per-mutation via getErrorMessage(), never swallowed silently
+const [createCamera, { error }] = useCreateCameraMutation();
+if (error) setFormError(getErrorMessage(error.data?.code));
+```
+
+## Rules
+
+1. Every thrown error in a service is an `AppError` subclass (or a caught `PrismaClientKnownRequestError`)
+   — no bare `throw new Error('...')` reaches the filter.
+2. `CameraStatus`/`RouterStatus` values (`CAMERA_OFFLINE`, `RTSP_PROTOCOL_FAILURE`, `SIM_SIGNAL_ISSUE`, ...)
+   are health-check *data*, not HTTP exceptions — they're persisted and streamed to the dashboard, not
+   thrown.
+3. External dependencies (WhatsApp API, MediaMTX control API) are always called through their circuit
+   breaker — a flapping third party degrades gracefully instead of cascading into camera/incident CRUD.
+4. BullMQ jobs (health checks, notification dispatch) use exponential backoff with a capped `maxDelayMs`
+   and a bounded `attempts`, never an unbounded retry loop.
+5. The frontend never renders a raw error code or stack trace — `getErrorMessage()` is the only path from
+   a backend `code` to user-visible text.

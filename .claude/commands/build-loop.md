@@ -38,9 +38,9 @@ Skills read: `skill-tdd-loop-patterns.md`, `skill-wire-completeness-patterns.md`
 
 Examples:
 
-- `/build-loop notes "user can create, edit, tag, and search notes"`
-- `/build-loop bookings "customer books a service, provider accepts, both notified"`
-- `/build-loop invoices "admin creates invoice, customer views, marks paid"`
+- `/build-loop incidents "camera health-check fails, an Incident opens, escalates on SLA breach, operator acknowledges and resolves"`
+- `/build-loop maintenance-tasks "field technician logs a site visit, PROJECT_ADMIN reviews and closes it"`
+- `/build-loop recordings "operator browses a day's clips, plays back an HLS segment, exports a snapshot"`
 
 ---
 
@@ -50,7 +50,7 @@ Examples:
    exists. If not — run `/design-first <ProjectName>` first.
 2. **Repo clean-ish:** no unrelated uncommitted changes (the loop stashes them
    with `git stash -u` before starting; restores at the end).
-3. **Tests infrastructure:** `npm test` and `npm run test:e2e` work today.
+3. **Tests infrastructure:** `pnpm test` and `pnpm test:e2e` work today.
 
 ---
 
@@ -89,19 +89,19 @@ cost per invocation.
 On convergence:
 
 ```
-## /build-loop notes — COMPLETE
+## /build-loop incidents — COMPLETE
 
 Iterations: 3 / 5
 Tokens: ~87 000 / 200 000
 Wall time: ~14 min
 
-Files created: prisma model, service + tests, controller, routes, api slice,
-  4 React components, e2e spec, README
+Files created: prisma model, service + spec, NestJS controller + DTOs, RTK Query
+  api slice, 4 React components, e2e spec, README
 
 Gates: ✅ design ✅ tests (29 green) ✅ wire (10/10) ✅ coverage (backend 84%,
   frontend 76%) ✅ audit (0 CRITICAL, 0 HIGH)
 
-Follow-up: 2 MEDIUM findings queued in memory/plans/_active/notes-followup.md.
+Follow-up: 2 MEDIUM findings queued in memory/plans/_active/incidents-followup.md.
 
 Next: review the diff, then commit.
 ```
@@ -109,19 +109,19 @@ Next: review the diff, then commit.
 On cap-hit (partial):
 
 ```
-## /build-loop notes — CAPPED after 5 iterations
+## /build-loop incidents — CAPPED after 5 iterations
 
 Failing tests (2 remaining):
-  - notes.service.test.ts > update > throws NotFoundError when in another org
-  - notes.routes.test.ts > POST /api/notes > returns 403 for MEMBER
+  - incident.service.spec.ts > acknowledge > throws NotFoundError when in another org
+  - incident.controller.spec.ts > POST /incidents/:id/acknowledge > returns 403 for CLIENT_VIEWER
 
-Last-mile diff written to memory/plans/_active/notes-loop-log.md.
+Last-mile diff written to memory/plans/_active/incidents-loop-log.md.
 
 Suggested next moves:
-  1. Human review of notes.service.ts:64
-  2. Correct permissions.ts:47
+  1. Human review of incident.service.ts:64
+  2. Correct packages/shared/src/permissions.ts:47
 
-Re-run `/build-loop notes` after fixing to resume from checkpoint.
+Re-run `/build-loop incidents` after fixing to resume from checkpoint.
 ```
 
 ---

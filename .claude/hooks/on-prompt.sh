@@ -118,7 +118,7 @@ COMMANDS=()    # surfaced as "Suggested slash command" so freshers discover the 
 # ─ UI / Design / Frontend visuals ─────────────────────────────────────────────
 # Expanded vocabulary so common fresher UI words trigger the design-system guard.
 if echo "$P" | grep -qE "ui|ux|component|page|screen|design|layout|style|color|button|form|modal|sidebar|header|nav|card|table|icon|theme|dark mode|responsive|mobile|animation|tailwind|css|glassmorphism|floating.card|popup|dialog|drawer|sheet|tooltip|toast|popover|dropdown|accordion|tab|tabs|wizard|stepper|avatar|badge|breadcrumb|snackbar|banner|widget|tile|empty state|skeleton"; then
-  AGENTS+=("agent-ui-ux" "agent-frontend-wiring")
+  AGENTS+=("agent-vms-uiux" "agent-frontend-wiring")
   SKILLS+=("skill-ui-ux-checklist.md" "skill-rtk-query-patterns.md" "skill-form-patterns.md" "skill-table-patterns.md" "skill-modal-patterns.md")
   RULES+=("rule-frontend.md")
 fi
@@ -226,43 +226,43 @@ fi
 
 # ─ Modern UI — Hero / landing / spotlight ─────────────────────────────────────
 if echo "$P" | grep -qE "hero|landing page|spotlight|gradient text|animated grid|marketing page|top of page"; then
-  AGENTS+=("agent-ui-ux")
+  AGENTS+=("agent-vms-uiux")
   SKILLS+=("skill-modern-hero-patterns.md" "skill-ui-ux-checklist.md")
 fi
 
 # ─ Modern UI — Layout (bento / marquee / sticky-scroll / parallax) ────────────
 if echo "$P" | grep -qE "bento|marquee|sticky scroll|scroll story|parallax|magnetic button|logo strip|logo carousel"; then
-  AGENTS+=("agent-ui-ux")
+  AGENTS+=("agent-vms-uiux")
   SKILLS+=("skill-modern-layout-patterns.md" "skill-ui-ux-checklist.md")
 fi
 
 # ─ Modern UI — Advanced motion (Framer Motion) ────────────────────────────────
 if echo "$P" | grep -qE "shared layout|layoutid|framer motion|spring physics|stagger|motion value|use.?transform|use.?scroll|count.?up|scroll progress|tilt card|animatepresence"; then
-  AGENTS+=("agent-ui-ux")
+  AGENTS+=("agent-vms-uiux")
   SKILLS+=("skill-modern-motion-patterns.md" "skill-ui-ux-checklist.md")
 fi
 
 # ─ Modern UI — Command palette (Cmd+K) ────────────────────────────────────────
 if echo "$P" | grep -qE "cmd\+k|ctrl\+k|command palette|quick action|fuzzy search|palette|cmdk"; then
-  AGENTS+=("agent-ui-ux")
+  AGENTS+=("agent-vms-uiux")
   SKILLS+=("skill-command-palette-patterns.md" "skill-keyboard-shortcuts-patterns.md" "skill-ui-ux-checklist.md")
 fi
 
 # ─ Modern UI — Drag & Drop (dnd-kit) ──────────────────────────────────────────
 if echo "$P" | grep -qE "drag|drop|dnd|dnd.kit|sortable|kanban|reorder|drop zone|multi.select drag"; then
-  AGENTS+=("agent-ui-ux")
+  AGENTS+=("agent-vms-uiux")
   SKILLS+=("skill-drag-drop-patterns.md" "skill-ui-ux-checklist.md")
 fi
 
 # ─ Modern UI — Empty states ───────────────────────────────────────────────────
 if echo "$P" | grep -qE "empty state|no data|no results|first run|nothing to show|zero state|blank state"; then
-  AGENTS+=("agent-ui-ux")
+  AGENTS+=("agent-vms-uiux")
   SKILLS+=("skill-empty-state-patterns.md" "skill-ui-ux-checklist.md")
 fi
 
 # ─ Modern UI — Onboarding flow ────────────────────────────────────────────────
 if echo "$P" | grep -qE "onboarding|welcome flow|multi.step signup|first.time setup|guided tour|walkthrough|product tour"; then
-  AGENTS+=("agent-ui-ux")
+  AGENTS+=("agent-vms-uiux")
   SKILLS+=("skill-onboarding-flow-patterns.md" "skill-form-patterns.md" "skill-ui-ux-checklist.md")
 fi
 
@@ -320,7 +320,7 @@ fi
 
 # ─ Charts / Dashboard / Analytics ────────────────────────────────────────────
 if echo "$P" | grep -qE "chart|graph|dashboard|kpi|stats|analytics|recharts|bar chart|line chart|donut|pie chart|metric"; then
-  AGENTS+=("agent-ui-ux")
+  AGENTS+=("agent-vms-uiux")
   SKILLS+=("skill-chart-patterns.md")
 fi
 
@@ -332,7 +332,7 @@ fi
 
 # ─ PWA / Offline / Service Worker ─────────────────────────────────────────────
 if echo "$P" | grep -qE "pwa|service worker|workbox|offline|install prompt|manifest|web app|installable"; then
-  AGENTS+=("agent-ui-ux")
+  AGENTS+=("agent-vms-uiux")
   SKILLS+=("skill-pwa-patterns.md")
 fi
 
@@ -344,7 +344,7 @@ fi
 
 # ─ i18n / Localisation ────────────────────────────────────────────────────────
 if echo "$P" | grep -qE "i18n|locale|translation|language|hindi|arabic|rtl|multilingual|internation|localiz"; then
-  AGENTS+=("agent-ui-ux")
+  AGENTS+=("agent-vms-uiux")
   SKILLS+=("skill-i18n-patterns.md")
 fi
 
@@ -413,7 +413,7 @@ fi
 
 # ─ Keyboard shortcuts / Hotkeys / Command palette ────────────────────────────
 if echo "$P" | grep -qE "keyboard|shortcut|hotkey|command palette|ctrl\+k|cmd\+k|focus trap|accessibility|a11y|tab order|arrow key|escape key"; then
-  AGENTS+=("agent-ui-ux")
+  AGENTS+=("agent-vms-uiux")
   SKILLS+=("skill-keyboard-shortcuts-patterns.md" "skill-ui-ux-checklist.md")
   RULES+=("rule-frontend.md")
 fi

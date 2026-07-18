@@ -94,11 +94,11 @@ The warm tan base (`#f1ece3`) was the deciding aesthetic factor — it reduces e
 - `indigo-600`, `.glass-panel`, `.glass-card`, `bg-brand-600`, Sora, DM Sans are all **retired** — never use them
 - All new components must use CSS custom properties (`var(--primary-color)`) not hardcoded hex values
 - The full conformance checklist (24 sections) is in `skill-ui-ux-checklist.md`
-- `agent-ui-ux` enforces this system on every UI-related task
+- `agent-vms-uiux` enforces this system on every UI-related task
 
 ## How to apply
 
 1. Read `skill-ui-ux-checklist.md` before building any UI component
 2. Check `rule-frontend.md` for the primary color and font class names
 3. Never hardcode `#0073ea` — always use `var(--primary-color)`
-4. Use `agent-ui-ux` for any layout or design work
+4. Use `agent-vms-uiux` for any layout or design work

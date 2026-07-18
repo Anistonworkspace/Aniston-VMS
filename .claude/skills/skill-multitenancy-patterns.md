@@ -1,263 +1,151 @@
-# Skill — Multi-Tenancy Patterns
-
-Org onboarding flow, subdomain routing, per-tenant config, tenant isolation checklist.
+# Skill — Multi-Tenancy Patterns (org tenancy + zone scope)
 
 ---
 
-## Organization model (already in boilerplate)
+Org onboarding, per-tenant plan limits, tenant isolation checklist. Aniston VMS is multi-tenant at the
+**organization** level (each customer is one `Organization`) and additionally scoped inside an org by
+**site → zone → camera** (see `skill-rbac-advanced-patterns.md` for `ScopeType`). Both layers must be
+enforced together — `organizationId`-only filtering is NOT sufficient once a `CLIENT_VIEWER` is scoped
+to a single zone.
+
+## Organization model (already in `docs/05-backend-schema.md`)
 
 ```prisma
 model Organization {
-  id           String    @id @default(uuid())
-  name         String
-  slug         String    @unique    // used for subdomain routing
-  plan         OrgPlan   @default(FREE)
-  settings     Json?               // per-tenant config blob
-  isActive     Boolean   @default(true)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  deletedAt    DateTime?
-
-  users        User[]
-  items        Item[]
-  // ... all other org-scoped models
-
-  @@index([slug])
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  plan      OrgPlan  @default(STARTER)
+  createdAt DateTime @default(now())
+  sites     Site[]
+  users     User[]
+  cameras   Camera[]
 }
 
 enum OrgPlan {
-  FREE
   STARTER
   PROFESSIONAL
   ENTERPRISE
 }
 ```
 
----
-
-## Org onboarding — service
+## Registration flow (creates the org + first PROJECT_ADMIN)
 
 ```typescript
-// backend/src/modules/auth/auth.service.ts
+// apps/api/src/modules/auth/auth.service.ts
+async register(dto: RegisterInput) {
+  const slugExists = await this.prisma.organization.findUnique({ where: { slug: dto.orgSlug } });
+  if (slugExists) throw new ConflictException('ORG_SLUG_TAKEN');
 
-static async register(dto: RegisterInput) {
-  // 1. Check slug uniqueness
-  const slugExists = await prisma.organization.findUnique({ where: { slug: dto.orgSlug } });
-  if (slugExists) throw new ConflictError('Organization slug already taken');
-
-  // Check user email uniqueness globally
-  const emailExists = await prisma.user.findUnique({ where: { email: dto.email } });
-  if (emailExists) throw new ConflictError('Email already registered');
-
-  return prisma.$transaction(async (tx) => {
-    // 2. Create org
+  return this.prisma.$transaction(async (tx) => {
     const org = await tx.organization.create({
-      data: {
-        name: dto.orgName,
-        slug: dto.orgSlug.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
-        plan: OrgPlan.FREE,
-        settings: {
-          timezone:   dto.timezone ?? 'Asia/Kolkata',
-          dateFormat: 'DD/MM/YYYY',
-          locale:     'en-IN',
-          currency:   'INR',
-        },
-      },
+      data: { name: dto.orgName, slug: dto.orgSlug, plan: OrgPlan.STARTER },
     });
-
-    // 3. Create first user as SUPER_ADMIN of the org
-    const passwordHash = await bcrypt.hash(dto.password, 12);
     const user = await tx.user.create({
       data: {
-        email:          dto.email,
-        passwordHash,
-        role:           UserRole.SUPER_ADMIN,
         organizationId: org.id,
-        isVerified:     false,
+        email: dto.email,
+        passwordHash: await argon2.hash(dto.password),
+        role: UserRole.PROJECT_ADMIN,   // first user of a new org is always PROJECT_ADMIN, never SUPER_ADMIN
+        scopeType: null,                // unscoped within their own org
       },
     });
-
-    // 4. Create email verification token
-    const token = await tx.emailVerificationToken.create({
-      data: { userId: user.id, token: uuid(), expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) },
-    });
-
-    // 5. Queue welcome email
-    await emailQueue.add('org-welcome', { orgId: org.id, userId: user.id, token: token.token });
-
-    await auditLogger.log(tx, {
-      action: 'ORG_REGISTERED', entity: 'Organization', entityId: org.id,
-      actorId: user.id, organizationId: org.id,
-    });
-
-    return { orgId: org.id, userId: user.id };
+    await this.auditLogger.log(tx, { action: 'ORG_REGISTERED', organizationId: org.id, actorId: user.id });
+    return { org, user };
   });
 }
 ```
 
----
-
-## Subdomain resolution middleware
+## Tenant resolution — organizationId always comes from the JWT, never from the request body
 
 ```typescript
-// backend/src/middleware/tenantResolver.ts
-// Resolves org from subdomain: acme.app.yourdomain.com → orgSlug = "acme"
-
-export async function tenantResolver(req: Request, res: Response, next: NextFunction) {
-  const host = req.hostname;   // e.g. "acme.app.yourdomain.com"
-  const BASE_DOMAIN = process.env.BASE_DOMAIN ?? 'app.yourdomain.com';
-
-  // Strip the base domain to get the subdomain
-  const subdomain = host.replace(`.${BASE_DOMAIN}`, '').split('.')[0];
-
-  if (!subdomain || subdomain === 'www' || host === BASE_DOMAIN) {
-    // Main domain — no tenant context (login / landing page)
-    return next();
+// apps/api/src/common/interceptors/tenant.interceptor.ts
+@Injectable()
+export class TenantInterceptor implements NestInterceptor {
+  intercept(ctx: ExecutionContext, next: CallHandler) {
+    const req = ctx.switchToHttp().getRequest<{ user: AuthUser; body: Record<string, unknown> }>();
+    // ❌ NEVER: const organizationId = req.body.organizationId
+    // ✅ ALWAYS: derive it from the verified actor attached by JwtStrategy
+    if ('organizationId' in req.body) delete req.body.organizationId; // strip any client-supplied override
+    return next.handle();
   }
-
-  const org = await prisma.organization.findFirst({
-    where: { slug: subdomain, isActive: true, deletedAt: null },
-    select: { id: true, slug: true, name: true, plan: true },
-  });
-
-  if (!org) {
-    return res.status(404).json({ success: false, error: { code: 'TENANT_NOT_FOUND', message: 'Organization not found' } });
-  }
-
-  // Attach tenant context to request
-  req.tenant = org;
-  next();
-}
-
-// In authenticate middleware — verify user belongs to resolved tenant:
-export async function authenticate(req: Request, res: Response, next: NextFunction) {
-  // ... JWT verification ...
-
-  // Cross-tenant access prevention
-  if (req.tenant && user.organizationId !== req.tenant.id) {
-    return next(new ForbiddenError('Access denied to this organization'));
-  }
-
-  req.user = user;
-  next();
 }
 ```
 
----
-
-## Per-tenant settings service
-
 ```typescript
-// backend/src/modules/org/org-settings.service.ts
-export class OrgSettingsService {
-  static async getSettings(actor: AuthUser): Promise<OrgSettings> {
-    const org = await prisma.organization.findUniqueOrThrow({
-      where: { id: actor.organizationId },
-      select: { settings: true, plan: true },
-    });
-    return org.settings as OrgSettings;
-  }
-
-  static async updateSettings(dto: UpdateOrgSettingsInput, actor: AuthUser) {
-    if (actor.role !== UserRole.SUPER_ADMIN) {
-      throw new ForbiddenError('Only SUPER_ADMIN can update org settings');
-    }
-
-    return prisma.$transaction(async (tx) => {
-      const updated = await tx.organization.update({
-        where: { id: actor.organizationId },
-        data:  { settings: dto },
-      });
-      await auditLogger.log(tx, {
-        action: 'ORG_SETTINGS_UPDATED', entity: 'Organization', entityId: actor.organizationId,
-        actorId: actor.id, organizationId: actor.organizationId,
-        after: dto,
-      });
-      return updated.settings;
-    });
-  }
+// ✅ CORRECT — every service query scopes by organizationId first, scope-narrowing second
+async findAll(actor: AuthUser, query: ListCameraQuery) {
+  const where: Prisma.CameraWhereInput = {
+    organizationId: actor.organizationId,
+    deletedAt: null,
+    ...buildScopeWhere(actor), // site/zone/camera narrowing — see skill-rbac-advanced-patterns.md
+  };
+  return this.prisma.camera.findMany({ where, skip: query.skip, take: query.take });
 }
-
-// Access settings anywhere in a service:
-const settings = await OrgSettingsService.getSettings(actor);
-const currency = settings.currency;   // "INR" or "USD"
 ```
 
----
-
-## Plan-based feature gating
+## SUPER_ADMIN cross-org access (explicit + audited, never implicit)
 
 ```typescript
-// shared/src/plans.ts
-export const PLAN_FEATURES: Record<OrgPlan, Set<string>> = {
-  FREE:         new Set(['ITEM_MODULE', 'CATEGORY_MODULE']),
-  STARTER:      new Set(['ITEM_MODULE', 'CATEGORY_MODULE', 'REPORT_MODULE']),
-  PROFESSIONAL: new Set(['ITEM_MODULE', 'CATEGORY_MODULE', 'REPORT_MODULE', 'EXPORT_MODULE', 'ANALYTICS_MODULE']),
-  ENTERPRISE:   new Set(['ITEM_MODULE', 'CATEGORY_MODULE', 'REPORT_MODULE', 'EXPORT_MODULE', 'ANALYTICS_MODULE', 'API_ACCESS', 'SSO', 'AUDIT_LOGS']),
+// SUPER_ADMIN is the one role allowed to bypass the organizationId filter — only via a dedicated
+// platform-ops endpoint, and every cross-org read/write is logged with the target organizationId.
+@Get('platform/organizations/:orgId/cameras')
+@Roles(UserRole.SUPER_ADMIN)
+async platformListCameras(@Param('orgId') orgId: string, @CurrentUser() actor: AuthUser) {
+  await this.auditLogger.log({ action: 'PLATFORM_CROSS_ORG_READ', actorId: actor.id, organizationId: orgId });
+  return this.prisma.camera.findMany({ where: { organizationId: orgId, deletedAt: null } });
+}
+```
+
+## Plan-gated features (camera count, retention days, integrations)
+
+```typescript
+// packages/shared/src/plans.ts
+export const PLAN_FEATURES: Record<OrgPlan, { maxCameras: number; clipRetentionDays: number; whatsappAlerts: boolean }> = {
+  STARTER:      { maxCameras: 10,  clipRetentionDays: 7,  whatsappAlerts: false },
+  PROFESSIONAL: { maxCameras: 50,  clipRetentionDays: 30, whatsappAlerts: true },
+  ENTERPRISE:   { maxCameras: 500, clipRetentionDays: 90, whatsappAlerts: true },
 };
 
-export function planAllows(plan: OrgPlan, feature: string): boolean {
-  return PLAN_FEATURES[plan]?.has(feature) ?? false;
-}
-
-// Backend middleware:
-export function requireFeature(feature: string) {
-  return async (req: Request, res: Response, next: NextFunction) => {
-    const org = await prisma.organization.findUnique({
-      where: { id: req.user.organizationId },
-      select: { plan: true },
-    });
-    if (!org || !planAllows(org.plan, feature)) {
-      return next(new ForbiddenError(`Your plan does not include ${feature}`));
-    }
-    next();
-  };
-}
-
-// Frontend:
-function PremiumFeatureGate({ feature, children }: { feature: string; children: React.ReactNode }) {
-  const plan = useSelector((s: RootState) => s.auth.org?.plan);
-  if (!plan || !planAllows(plan, feature)) {
-    return <UpgradePrompt feature={feature} />;
+async assertCanAddCamera(organizationId: string) {
+  const org = await this.prisma.organization.findUniqueOrThrow({ where: { id: organizationId } });
+  const cameraCount = await this.prisma.camera.count({ where: { organizationId, deletedAt: null } });
+  if (cameraCount >= PLAN_FEATURES[org.plan].maxCameras) {
+    throw new ForbiddenException('PLAN_CAMERA_LIMIT_REACHED');
   }
-  return <>{children}</>;
 }
 ```
 
----
-
-## Tenant data isolation — audit checklist
+## Org settings service (org-scoped config, e.g. notification thresholds, WhatsApp number)
 
 ```typescript
-// Every query on ANY model MUST include organizationId — no exceptions
-// Run this check before deploying any new service:
-
-// ✅ Correct
-await prisma.item.findMany({
-  where: { organizationId: actor.organizationId, deletedAt: null },
-});
-
-// ❌ CRITICAL IDOR — missing organizationId
-await prisma.item.findMany({ where: { categoryId: catId } });
-
-// ✅ Correct update — includes organizationId to prevent cross-tenant update
-await prisma.item.update({
-  where: { id: dto.id, organizationId: actor.organizationId },
-  data:  dto,
-});
+// apps/api/src/modules/org-settings/org-settings.service.ts
+async updateSettings(actor: AuthUser, dto: UpdateOrgSettingsInput) {
+  if (actor.role !== UserRole.PROJECT_ADMIN && actor.role !== UserRole.SUPER_ADMIN) {
+    throw new ForbiddenException('Only PROJECT_ADMIN or SUPER_ADMIN can update organization settings');
+  }
+  const settings = await this.prisma.orgSettings.update({
+    where: { organizationId: actor.organizationId }, // never accepts an organizationId from the DTO
+    data: dto,
+  });
+  await this.auditLogger.log({ action: 'ORG_SETTINGS_UPDATED', actorId: actor.id, organizationId: actor.organizationId });
+  return settings;
+}
 ```
 
----
+If the target org doesn't exist at all (e.g. a stale JWT after an org was deleted), throw
+`TENANT_NOT_FOUND` — distinct from `NOT_FOUND` on a single resource — so the frontend can force a
+full re-login instead of showing an empty list.
 
-## Checklist
+## Tenant isolation testing checklist
 
-- [ ] Every Prisma model has `organizationId` field with `@@index`
-- [ ] `organizationId` ALWAYS comes from `req.user.organizationId` — never from `req.body`
-- [ ] Subdomain resolved to org before auth — org context attached to `req.tenant`
-- [ ] Auth middleware cross-checks `user.organizationId === req.tenant.id`
-- [ ] Org onboarding creates org + SUPER_ADMIN user in a single transaction
-- [ ] Email verification token sent on registration
-- [ ] Per-tenant settings stored as JSON blob — not as individual columns
-- [ ] Plan-based feature gating at both API middleware and frontend component level
-- [ ] Admin cannot see/modify other orgs' data (enforced by organizationId in every query)
-- [ ] Org slug is unique, URL-safe (lowercase alphanumeric + hyphens)
+1. Every Prisma query that touches an org-scoped model includes `organizationId` in its `where` — a repo
+   grep for `prisma.<model>.find` without `organizationId` nearby should come back empty for tenant models.
+2. Cross-tenant read attempt (org A's `PROJECT_ADMIN` requesting org B's camera id) → `404`, not `403`
+   (never confirm the resource exists in another tenant).
+3. `organizationId` in the request body/query is always ignored — the interceptor strips it before the
+   controller runs.
+4. Zone/site/camera scope narrowing (`ScopeType`) is applied **in addition to** `organizationId`, not
+   instead of it — a `CLIENT_VIEWER`'s zone scope is meaningless if the org filter is missing.
+5. `SUPER_ADMIN` cross-org access only happens through the dedicated `platform/*` routes, and each call is
+   audit-logged with the target `organizationId`.

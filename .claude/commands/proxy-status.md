@@ -5,7 +5,9 @@ description: Report whether pxpipe is running and how many tokens it has saved t
 
 # /proxy-status — Report proxy state and savings
 
-Quick health-check for the pxpipe proxy. Prints:
+Quick health-check for the pxpipe proxy (the Claude Code API cost-cutting
+proxy, unrelated to `services/media`/MediaMTX camera-stream proxying — see
+`/proxy-start` for the disambiguation note). Prints:
 
 - Whether the proxy is up on `127.0.0.1:47821`
 - Total request count since boot

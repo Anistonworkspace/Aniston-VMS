@@ -5,8 +5,8 @@
     "moduleResolution": "NodeNext",
     "noEmit": true,
     "paths": {
-      "@boilerplate/shared": ["../shared/src/index.ts"],
-      "@boilerplate/shared/*": ["../shared/src/*"]
+      "@aniston-vms/shared": ["../shared/src/index.ts"],
+      "@aniston-vms/shared/*": ["../shared/src/*"]
     }
   },
   "include": ["src/**/*"],

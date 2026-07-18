@@ -1,326 +1,189 @@
 # Skill — Form Patterns
 
-React Hook Form + Zod + RTK Query — the complete pattern for every form type.
+React Hook Form + Zod + RTK Query — the complete pattern for every VMS form: add camera, edit zone, and the multi-step camera onboarding wizard with RTSP test-connection.
+
+Design tokens: see `docs/04-uiux-brief.md`.
 
 ---
 
-## Simple create form (standard pattern)
+## Simple create form (standard pattern) — Add Camera
 
-```typescript
-// frontend/src/features/item/CreateItemModal.tsx
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { CreateItemSchema, type CreateItemInput } from '@boilerplate/shared';
-import { useCreateItemMutation } from './itemApi';
-import { toast } from '@/hooks/useToast';
-import { getErrorMessage } from '@/lib/errorMessages';
-
-interface Props { open: boolean; onClose: () => void; }
-
-export function CreateItemModal({ open, onClose }: Props) {
-  const [create, { isLoading }] = useCreateItemMutation();
-
-  const form = useForm<CreateItemInput>({
-    resolver: zodResolver(CreateItemSchema),
-    defaultValues: { type: 'MEDIUM', startDate: '', endDate: '', reason: '' },
-  });
-
-  const onSubmit = async (data: CreateItemInput) => {
-    try {
-      await create(data).unwrap();
-      toast.success('Item created');
-      form.reset();
-      onClose();
-    } catch (err) {
-      // Map server-side field errors to form
-      const fields = (err as any)?.data?.error?.fields;
-      if (fields) {
-        Object.entries(fields).forEach(([key, errors]) =>
-          form.setError(key as any, { message: (errors as string[])[0] })
-        );
-        return;
-      }
-      toast.error(getErrorMessage(err));
-    }
-  };
-
-  if (!open) return null;
-
-  return (
-    <div className="detail-modal-backdrop fixed inset-0 z-[10000] flex items-center justify-center p-4">
-      <div className="floating-card rounded-[var(--card-radius)] w-full max-w-lg">
-        <div className="flex items-center justify-between p-6 border-b border-[var(--border-color)]">
-          <h2 className="text-lg font-semibold text-[var(--primary-text-color)]">New Item</h2>
-          <button className="btn btn--ghost btn--icon" onClick={onClose}>✕</button>
-        </div>
-
-        <form onSubmit={form.handleSubmit(onSubmit)} className="p-6 space-y-4">
-          {/* Type */}
-          <div>
-            <label className="block text-sm font-medium text-[var(--secondary-text-color)] mb-1">Type</label>
-            <select className="input-field" {...form.register('type')}>
-              <option value="LOW">Low</option>
-              <option value="MEDIUM">Medium</option>
-              <option value="HIGH">High</option>
-            </select>
-            {form.formState.errors.type && (
-              <p className="text-xs text-[var(--negative-color)] mt-1">{form.formState.errors.type.message}</p>
-            )}
-          </div>
-
-          {/* Date range */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-[var(--secondary-text-color)] mb-1">Start date</label>
-              <input type="date" className="input-field" {...form.register('startDate')} />
-              {form.formState.errors.startDate && (
-                <p className="text-xs text-[var(--negative-color)] mt-1">{form.formState.errors.startDate.message}</p>
-              )}
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[var(--secondary-text-color)] mb-1">End date</label>
-              <input type="date" className="input-field" {...form.register('endDate')} />
-              {form.formState.errors.endDate && (
-                <p className="text-xs text-[var(--negative-color)] mt-1">{form.formState.errors.endDate.message}</p>
-              )}
-            </div>
-          </div>
-
-          {/* Reason */}
-          <div>
-            <label className="block text-sm font-medium text-[var(--secondary-text-color)] mb-1">Reason</label>
-            <textarea className="input-field min-h-[80px] resize-none" rows={3} {...form.register('reason')} />
-            {form.formState.errors.reason && (
-              <p className="text-xs text-[var(--negative-color)] mt-1">{form.formState.errors.reason.message}</p>
-            )}
-          </div>
-
-          {/* Actions */}
-          <div className="flex justify-end gap-3 pt-2">
-            <button type="button" className="btn btn--secondary btn--md" onClick={onClose} disabled={isLoading}>Cancel</button>
-            <button type="submit" className="btn btn--primary btn--md" disabled={isLoading}>
-              {isLoading ? <span className="animate-spin">⟳</span> : 'Submit'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-```
-
----
-
-## Edit form — pre-populate with existing data
-
-```typescript
-interface EditProps { record: Item; open: boolean; onClose: () => void; }
-
-export function EditItemModal({ record, open, onClose }: EditProps) {
-  const [update, { isLoading }] = useUpdateItemMutation();
-
-  const form = useForm<UpdateItemInput>({
-    resolver: zodResolver(UpdateItemSchema),
-    // Pre-populate EVERY field from the existing record
-    values: {
-      type:      record.type,
-      startDate: record.startDate,
-      endDate:   record.endDate,
-      reason:    record.reason ?? '',
-    },
-  });
-
-  // IMPORTANT: reset form when modal closes to prevent stale state on next open
-  useEffect(() => {
-    if (!open) form.reset();
-  }, [open, form]);
-
-  const onSubmit = async (data: UpdateItemInput) => {
-    try {
-      await update({ id: record.id, ...data }).unwrap();
-      toast.success('Item updated');
-      onClose();
-    } catch (err) {
-      toast.error(getErrorMessage(err));
-    }
-  };
-  // ... rest is same as CreateItemModal
-}
-```
-
----
-
-## Multi-step form
-
-```typescript
-import { useState } from 'react';
-
-const STEPS = ['Details', 'Dates', 'Review'] as const;
-type Step = typeof STEPS[number];
-
-export function MultiStepItemForm() {
-  const [step, setStep] = useState<Step>('Details');
-  const form = useForm<CreateItemInput>({ resolver: zodResolver(CreateItemSchema) });
-
-  const stepIndex = STEPS.indexOf(step);
-
-  const goNext = async () => {
-    // Validate only the fields relevant to the current step
-    const fieldsToValidate: (keyof CreateItemInput)[][] = [
-      ['type', 'reason'],
-      ['startDate', 'endDate'],
-    ];
-    const valid = await form.trigger(fieldsToValidate[stepIndex]);
-    if (valid) setStep(STEPS[stepIndex + 1]);
-  };
-
-  return (
-    <div>
-      {/* Step indicator */}
-      <div className="tabs-compact mb-6">
-        {STEPS.map((s, i) => (
-          <button key={s} className={`tab-trigger-compact ${step === s ? 'tab-trigger-compact--active' : ''}`}
-            disabled={i > stepIndex} onClick={() => i < stepIndex && setStep(s)}>
-            {i + 1}. {s}
-          </button>
-        ))}
-      </div>
-
-      <form onSubmit={form.handleSubmit(onSubmit)}>
-        {step === 'Details' && <DetailsStep form={form} />}
-        {step === 'Dates'   && <DatesStep   form={form} />}
-        {step === 'Review'  && <ReviewStep  form={form} />}
-
-        <div className="flex gap-3 mt-6">
-          {stepIndex > 0 && <button type="button" className="btn btn--secondary btn--md" onClick={() => setStep(STEPS[stepIndex - 1])}>Back</button>}
-          {step !== 'Review'
-            ? <button type="button" className="btn btn--primary btn--md" onClick={goNext}>Next</button>
-            : <button type="submit" className="btn btn--primary btn--md">Submit</button>
-          }
-        </div>
-      </form>
-    </div>
-  );
-}
-```
-
----
-
-## Field array — dynamic rows (e.g. add multiple items)
-
-```typescript
-import { useFieldArray } from 'react-hook-form';
-
-function AttachmentArrayField({ control }: { control: Control<FormInput> }) {
-  const { fields, append, remove } = useFieldArray({ control, name: 'attachments' });
-
-  return (
-    <div className="space-y-2">
-      {fields.map((field, index) => (
-        <div key={field.id} className="flex gap-2 items-center">
-          <input className="input-field flex-1" placeholder="Attachment URL" {...control.register(`attachments.${index}.url`)} />
-          <input className="input-field w-40"    placeholder="Label"         {...control.register(`attachments.${index}.label`)} />
-          <button type="button" className="btn btn--ghost btn--icon btn--sm" onClick={() => remove(index)}>✕</button>
-        </div>
-      ))}
-      <button type="button" className="btn btn--secondary btn--sm" onClick={() => append({ url: '', label: '' })}>
-        + Add attachment
-      </button>
-    </div>
-  );
-}
-```
-
----
-
-## File input in a form
-
-```typescript
-// Register file input separately — not with {...register()} for file inputs
-const [filePreview, setFilePreview] = useState<string | null>(null);
-const fileRef = form.register('document');
-
-<input
-  type="file"
-  accept=".pdf,.jpg,.jpeg,.png"
-  className="hidden"
-  id="file-upload"
-  {...fileRef}
-  onChange={(e) => {
-    fileRef.onChange(e);  // let RHF track the value
-    const file = e.target.files?.[0];
-    if (file) setFilePreview(URL.createObjectURL(file));
-  }}
-/>
-<label htmlFor="file-upload" className="btn btn--secondary btn--sm cursor-pointer">
-  Upload document
-</label>
-{filePreview && <img src={filePreview} className="h-16 w-16 object-cover rounded-md mt-2" />}
-```
-
----
-
-## Reusable FormField wrapper component
-
-```typescript
-// frontend/src/components/ui/FormField.tsx
-interface FormFieldProps {
-  label: string;
-  error?: string;
-  required?: boolean;
-  children: React.ReactNode;
-  hint?: string;
-}
-
-export function FormField({ label, error, required, children, hint }: FormFieldProps) {
-  return (
-    <div>
-      <label className="block text-sm font-medium text-[var(--secondary-text-color)] mb-1">
-        {label} {required && <span className="text-[var(--negative-color)]">*</span>}
-      </label>
-      {children}
-      {hint  && !error && <p className="text-xs text-[var(--text-tertiary)] mt-1">{hint}</p>}
-      {error && <p className="text-xs text-[var(--negative-color)] mt-1">{error}</p>}
-    </div>
-  );
-}
-```
-
----
-
-## Zod schema patterns
-
-```typescript
-// shared/src/schemas/item.schema.ts
+```ts
+// shared/src/schemas/camera.schema.ts
 import { z } from 'zod';
 
-export const CreateItemSchema = z.object({
-  type:      z.enum(['LOW', 'MEDIUM', 'HIGH']),
-  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD format'),
-  endDate:   z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD format'),
-  reason:    z.string().min(10, 'Reason must be at least 10 characters').max(500),
-  documentUrl: z.string().url().optional(),
-}).refine(
-  (d) => new Date(d.endDate) >= new Date(d.startDate),
-  { message: 'End date must be on or after start date', path: ['endDate'] }
-);
-
-export const UpdateItemSchema = CreateItemSchema.partial();
-
-export type CreateItemInput = z.infer<typeof CreateItemSchema>;
-export type UpdateItemInput = z.infer<typeof UpdateItemSchema>;
+export const CreateCameraSchema = z.object({
+  name: z.string().min(2, 'Name is required').max(80),
+  zoneId: z.string().uuid('Select a zone'),
+  rtspUrl: z.string().url('Enter a valid RTSP URL').startsWith('rtsp://', 'Must be an RTSP URL'),
+  username: z.string().optional(),
+  password: z.string().optional(),
+  streamKind: z.enum(['LIVE_MAIN', 'LIVE_SUB']).default('LIVE_SUB'),
+});
+export type CreateCameraInput = z.infer<typeof CreateCameraSchema>;
 ```
 
----
+```tsx
+// frontend/src/features/camera/AddCameraModal.tsx
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useCreateCameraMutation } from './cameraApi';
+import { CreateCameraSchema, type CreateCameraInput } from '@vms/shared/schemas/camera.schema';
+import { useToast } from '@/hooks/useToast';
+import { getErrorMessage } from '@/lib/errorMessages';
+
+export function AddCameraModal({ zoneId, onClose }: { zoneId: string; onClose: () => void }) {
+  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<CreateCameraInput>({
+    resolver: zodResolver(CreateCameraSchema),
+    defaultValues: { zoneId, streamKind: 'LIVE_SUB' },
+  });
+  const [createCamera] = useCreateCameraMutation();
+  const toast = useToast();
+
+  async function onSubmit(data: CreateCameraInput) {
+    try {
+      await createCamera(data).unwrap();
+      toast.success('Camera added — running connection test…');
+      onClose();
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+      <div>
+        <label htmlFor="name" className="block text-sm font-medium text-[var(--ink)] mb-1">Camera name</label>
+        <input id="name" {...register('name')} className="input-field" placeholder="Gate 3 — North" />
+        {errors.name && <p className="text-xs text-[var(--coral)] mt-1">{errors.name.message}</p>}
+      </div>
+      <div>
+        <label htmlFor="rtspUrl" className="block text-sm font-medium text-[var(--ink)] mb-1">RTSP URL</label>
+        <input id="rtspUrl" {...register('rtspUrl')} className="input-field font-mono text-sm" placeholder="rtsp://192.168.1.40:554/stream1" />
+        {errors.rtspUrl && <p className="text-xs text-[var(--coral)] mt-1">{errors.rtspUrl.message}</p>}
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <input {...register('username')} className="input-field" placeholder="Username (optional)" />
+        <input {...register('password')} type="password" className="input-field" placeholder="Password (optional)" />
+      </div>
+      <div className="flex justify-end gap-2 pt-2">
+        <button type="button" onClick={onClose} className="btn btn-ghost" disabled={isSubmitting}>Cancel</button>
+        <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+          {isSubmitting ? 'Testing connection…' : 'Add camera'}
+        </button>
+      </div>
+    </form>
+  );
+}
+```
+
+## Edit form (pre-populate, PATCH) — Edit Zone
+
+```ts
+export const UpdateZoneSchema = CreateZoneSchema.partial();
+export type UpdateZoneInput = z.infer<typeof UpdateZoneSchema>;
+```
+
+```tsx
+// frontend/src/features/zone/EditZoneModal.tsx
+export function EditZoneModal({ zone, onClose }: { zone: Zone; onClose: () => void }) {
+  const { register, handleSubmit, formState: { isDirty, isSubmitting } } = useForm<UpdateZoneInput>({
+    resolver: zodResolver(UpdateZoneSchema),
+    defaultValues: { name: zone.name, siteId: zone.siteId, description: zone.description },
+  });
+  const [updateZone] = useUpdateZoneMutation();
+
+  async function onSubmit(data: UpdateZoneInput) {
+    if (!isDirty) return onClose();
+    await updateZone({ id: zone.id, ...data }).unwrap();
+    onClose();
+  }
+  // same field markup as the create form above, submit disabled while !isDirty
+}
+```
+
+Never re-send the full payload on PATCH — only changed fields — and skip the network call entirely (`if (!isDirty) return onClose()`) when nothing actually changed. Renaming a zone doesn't touch its cameras' `zoneId`; historical incidents keep the zone id they were created under (`docs/03-app-flow.md` §8).
+
+## Multi-step form — Camera onboarding wizard
+
+Mirrors the RTSP save flow in `docs/03-app-flow.md` §7: **Details → Connection → Test connection → Review**, with an admin-override path if the test fails.
+
+```tsx
+// frontend/src/features/camera/CameraOnboardingWizard.tsx
+const STEPS = ['Details', 'Connection', 'Test', 'Review'] as const;
+type Step = typeof STEPS[number];
+
+const fieldsToValidate: Record<Step, (keyof CreateCameraInput)[]> = {
+  Details: ['name', 'zoneId'],
+  Connection: ['rtspUrl', 'username', 'password'],
+  Test: [],
+  Review: [],
+};
+
+export function CameraOnboardingWizard({ zoneId, onClose }: { zoneId: string; onClose: () => void }) {
+  const [stepIndex, setStepIndex] = useState(0);
+  const step = STEPS[stepIndex];
+  const methods = useForm<CreateCameraInput>({ resolver: zodResolver(CreateCameraSchema), defaultValues: { zoneId } });
+  const { trigger, getValues } = methods;
+  const [testConnection, { data: testResult, isLoading: testing }] = useTestCameraConnectionMutation();
+  const [createCamera] = useCreateCameraMutation();
+
+  async function goNext() {
+    const valid = await trigger(fieldsToValidate[step]);
+    if (!valid) return;
+    if (step === 'Connection') {
+      await testConnection(getValues()).unwrap().catch(() => {}); // failure surfaces in the Test step, not thrown here
+    }
+    setStepIndex((i) => Math.min(i + 1, STEPS.length - 1));
+  }
+
+  async function onFinish(overrideFailedTest = false) {
+    await createCamera({ ...getValues(), overrideFailedTest }).unwrap();
+    onClose();
+  }
+
+  return (
+    <FormProvider {...methods}>
+      <div className="flex gap-2 mb-6">
+        {STEPS.map((s, i) => (
+          <div key={s} className={`h-1 flex-1 rounded-full ${i <= stepIndex ? 'bg-[var(--primary-color)]' : 'bg-[var(--hairline)]'}`} />
+        ))}
+      </div>
+      {step === 'Details' && <DetailsStep />}
+      {step === 'Connection' && <ConnectionStep />}
+      {step === 'Test' && <TestConnectionStep result={testResult} testing={testing} onRetry={() => testConnection(getValues())} />}
+      {step === 'Review' && <ReviewStep values={getValues()} testResult={testResult} onFinish={onFinish} />}
+
+      <div className="flex justify-between pt-4">
+        <button type="button" onClick={() => setStepIndex((i) => Math.max(i - 1, 0))} disabled={stepIndex === 0} className="btn btn-ghost">Back</button>
+        {step !== 'Review' && <button type="button" onClick={goNext} className="btn btn-primary">Next</button>}
+      </div>
+    </FormProvider>
+  );
+}
+```
+
+`TestConnectionStep` runs `DESCRIBE + 1 frame` against the RTSP URL server-side and reports pass/fail — same duplicate-hash + format checks as app-flow §7. On the Review step, if the test failed and the signed-in user is `SUPER_ADMIN` or `PROJECT_ADMIN`, show "Save anyway", which calls `onFinish(true)` and writes an audit override entry. `CLIENT_VIEWER` never sees this wizard at all — read-only role, no create permission.
+
+## Field array — evidence photo attachments (incident note form)
+
+```tsx
+const { fields, append, remove } = useFieldArray({ control, name: 'attachments' });
+
+function onFiles(files: FileList) {
+  Array.from(files).forEach((file) => append({ file, previewUrl: URL.createObjectURL(file) }));
+}
+```
+
+Revoke `previewUrl` objects on unmount/removal — they're browser-local blob URLs, not server assets, and leak memory if left dangling.
 
 ## Checklist
 
-- [ ] Schema defined in `shared/src/schemas/` and used by BOTH frontend (`zodResolver`) and backend (`z.parse`)
-- [ ] Edit modal uses `values:` (not `defaultValues:`) so form updates when record prop changes
-- [ ] Edit modal resets on close — `useEffect(() => { if (!open) form.reset(); }, [open])`
-- [ ] Submit button `disabled={isLoading}` — no double-submission
-- [ ] Every field has a visible error message below it
-- [ ] Server-side field errors mapped to `form.setError()` — not just a toast
-- [ ] File inputs use `onChange` wrapper, not just `{...register()}`
-- [ ] Multi-step forms validate per-step with `form.trigger(fields)`
-- [ ] Cross-field validation uses `.refine()` with correct `path`
+- [ ] Zod schema shared between frontend form and backend route validation (`shared/src/schemas/*.schema.ts`) — never duplicated rules that can drift
+- [ ] `CreateCameraSchema` used for POST, a `.partial()` derivative for PATCH — no hand-written update schema maintained separately
+- [ ] Submit button shows a busy label ("Testing connection…") not just a disabled state with no explanation
+- [ ] Multi-step wizard validates only the current step's fields via `trigger(fieldsToValidate[step])` before advancing, not the whole schema
+- [ ] RTSP test-connection failure never silently blocks save for `SUPER_ADMIN`/`PROJECT_ADMIN` — the override path exists and is audited; it does not exist for `CLIENT_VIEWER`
+- [ ] Edit forms skip the network call entirely when `!isDirty`
+- [ ] Server-side Zod validation always re-runs — client validation is UX only, never trusted
+- [ ] File previews (`URL.createObjectURL`) revoked on unmount to avoid memory leaks

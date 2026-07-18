@@ -48,7 +48,7 @@ Prisma code first.
     "args": [
       "-y",
       "@modelcontextprotocol/server-postgres",
-      "postgresql://postgres:postgres@localhost:5432/boilerplate_dev"
+      "postgresql://postgres:postgres@localhost:5432/aniston_vms"
     ]
   }
 }
@@ -320,7 +320,7 @@ the `postgres` MCP server pointed at `localhost`:
 - **Supabase** — Postgres + Auth + Storage. Also has an official MCP server
   (`@supabase/mcp`) that adds row-level-security awareness.
 
-Either drops in without changing the boilerplate's Prisma layer.
+Either drops in without changing Aniston VMS's Prisma layer.
 
 ---
 

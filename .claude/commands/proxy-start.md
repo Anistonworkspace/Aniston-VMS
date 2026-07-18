@@ -8,6 +8,12 @@ description: Start the pxpipe token-compression proxy and print the shell comman
 Starts the pxpipe local proxy on `127.0.0.1:47821` and prints the exact env-var
 line the user should paste into their shell so Claude Code routes through it.
 
+> ⚠ **Not the media proxy.** This is the pxpipe LLM API token-compression proxy
+> that sits in front of `ANTHROPIC_BASE_URL` for this Claude Code session — it
+> has nothing to do with `services/media` (MediaMTX, the Aniston VMS RTSP →
+> WebRTC/HLS camera-stream proxy). If you're debugging camera playback, look at
+> `services/media` and `docs/02-TRD.md`, not this command.
+
 Reference: [`.claude/proxy-recommended.md`](../proxy-recommended.md).
 
 ---

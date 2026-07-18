@@ -499,6 +499,15 @@
   .tabs-compact::-webkit-scrollbar {
     display: none;
   }
+
+  /* Hide scrollbar but keep scroll (e.g. sidebar nav) */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
   .tab-trigger-compact {
     @apply flex-shrink-0 px-4;
     padding-top: 10px;

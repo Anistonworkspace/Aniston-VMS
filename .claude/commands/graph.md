@@ -37,7 +37,9 @@ node .claude/scripts/graph.mjs deps <path>       # what <path> imports
 node .claude/scripts/graph.mjs inbound <path>    # what imports <path> (blast radius)
 node .claude/scripts/graph.mjs explain <path>
 ```
-- `<path>` accepts partials (`logger` → `backend/src/lib/logger.ts`). Output → `.claude/graph/`.
+- `<path>` accepts partials (`logger` → `apps/api/src/common/logger.ts` per the target monorepo layout in
+  `docs/06-implementation-plan.md`; currently `backend/src/lib/logger.ts` on the pre-migration scaffold).
+  Output → `.claude/graph/`.
 
 ## Sub-command routing
 

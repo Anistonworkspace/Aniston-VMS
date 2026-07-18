@@ -1,21 +1,21 @@
-# /project-init — Initialize boilerplate for a new project
+# /project-init — Re-brand this repo for a new project/deployment
 
-Run this once when starting a new project from this boilerplate.
-It updates CLAUDE.md, project-state.md, and creates a project-specific ADR.
+Run this once when forking this repo (Aniston VMS, or its harness) into a new project.
+It updates CLAUDE.md, memory/project-state.md, and creates a founding ADR.
 
 ---
 
 ## When to run
 
 Type `/project-init` (optionally followed by the project name and description) when:
-- You've cloned/forked this boilerplate for a new project
-- The project is being renamed from "Boilerplate App" to its real name
-- You want to record the founding architecture decisions as ADRs
+- You've cloned/forked this repo to stand up a new deployment or a sibling product
+- The project is being renamed from **Aniston VMS** to its real name
+- You want to record the founding architecture decisions as an ADR
 
 Example usage:
 ```
-/project-init TaskFlow — task and project management for small teams
-/project-init FleetView — fleet tracking SaaS for logistics companies
+/project-init GuardianView — CCTV video management for a different client fleet
+/project-init FleetView — fleet/telematics monitoring reusing this monitoring harness
 /project-init
 ```
 
@@ -26,33 +26,32 @@ Example usage:
 ### 1. Gather project identity (ask user if not in the prompt)
 
 Collect:
-- **Project name** — short PascalCase (e.g. `HRease`, `FleetView`)
-- **Project slug** — kebab-case for IDs and package names (e.g. `hrease`, `fleet-view`)
+- **Project name** — short PascalCase (e.g. `GuardianView`, `FleetView`)
+- **Project slug** — kebab-case for package names and container prefixes (e.g. `guardian-view`, `fleet-view`)
 - **One-line description** — what the app does and who it is for
-- **Primary target platforms** — select from: Web PWA / Android APK / iOS IPA / Windows EXE
-- **App domain** — e.g. logistics, finance, education, healthcare, productivity
-- **Primary user roles** (comma-separated) — e.g. Admin, Editor, Member
+- **Primary target platforms** — this repo currently targets Web SPA (control room) + Android APK
+  (Capacitor); confirm which still apply
+- **App domain** — e.g. CCTV/video management, fleet telematics, industrial IoT monitoring
+- **Primary user roles** (comma-separated) — this repo ships `SUPER_ADMIN` / `PROJECT_ADMIN` /
+  `CLIENT_VIEWER`; confirm whether the new project keeps this 3-role model or needs its own
 
 ### 2. Update CLAUDE.md title block
 
-Find and replace the boilerplate heading:
+Find and replace the current heading:
 ```
-# Boilerplate App — AI Agent Entry Point
+# CLAUDE.md — Aniston VMS
 ```
 →
 ```
-# <ProjectName> — AI Agent Entry Point
+# CLAUDE.md — <ProjectName>
 ```
 
-And update the description paragraph under "What is this project?":
-```
-Production-grade fullstack PWA boilerplate by Aniston Technologies LLP.
-```
-→
-```
-<ProjectDescription>
-Built on the Aniston Technologies LLP production-grade boilerplate.
-```
+And update the one-line description paragraph directly under it (currently describes
+"a production CCTV monitoring platform for ~125 cameras across Delhi zones") with the new
+project's `<ProjectDescription>`. Update the "Plan of record" line to point at the new
+project's planning docs (or keep `docs/01-PRD.md`…`docs/06-implementation-plan.md` if the
+new project keeps the same six-doc structure) and update the UI reference path if the
+design mock changes.
 
 ### 3. Update memory/project-state.md frontmatter
 
@@ -64,11 +63,12 @@ The file starts with a YAML frontmatter block. Update these keys verbatim
 project_name:     <ProjectName>           # PascalCase
 project_slug:     <project-slug>          # kebab-case
 description:      <one-line description>
-domain:           <finance|logistics|education|healthcare|...>
+domain:           <cctv-video-management|fleet-telematics|...>
 target_platforms:
-  - <one or more of: Web PWA, Android APK, iOS IPA, Windows EXE>
+  - <one or more of: Web SPA, Android APK, iOS IPA, Windows EXE>
 primary_roles:
-  - <one role per line>
+  - <one role per line — keep SUPER_ADMIN/PROJECT_ADMIN/CLIENT_VIEWER unless the new project
+     genuinely needs a different role model>
 status:           bootstrapping
 started_at:       <YYYY-MM-DD today>
 ---
@@ -81,31 +81,32 @@ body and start fresh with today's date.
 
 Change:
 ```json
-"name": "boilerplate-app"
+"name": "aniston-vms"
 ```
 →
 ```json
 "name": "<project-slug>"
 ```
 
-### 5. Update frontend/package.json name
+### 5. Update workspace package names
 
-Change:
+Change each workspace's `name` field:
 ```json
-"name": "@boilerplate/frontend"
+"@aniston-vms/frontend"   →  "@<project-slug>/frontend"
+"@aniston-vms/backend"    →  "@<project-slug>/backend"
+"@aniston-vms/shared"     →  "@<project-slug>/shared"
 ```
-→
-```json
-"name": "@<project-slug>/frontend"
-```
-
-Apply the same pattern to backend and shared package names.
+**Note — target architecture:** once the NestJS migration (`docs/06-implementation-plan.md`)
+lands, the workspaces move to the pnpm layout `apps/api`, `apps/web`, `apps/workers`,
+`services/media`, `services/image-analysis`, `packages/shared`, scoped as
+`@<project-slug>/api`, `@<project-slug>/web`, etc. If you're forking after that migration,
+rename the pnpm-workspace packages instead of `frontend/backend/shared`.
 
 ### 6. Update frontend/index.html
 
-- `<title>Boilerplate App</title>` → `<title><ProjectName></title>`
-- `<meta name="application-name" content="Boilerplate App">` → real name
-- `<meta name="description" content="...">` → one-liner description
+- `<title>Aniston VMS</title>` → `<title><ProjectName></title>`
+- `<meta name="description" content="Aniston VMS — multi-tenant CCTV video management">` → new one-liner
+- Any `<meta name="application-name">` tag → `<ProjectName>`
 
 ### 7. Update frontend/vite.config.ts PWA manifest
 
@@ -114,25 +115,30 @@ manifest: {
   name: '<ProjectName>',
   short_name: '<ShortName>',          // ≤12 chars for home screen
   description: '<one-liner>',
+  theme_color: '<hex>',               // keep unless the new project has its own design ADR
+  background_color: '<hex>',
   // ... rest unchanged
 }
 ```
 
-### 8. Update agent-desktop/package.json (if desktop target selected)
+### 8. Update frontend/capacitor.config.ts (Android APK target)
 
-```json
-"productName": "<ProjectName>",
-"appId": "com.<org-slug>.<project-slug>"
+```typescript
+appId: 'com.<org-slug>.<project-slug>',   // was 'com.aniston.vms'
+appName: '<ProjectName>',                 // was 'Aniston VMS'
 ```
 
 ### 9. Write project-init ADR
 
-Create `memory/decisions/ADR-NNNN-project-init-<project-slug>.md` with:
+Create `memory/decisions/ADR-NNNN-project-init-<project-slug>.md` (next number after the
+existing `ADR-0008-*`) with:
 - Title: "Project Init — <ProjectName>"
 - Status: Accepted
 - Date: today
-- Context: what the app does, who it is for, why this boilerplate was chosen
-- Decision: target platforms, primary roles, key domain
+- Context: what the app does, who it is for, why this repo/harness was forked
+- Decision: target platforms, primary roles, key domain, and whether the NestJS/pnpm
+  target stack (`apps/api`/`apps/web`/`apps/workers`/`services/media`/`services/image-analysis`/
+  `packages/shared`) still applies or the new project needs a different target architecture
 - Consequences: which skills/agents are most relevant, what to build first
 
 ### 10. Confirm and summarize
@@ -142,9 +148,21 @@ Tell the user: "Run `/new-module <first-module>` to scaffold your first feature.
 
 ---
 
-## What this command does NOT change
+## What this command does NOT change (do these manually if the domain changes)
 
-- Prisma schema — the existing auth/org/user models remain unchanged
-- .claude/agents/, .claude/skills/, .claude/rules/ — these are project-agnostic
-- Docker/Nginx/CI configs — update manually to match your infra
-- .env.example — update manually to add project-specific variables
+- **Prisma schema** (`prisma/schema.prisma`) — the `Organization → Site → Zone → Camera`
+  hierarchy, `HealthCheck`/`Incident`/`Escalation`/`MaintenanceTask` models, and the
+  auth/user models are CCTV-domain-specific; if the new project isn't video-management, plan a
+  real schema rewrite (and matching migration) rather than a find/replace
+- **`.claude/rules/*.md`** — unlike a generic boilerplate, these are now **domain-specific**:
+  `rule-database.md`, `rule-api.md`, `rule-security-rbac.md`, and `rule-frontend.md` all hardcode
+  Camera/Zone/Incident/RBAC conventions and MUST be rewritten for a genuinely different domain.
+  Only the process rules (`rule-memory-system.md`, `rule-completion-standards.md`,
+  `rule-secrets-policy.md`, `rule-database-migrations.md`'s general safety rules) stay generic
+- **`docs/01-PRD.md`…`docs/06-implementation-plan.md`, `memory/alignment-dictionary.md`** —
+  these are cited as "Canon:" by nearly every rule file; if you don't rewrite them for the new
+  domain, agents will keep citing stale CCTV canon
+- **Docker/CI configs** (`docker/docker-compose.dev.yml`, `docker/docker-compose.fullstack.yml`,
+  `github/workflows/ci.yml`) — container names/prefixes (`aniston_vms_postgres`, etc.) and the
+  default `DATABASE_URL` database name update manually to match your infra
+- **.env.example** — update manually to add/remove project-specific variables

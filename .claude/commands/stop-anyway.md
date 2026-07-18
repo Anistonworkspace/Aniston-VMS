@@ -6,8 +6,8 @@ description: Override the completion Stop-gate once, so Claude may stop even tho
 # /stop-anyway — override the completion gate (once)
 
 The Stop hook (`on-stop.sh`) blocks stopping while the working tree has incompleteness
-markers (TODO/FIXME/not-implemented/stubs/backend console.log). This command tells it to
-allow the very next stop anyway.
+markers (TODO/FIXME/not-implemented/stubs/`console.log` added in `apps/api/` or `apps/workers/`). This
+command tells it to allow the very next stop anyway.
 
 ## What to do when invoked
 

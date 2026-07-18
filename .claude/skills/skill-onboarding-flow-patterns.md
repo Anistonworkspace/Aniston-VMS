@@ -1,230 +1,154 @@
 # Skill — Onboarding Flow Patterns
 
-Multi-step signup, product tour, first-run setup. Uses URL-synced state
-(shareable, back-button friendly), Framer Motion between-step transitions,
-and the existing form primitives from `skill-form-patterns.md`.
-
-Prereqs: React Hook Form + Zod (project convention), `useSearchParams`
-from React Router, Framer Motion. Design tokens from
-`skill-ui-ux-checklist.md`.
+Multi-step operator setup, product tour, resume-progress banner. Frame Motion between-step transitions.
+Steps are URL-synced (shareable, back-button friendly) and drafts persist to `localStorage` so a new
+operator never loses progress on a refresh. Tokens/components per `skill-ui-ux-checklist.md`.
 
 ---
 
-## Rule — URL is the source of truth
+## Prerequisites
 
-Every step lives at `?step=N`. Users can share their progress link, refresh
-without losing state, and use the browser back button naturally.
-
-## Rule — Progress state persists
-
-If the user closes the tab mid-onboarding, restore where they were. Use
-`localStorage` for draft data with a per-user key.
-
-## Rule — Never mandatory-block
-
-Every step has a "Skip for now" or "Do this later" unless the app literally
-cannot function without it (only auth qualifies).
+- `react-hook-form` + `zodResolver` for every step's validation
+- `useSearchParams` for step position — never step state that only lives in a `useState` (it must survive
+  a refresh and be linkable)
 
 ---
 
-## Pattern 1 — Step orchestrator with URL sync
+## Pattern 1 — Step orchestrator
 
 ```typescript
 // frontend/src/features/onboarding/Onboarding.tsx
-import { useSearchParams, useNavigate } from 'react-router-dom';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { useState, useMemo } from 'react';
 import { StepIdentity } from './StepIdentity';
 import { StepOrganization } from './StepOrganization';
 import { StepPreferences } from './StepPreferences';
 import { StepInvite } from './StepInvite';
 
+const STORAGE_KEY = 'vms.onboarding.draft';
+
 const STEPS = [
-  { key: 'identity',     Component: StepIdentity,     label: 'You' },
-  { key: 'organization', Component: StepOrganization, label: 'Workspace' },
-  { key: 'preferences',  Component: StepPreferences,  label: 'Preferences' },
-  { key: 'invite',       Component: StepInvite,       label: 'Invite team' },
+  { key: 'identity',     component: StepIdentity,     label: 'Your details' },
+  { key: 'organization', component: StepOrganization,  label: 'Organization & site' },
+  { key: 'preferences',  component: StepPreferences,   label: 'Alert preferences' },
+  { key: 'invite',       component: StepInvite,        label: 'Invite your team' },
 ] as const;
-
-const STORAGE_KEY = 'onboarding_draft_v1';
-
-type OnboardingData = {
-  identity?: { fullName: string; timezone: string };
-  organization?: { name: string; slug: string };
-  preferences?: { theme: 'light' | 'dark'; notifications: boolean };
-  invite?: { emails: string[] };
-};
 
 export function Onboarding() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
-  const reduce = useReducedMotion();
-
-  const stepIdx = Math.max(0, Math.min(STEPS.length - 1, Number(searchParams.get('step') ?? 0)));
-  const step = STEPS[stepIdx];
+  const stepIdx = Math.min(Math.max(Number(searchParams.get('step')) || 0, 0), STEPS.length - 1);
 
   const [data, setData] = useState<OnboardingData>(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      return raw ? JSON.parse(raw) : {};
-    } catch { return {}; }
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
   });
 
-  const setStepData = (key: keyof OnboardingData, value: OnboardingData[typeof key]) => {
-    setData((d) => {
-      const next = { ...d, [key]: value };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      return next;
-    });
+  const goto = (i: number) => setSearchParams({ step: String(i) });
+  const next = (partial: Partial<OnboardingData>) => {
+    const merged = { ...data, ...partial };
+    setData(merged);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+    if (stepIdx === STEPS.length - 1) {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.setItem('vms.onboarding.completed', 'true');
+    } else {
+      goto(stepIdx + 1);
+    }
   };
+  const back = () => goto(Math.max(0, stepIdx - 1));
 
-  const goto = (n: number) => setSearchParams({ step: String(n) });
-  const next = () => (stepIdx < STEPS.length - 1 ? goto(stepIdx + 1) : finish());
-  const back = () => (stepIdx > 0 ? goto(stepIdx - 1) : navigate('/'));
-
-  const finish = async () => {
-    // POST all data to backend; clear localStorage on success
-    localStorage.removeItem(STORAGE_KEY);
-    navigate('/dashboard');
-  };
-
-  const Component = step.Component;
+  const Step = STEPS[stepIdx].component;
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-lg flex-col px-4 py-8">
-      <ProgressDots current={stepIdx} labels={STEPS.map((s) => s.label)} />
+    <div className="mx-auto max-w-lg py-16">
+      <ProgressDots current={stepIdx} total={STEPS.length} labels={STEPS.map(s => s.label)} />
       <AnimatePresence mode="wait">
-        <motion.div
-          key={step.key}
-          initial={reduce ? undefined : { opacity: 0, x: 20 }}
-          animate={reduce ? undefined : { opacity: 1, x: 0 }}
-          exit={reduce ? undefined : { opacity: 0, x: -20 }}
-          transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-          className="mt-8 flex-1"
-        >
-          <Component
-            data={data}
-            onSubmit={(value) => { setStepData(step.key as keyof OnboardingData, value); next(); }}
-            onBack={back}
-            onSkip={next}
-          />
+        <motion.div key={stepIdx} initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }} transition={{ duration: 0.25, ease: 'easeOut' }}>
+          <Step data={data} onNext={next} onBack={stepIdx > 0 ? back : undefined} onSkip={stepIdx === STEPS.length - 1 ? undefined : () => goto(stepIdx + 1)} />
         </motion.div>
       </AnimatePresence>
     </div>
   );
 }
-```
 
----
-
-## Pattern 2 — Progress dots
-
-```typescript
-function ProgressDots({ current, labels }: { current: number; labels: readonly string[] }) {
+function ProgressDots({ current, total, labels }: { current: number; total: number; labels: string[] }) {
   return (
-    <div className="flex items-center gap-3">
-      {labels.map((label, i) => {
-        const state = i < current ? 'done' : i === current ? 'active' : 'pending';
-        return (
-          <div key={label} className="flex items-center gap-2">
-            <div
-              className={`h-2 w-2 rounded-full transition-colors ${
-                state === 'done'
-                  ? 'bg-[var(--positive-color)]'
-                  : state === 'active'
-                    ? 'bg-[var(--primary-color)]'
-                    : 'bg-[var(--layout-border-color)]'
-              }`}
-            />
-            <span
-              className={`text-xs ${
-                state === 'active'
-                  ? 'text-[var(--primary-text-color)] font-medium'
-                  : 'text-[var(--tertiary-text-color)]'
-              }`}
-            >
-              {label}
-            </span>
-          </div>
-        );
-      })}
+    <div className="mb-8 flex items-center justify-center gap-2" role="progressbar" aria-valuenow={current + 1} aria-valuemax={total}>
+      {Array.from({ length: total }, (_, i) => (
+        <div key={i} className={`h-2 w-2 rounded-full transition-colors ${i <= current ? 'bg-[var(--sage)]' : 'bg-[var(--hairline)]'}`} title={labels[i]} />
+      ))}
     </div>
   );
 }
 ```
 
-Alternative: horizontal progress bar. Use dots when you have ≤ 5 steps, a
-bar for > 5.
+- [ ] Step position lives in `?step=` — refreshing or sharing the URL lands on the same step
+- [ ] Draft merges into `localStorage['vms.onboarding.draft']` after every step, cleared only on final submit
+- [ ] `ProgressDots` uses `--sage` for completed/current, `--hairline` for upcoming — never a red/gray combo
+- [ ] Step transition is a 250ms horizontal slide+fade — matches the 70–160ms micro-interaction scale for
+  hover but is intentionally a touch longer since it's a full-screen content swap
 
 ---
 
-## Pattern 3 — Individual step (form + Skip)
+## Pattern 2 — Individual step (identity)
 
 ```typescript
 // frontend/src/features/onboarding/StepIdentity.tsx
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-
-const schema = z.object({
+const IdentitySchema = z.object({
   fullName: z.string().min(2).max(120),
-  timezone: z.string().min(3),
+  email:    z.string().email(),
+  phone:    z.string().min(8),   // used for WhatsApp incident alerts
+  password: z.string().min(10),
 });
-type Values = z.infer<typeof schema>;
+type IdentityForm = z.infer<typeof IdentitySchema>;
 
-export function StepIdentity({
-  data,
-  onSubmit,
-  onBack,
-  onSkip,
-}: {
-  data: OnboardingData;
-  onSubmit: (v: Values) => void;
-  onBack: () => void;
-  onSkip: () => void;
-}) {
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<Values>({
-    resolver: zodResolver(schema),
-    defaultValues: data.identity ?? { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+function StepIdentity({ data, onNext }: { data: OnboardingData; onNext: (d: Partial<OnboardingData>) => void }) {
+  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<IdentityForm>({
+    resolver: zodResolver(IdentitySchema),
+    defaultValues: data.identity,
   });
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+    <form onSubmit={handleSubmit(onNext)} className="space-y-4">
+      <h2 className="font-heading text-2xl text-[var(--ink)]">Let's get you set up</h2>
+      <p className="text-sm text-[var(--muted)]">This is the account you'll use to monitor your sites.</p>
+
       <div>
-        <h1 className="font-heading text-2xl">Welcome — let's set up your account.</h1>
-        <p className="mt-2 text-sm text-[var(--secondary-text-color)]">
-          Tell us a bit about you. Takes under a minute.
-        </p>
+        <label className="text-sm font-medium text-[var(--ink)]">Full name</label>
+        <input {...register('fullName')} autoFocus className="input-field mt-1 w-full" />
+        {errors.fullName && <p className="mt-1 text-xs text-[var(--coral)]">{errors.fullName.message}</p>}
       </div>
-      <label className="block">
-        <span className="mb-1 block text-sm">Full name</span>
-        <input {...register('fullName')} className="input-field" autoFocus />
-        {errors.fullName && <span className="mt-1 block text-xs text-[var(--negative-color)]">{errors.fullName.message}</span>}
-      </label>
-      <label className="block">
-        <span className="mb-1 block text-sm">Timezone</span>
-        <input {...register('timezone')} className="input-field" />
-      </label>
-      <div className="flex items-center justify-between">
-        <button type="button" className="btn btn--ghost btn--sm" onClick={onBack}>← Back</button>
-        <div className="flex gap-2">
-          <button type="button" className="btn btn--ghost btn--sm" onClick={onSkip}>Skip</button>
-          <button type="submit" className="btn btn--primary btn--sm" disabled={isSubmitting}>
-            {isSubmitting ? 'Saving…' : 'Continue →'}
-          </button>
-        </div>
+      <div>
+        <label className="text-sm font-medium text-[var(--ink)]">Work email</label>
+        <input {...register('email')} type="email" className="input-field mt-1 w-full" />
+        {errors.email && <p className="mt-1 text-xs text-[var(--coral)]">{errors.email.message}</p>}
       </div>
+      <div>
+        <label className="text-sm font-medium text-[var(--ink)]">WhatsApp number</label>
+        <input {...register('phone')} type="tel" className="input-field mt-1 w-full" />
+        <p className="mt-1 text-xs text-[var(--muted)]">Critical incident alerts go here first.</p>
+        {errors.phone && <p className="mt-1 text-xs text-[var(--coral)]">{errors.phone.message}</p>}
+      </div>
+      <div>
+        <label className="text-sm font-medium text-[var(--ink)]">Password</label>
+        <input {...register('password')} type="password" className="input-field mt-1 w-full" />
+        {errors.password && <p className="mt-1 text-xs text-[var(--coral)]">{errors.password.message}</p>}
+      </div>
+
+      <button type="submit" disabled={isSubmitting} className="btn btn--primary w-full">
+        {isSubmitting ? 'Saving…' : 'Continue'}
+      </button>
     </form>
   );
 }
 ```
 
+- [ ] `zodResolver` schema per step — never a giant single schema shared across all 4 steps
+- [ ] Timezone (used in `StepOrganization`) is captured via `Intl.DateTimeFormat().resolvedOptions().timeZone`, never hand-picked from a stale dropdown default
+- [ ] Field-level errors in `--coral`, 12px, directly under the field — never a top-of-form error summary only
+- [ ] First field `autoFocus`; submit button shows a present-participle loading label ("Saving…"), never freezes with no feedback
+
 ---
 
-## Pattern 4 — Optional guided tour (post-onboarding)
-
-Once the user is in the app, offer a 3-step guided tour with animated
-tooltips. Use `driver.js` (`npm install driver.js`) — battle-tested, tiny.
+## Pattern 3 — Product tour (driver.js)
 
 ```typescript
 // frontend/src/features/onboarding/tour.ts
@@ -232,95 +156,84 @@ import { driver } from 'driver.js';
 import 'driver.js/dist/driver.css';
 
 export function startTour() {
-  const drv = driver({
-    animate: true,
+  const tour = driver({
     showProgress: true,
     steps: [
-      {
-        element: '#nav-notes',
-        popover: { title: 'Your notes live here', description: 'Cmd+K opens the palette from anywhere.' },
-      },
-      {
-        element: '#btn-create',
-        popover: { title: 'Create a note', description: 'Click here or press Cmd+N.' },
-      },
-      {
-        element: '#user-menu',
-        popover: { title: 'You', description: 'Preferences, sign out, and workspace switching.' },
-      },
+      { element: '#nav-dashboard',   popover: { title: 'Your dashboard', description: 'Every camera\'s health, at a glance — updated in real time.' } },
+      { element: '#btn-add-camera',  popover: { title: 'Add your first camera', description: 'RTSP or ONVIF — we auto-probe reachability, stream, and recording.' } },
+      { element: '#nav-incidents',   popover: { title: 'Incidents', description: 'If a health check ever fails, it shows up here with a full escalation timeline.' } },
+      { element: '#nav-reports',     popover: { title: 'Reports', description: 'Export a health or incident report as PDF/Excel any time.' } },
     ],
+    onDestroyed: () => localStorage.setItem('vms.tour.completed', 'true'),
   });
-  drv.drive();
-  localStorage.setItem('tour_completed', '1');
+  tour.drive();
 }
 ```
 
-Only show if `!localStorage.getItem('tour_completed')` — never on repeat
-visits.
+- [ ] Tour targets real, stable element IDs (`#nav-dashboard`, `#btn-add-camera`, `#nav-incidents`,
+  `#nav-reports`) — verify each exists before shipping, a missing target silently breaks the whole tour
+- [ ] Completion flag (`vms.tour.completed`) gates re-showing the tour on next login
+- [ ] Copy explains *why* a feature matters to an operator, not just what it's called
 
 ---
 
-## Pattern 5 — Resume-progress banner
-
-Detect a partial onboarding on any page and offer to resume.
+## Pattern 4 — Resume-onboarding banner
 
 ```typescript
-export function ResumeOnboardingBanner() {
+function ResumeOnboardingBanner() {
   const [dismissed, setDismissed] = useState(false);
-  const draft = useMemo(() => {
-    try {
-      const raw = localStorage.getItem('onboarding_draft_v1');
-      return raw ? JSON.parse(raw) : null;
-    } catch { return null; }
-  }, []);
-  if (!draft || dismissed) return null;
-  const filledSteps = Object.keys(draft).length;
+  const hasDraft = !!localStorage.getItem('vms.onboarding.draft');
+  if (!hasDraft || dismissed) return null;
+
   return (
-    <aside className="floating-card mx-auto max-w-3xl rounded-[var(--radius-medium)] p-3 text-sm flex items-center justify-between">
-      <span>
-        Continue your setup — {filledSteps} of 4 steps done.
-      </span>
-      <div className="flex gap-2">
-        <button className="btn btn--primary btn--sm" onClick={() => navigate('/onboarding?step=' + filledSteps)}>Resume</button>
-        <button className="btn btn--ghost btn--sm" onClick={() => { localStorage.removeItem('onboarding_draft_v1'); setDismissed(true); }}>Dismiss</button>
-      </div>
-    </aside>
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }}
+        className="flex items-center gap-3 rounded-[var(--radius-tile)] bg-[var(--indigo)]/10 border border-[var(--indigo)]/20 px-4 py-3"
+      >
+        <span className="text-sm text-[var(--ink)]">You're 2 steps away from finishing setup — pick up where you left off.</span>
+        <div className="flex-1" />
+        <a href="/onboarding" className="btn btn--secondary btn--sm">Continue setup</a>
+        <button onClick={() => setDismissed(true)} className="btn btn--ghost btn--sm">Dismiss</button>
+      </motion.div>
+    </AnimatePresence>
   );
 }
 ```
 
+- [ ] Banner only renders when an unfinished draft exists in `localStorage` — never shown after `vms.onboarding.completed`
+- [ ] Tint is `--indigo` at low opacity (informational, not urgent) — never `--coral`, which is reserved for
+  actual incidents
+
 ---
 
-## Do-not
+## Pattern 5 — Back/Skip navigation
 
-- **No mandatory-fields at every step.** The user just signed up — every
-  step should have a Skip except auth.
-- **No storing sensitive data in localStorage.** Draft the workspace name,
-  not the credit card.
-- **No animations between steps > 300ms.** Users tap Next expecting instant
-  response; long animations feel broken.
-- **No progress that resets on refresh.** URL + localStorage — always
-  restore.
-- **No tour on the second visit.** Persist `tour_completed`.
-- **No 10-step onboarding.** More than 5 steps: split into "essential now"
-  and "polish later" and let the user complete the second half from
-  Settings.
+```typescript
+function StepNav({ onBack, onSkip, isSubmitting, isLast }: { onBack?: () => void; onSkip?: () => void; isSubmitting: boolean; isLast: boolean }) {
+  return (
+    <div className="mt-6 flex items-center justify-between">
+      <button type="button" onClick={onBack} disabled={!onBack} className="btn btn--ghost btn--sm disabled:opacity-0">Back</button>
+      <div className="flex gap-2">
+        {onSkip && <button type="button" onClick={onSkip} className="btn btn--ghost btn--sm">Skip for now</button>}
+        <button type="submit" disabled={isSubmitting} className="btn btn--primary btn--sm">
+          {isSubmitting ? 'Saving…' : isLast ? 'Finish setup' : 'Continue'}
+        </button>
+      </div>
+    </div>
+  );
+}
+```
+
+- [ ] "Skip for now" only appears on skippable steps (preferences/invite) — identity and organization are required
+- [ ] Disabled `Back` on step 1 fades out rather than disappearing, so the layout doesn't shift
 
 ---
 
 ## Checklist
 
-- [ ] Current step lives in URL (`?step=N`), shareable & refresh-safe
-- [ ] Draft data persists in `localStorage` under a per-user key
-- [ ] Every step has an explicit "Skip" (unless it's auth)
-- [ ] Progress dots or bar visible on every step
-- [ ] Between-step animation ≤ 300ms with `AnimatePresence mode="wait"`
-- [ ] Animation short-circuits under `prefers-reduced-motion`
-- [ ] Back button navigates to previous step (or `/` on step 0)
-- [ ] Auto-focus the first input on each step
-- [ ] Timezone auto-detected via `Intl.DateTimeFormat().resolvedOptions().timeZone`
-- [ ] Resume-progress banner shown on other pages if draft exists
-- [ ] `localStorage` cleared on successful completion
-- [ ] Tour (if any) shown once, dismissal persisted
-- [ ] Dark-mode parity
-- [ ] Total step count ≤ 5
+- [ ] Step position synced to `?step=`, draft persisted to `localStorage`, both cleared correctly on completion
+- [ ] Product tour targets real element IDs and its copy is VMS-specific ("Add your first camera", never "Create a note")
+- [ ] Resume banner only shows for an actual unfinished draft, dismissible, uses `--indigo` not `--coral`
+- [ ] Every step form uses its own Zod schema + `zodResolver`, inline field errors in `--coral`
+- [ ] `ProgressDots` uses `--sage`/`--hairline` only

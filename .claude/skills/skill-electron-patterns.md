@@ -1,296 +1,203 @@
-# Skill — Electron Desktop Patterns
+# Skill — Electron Desktop Patterns (Control-Room Live-Wall Shell)
 
-IPC main/renderer, auto-update, tray, file dialogs, Windows installer (NSIS).
+`agent-desktop/` wraps the same `apps/web` React app in a native shell for a control-room PC:
+fullscreen multi-monitor live-wall display, minimize-to-tray so the wall keeps running unattended,
+and native save/export dialogs for snapshots and clip exports. Electron/Capacitor are **not**
+required for Aniston VMS v1 — the primary target is the web SPA (see
+`docs/tech-stack-targets.md` "Deferred targets") — but the pattern and release tooling
+(`store-releases/electron/`) already exist in this repo, so build it correctly when a control room
+asks for a dedicated kiosk machine instead of a browser tab.
+
+IPC surface: `main.ts` (window/tray/lifecycle), `preload.ts` (contextBridge — the only thing the
+renderer may call), `ipcHandlers.ts` (file dialogs), `updater.ts` (electron-updater), `tray.ts`
+(system tray). Renderer code is the normal `apps/web` React app — never give it `nodeIntegration`.
 
 ---
 
-## Electron entry point
+## Entry point (`agent-desktop/src/main.ts`)
 
 ```typescript
-// agent-desktop/src/main.ts
-import { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage, shell } from 'electron';
-import { autoUpdater } from 'electron-updater';
-import path from 'path';
+import { app, BrowserWindow, Tray, Menu, nativeImage } from 'electron';
+import path from 'node:path';
+import { setupIpcHandlers } from './ipcHandlers';
+import { setupAutoUpdater } from './updater';
 
-const isDev  = process.env.NODE_ENV === 'development';
-const ROOT   = path.join(__dirname, '..');
-
-let mainWindow:    BrowserWindow | null = null;
-let tray:          Tray | null = null;
+let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width:           1280,
-    height:          800,
-    minWidth:        900,
-    minHeight:       600,
-    show:            false,    // show only when ready
-    titleBarStyle:   'hiddenInset',
-    icon:            path.join(ROOT, 'assets/icon.png'),
+    width: 1920,
+    height: 1080,
+    minWidth: 1280,
+    minHeight: 720,
+    title: 'Aniston VMS — Live Wall',
     webPreferences: {
-      preload:            path.join(__dirname, 'preload.js'),
-      contextIsolation:   true,     // REQUIRED for security
-      nodeIntegration:    false,    // REQUIRED for security
-      sandbox:            true,     // recommended
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true, // REQUIRED for security — renderer has zero Node access
+      nodeIntegration: false, // REQUIRED — this window loads remote-ish (proxied API) content
+      sandbox: true,
     },
   });
 
-  if (isDev) {
-    mainWindow.loadURL('http://localhost:5173');
-    mainWindow.webContents.openDevTools();
-  } else {
-    mainWindow.loadFile(path.join(ROOT, 'dist/index.html'));
-  }
+  const isDev = process.env.NODE_ENV === 'development';
+  mainWindow.loadURL(isDev ? 'http://localhost:5173' : `file://${path.join(__dirname, '../dist/index.html')}`);
 
-  mainWindow.once('ready-to-show', () => {
-    mainWindow?.show();
-    if (!isDev) checkForUpdates();
+  mainWindow.on('close', (event) => {
+    // Closing the window ≠ quitting: the live wall keeps monitoring from the tray
+    if (!(app as any).isQuitting) {
+      event.preventDefault();
+      mainWindow?.hide();
+    }
   });
+}
 
-  mainWindow.on('close', (e) => {
-    // Minimize to tray instead of closing
-    e.preventDefault();
-    mainWindow?.hide();
-  });
+function createTray() {
+  const icon = nativeImage.createFromPath(path.join(__dirname, '../assets/tray-icon.png'));
+  tray = new Tray(icon);
+  tray.setToolTip('Aniston VMS');
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: 'Show Live Wall', click: () => mainWindow?.show() },
+      { label: 'Check for Updates', click: () => setupAutoUpdater(mainWindow!) },
+      { type: 'separator' },
+      { label: 'Quit', click: () => { (app as any).isQuitting = true; app.quit(); } },
+    ]),
+  );
 }
 
 app.whenReady().then(() => {
   createWindow();
   createTray();
   setupIpcHandlers();
+  setupAutoUpdater(mainWindow!);
 });
 
-app.on('activate', () => {
-  if (!mainWindow) createWindow();
-  else mainWindow.show();
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit();
 });
 ```
 
+`contextIsolation: true` + `nodeIntegration: false` + `sandbox: true` are non-negotiable — this
+window ultimately renders our own web app pointed at the live NestJS API (`apps/api`) URL; treat it like any other
+renderer with network-controlled content.
+
 ---
 
-## Preload script — safe IPC bridge
+## Preload bridge (`agent-desktop/src/preload.ts`)
+
+Expose only the specific, named channels the live-wall UI actually needs — never `ipcRenderer`
+itself.
 
 ```typescript
-// agent-desktop/src/preload.ts
 import { contextBridge, ipcRenderer } from 'electron';
 
-// Expose ONLY specific channels to the renderer — never expose ipcRenderer directly
 contextBridge.exposeInMainWorld('electronAPI', {
-  // App version
+  isElectron: true,
   getVersion: () => ipcRenderer.invoke('app:get-version'),
-
-  // File operations
-  openFilePicker: (options: Electron.OpenDialogOptions) =>
-    ipcRenderer.invoke('dialog:open-file', options),
-  saveFile: (options: Electron.SaveDialogOptions) =>
-    ipcRenderer.invoke('dialog:save-file', options),
-  writeFile: (filePath: string, data: string) =>
-    ipcRenderer.invoke('fs:write-file', filePath, data),
-
-  // Update
-  onUpdateAvailable:   (cb: () => void) => ipcRenderer.on('update:available', cb),
-  onUpdateDownloaded:  (cb: () => void) => ipcRenderer.on('update:downloaded', cb),
-  installUpdate:       ()               => ipcRenderer.invoke('update:install'),
-
-  // Open external links in OS browser (never inside Electron)
+  saveSnapshot: (dataUrl: string, suggestedName: string) =>
+    ipcRenderer.invoke('dialog:save-snapshot', dataUrl, suggestedName),
+  saveClipExport: (filePath: string, suggestedName: string) =>
+    ipcRenderer.invoke('dialog:save-clip', filePath, suggestedName),
   openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url),
-
-  // Notifications
-  showNotification: (title: string, body: string) =>
-    ipcRenderer.invoke('notification:show', title, body),
+  onUpdateAvailable: (cb: () => void) => ipcRenderer.on('update:available', cb),
+  onUpdateDownloaded: (cb: () => void) => ipcRenderer.on('update:downloaded', cb),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
 });
-
-// TypeScript types for renderer:
-// declare global { interface Window { electronAPI: typeof api } }
 ```
 
----
+`apps/web` code checks `window.electronAPI?.isElectron` to branch between "download in browser"
+(web SPA) and "native save dialog" (desktop shell) for snapshot/clip export — same component,
+same `<ExportButton />`, different side effect.
 
-## IPC handlers (main process)
+## IPC handlers (`agent-desktop/src/ipcHandlers.ts`)
 
 ```typescript
-// agent-desktop/src/ipcHandlers.ts
-import { ipcMain, dialog, shell, Notification, app } from 'electron';
-import fs from 'fs/promises';
-import path from 'path';
+import { ipcMain, dialog, shell, app, BrowserWindow } from 'electron';
+import fs from 'node:fs/promises';
 
 export function setupIpcHandlers() {
   ipcMain.handle('app:get-version', () => app.getVersion());
 
-  ipcMain.handle('dialog:open-file', async (_, options: Electron.OpenDialogOptions) => {
-    const result = await dialog.showOpenDialog(options);
-    return result;   // { canceled, filePaths }
+  ipcMain.handle('dialog:save-snapshot', async (event, dataUrl: string, suggestedName: string) => {
+    const win = BrowserWindow.fromWebContents(event.sender)!;
+    const { canceled, filePath } = await dialog.showSaveDialog(win, {
+      title: 'Save camera snapshot',
+      defaultPath: suggestedName,
+      filters: [{ name: 'PNG Image', extensions: ['png'] }],
+    });
+    if (canceled || !filePath) return null;
+    const base64 = dataUrl.replace(/^data:image\/png;base64,/, '');
+    await fs.writeFile(filePath, base64, 'base64');
+    return filePath;
   });
 
-  ipcMain.handle('dialog:save-file', async (_, options: Electron.SaveDialogOptions) => {
-    return dialog.showSaveDialog(options);
-  });
-
-  ipcMain.handle('fs:write-file', async (_, filePath: string, data: string) => {
-    // Security: only allow writes to user's Downloads/Documents
-    const allowed = [app.getPath('downloads'), app.getPath('documents')];
-    const resolved = path.resolve(filePath);
-    if (!allowed.some(dir => resolved.startsWith(dir))) {
-      throw new Error('Write outside allowed directories rejected');
-    }
-    await fs.writeFile(resolved, data, 'utf8');
-    return { success: true, path: resolved };
-  });
-
-  ipcMain.handle('shell:open-external', async (_, url: string) => {
-    // Validate URL before opening
-    const parsed = new URL(url);
-    if (!['http:', 'https:'].includes(parsed.protocol)) return;
-    await shell.openExternal(url);
-  });
-
-  ipcMain.handle('notification:show', (_, title: string, body: string) => {
-    new Notification({ title, body }).show();
-  });
-
-  ipcMain.handle('update:install', () => {
-    autoUpdater.quitAndInstall();
-  });
+  ipcMain.handle('shell:open-external', (_event, url: string) => shell.openExternal(url));
 }
 ```
 
----
-
-## Tray icon
+## Auto-updater (`agent-desktop/src/updater.ts`)
 
 ```typescript
-// agent-desktop/src/tray.ts
-import { Tray, Menu, nativeImage, app } from 'electron';
-
-export function createTray() {
-  const icon = nativeImage.createFromPath(path.join(ROOT, 'assets/tray-icon.png'));
-  tray = new Tray(icon.resize({ width: 16, height: 16 }));
-
-  const contextMenu = Menu.buildFromTemplate([
-    { label: 'Open',        click: () => mainWindow?.show() },
-    { type:  'separator' },
-    { label: 'Check for updates', click: () => autoUpdater.checkForUpdates() },
-    { type:  'separator' },
-    { label: 'Quit',        click: () => { app.quit(); } },
-  ]);
-
-  tray.setToolTip('Boilerplate App');
-  tray.setContextMenu(contextMenu);
-  tray.on('click', () => mainWindow?.isVisible() ? mainWindow.hide() : mainWindow?.show());
-}
-```
-
----
-
-## Auto-update (electron-updater)
-
-```typescript
-// agent-desktop/src/updater.ts
 import { autoUpdater } from 'electron-updater';
 import { BrowserWindow } from 'electron';
 
-autoUpdater.autoDownload          = true;
-autoUpdater.autoInstallOnAppQuit  = true;
+export function setupAutoUpdater(mainWindow: BrowserWindow) {
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
 
-export function checkForUpdates() {
+  autoUpdater.on('update-available', () => mainWindow.webContents.send('update:available'));
+  autoUpdater.on('update-downloaded', () => mainWindow.webContents.send('update:downloaded'));
   autoUpdater.checkForUpdates();
-
-  autoUpdater.on('update-available', () => {
-    mainWindow?.webContents.send('update:available');
-  });
-
-  autoUpdater.on('update-downloaded', () => {
-    mainWindow?.webContents.send('update:downloaded');
-  });
-
-  autoUpdater.on('error', (err) => {
-    console.error('[Updater]', err.message);
-  });
 }
 ```
 
-```typescript
-// frontend — update prompt component
-function ElectronUpdateBanner() {
-  const isElectron  = !!window.electronAPI;
-  const [available,  setAvailable]  = useState(false);
-  const [downloaded, setDownloaded] = useState(false);
-
-  useEffect(() => {
-    if (!isElectron) return;
-    window.electronAPI.onUpdateAvailable(()  => setAvailable(true));
-    window.electronAPI.onUpdateDownloaded(() => setDownloaded(true));
-  }, []);
-
-  if (!isElectron || (!available && !downloaded)) return null;
-
-  return (
-    <div className="fixed bottom-4 right-4 floating-card rounded-[var(--card-radius)] p-4 max-w-xs z-[9999]">
-      <p className="text-sm font-medium">
-        {downloaded ? 'Update ready to install' : 'Downloading update…'}
-      </p>
-      {downloaded && (
-        <button className="btn btn--primary btn--sm mt-3 w-full"
-          onClick={() => window.electronAPI.installUpdate()}>
-          Restart and install
-        </button>
-      )}
-    </div>
-  );
-}
-```
+Render an `<ElectronUpdateBanner />` in `apps/web` (guarded by `window.electronAPI?.isElectron`)
+that listens for these two events and offers "Restart to update" — a live wall shouldn't restart
+itself silently mid-shift.
 
 ---
 
-## electron-builder config (package.json)
+## Build config (`agent-desktop/package.json` → `build` block, electron-builder)
 
 ```json
 {
+  "name": "agent-desktop",
+  "productName": "Aniston VMS",
   "build": {
-    "appId": "com.aniston.boilerplate",
-    "productName": "Boilerplate App",
-    "directories": { "output": "release" },
-    "files": ["dist/**/*", "agent-desktop/dist/**/*", "assets/**/*"],
+    "appId": "com.aniston.vms",
+    "productName": "Aniston VMS",
+    "directories": { "output": "dist" },
+    "files": ["dist/**/*", "assets/**/*"],
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "target": "nsis",
       "icon": "assets/icon.ico",
-      "requestedExecutionLevel": "asInvoker"
+      "certificateFile": "${env.WINDOWS_CERT_FILE}",
+      "certificatePassword": "${env.WINDOWS_CERT_PASSWORD}"
     },
     "nsis": {
-      "oneClick":               false,
+      "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut":  true,
+      "createDesktopShortcut": true,
       "createStartMenuShortcut": true
     },
-    "mac": {
-      "target":   "dmg",
-      "icon":     "assets/icon.icns",
-      "category": "public.app-category.business"
-    },
-    "linux": {
-      "target": "AppImage",
-      "icon":   "assets/icon.png"
-    },
-    "publish": [{
-      "provider": "github",
-      "owner":    "your-org",
-      "repo":     "your-repo"
-    }]
+    "mac": { "target": "dmg", "icon": "assets/icon.icns" },
+    "linux": { "target": "AppImage", "icon": "assets/icon.png" }
   }
 }
 ```
 
+Windows code signing uses `WINDOWS_CERT_FILE` / `WINDOWS_CERT_PASSWORD` (mapped from GitHub
+Secrets `CSC_LINK` / `CSC_KEY_PASSWORD` in `store-releases/electron/build-electron.ps1` and
+`.github/workflows/release-electron.yml`) — never commit the certificate.
+
 ---
 
-## Checklist
+## Checklist before shipping a desktop-shell change
 
-- [ ] `contextIsolation: true` and `nodeIntegration: false` in BrowserWindow webPreferences
-- [ ] `sandbox: true` in webPreferences
-- [ ] Preload script only exposes named channels — never exposes `ipcRenderer` directly
-- [ ] File write IPC handler validates path is inside allowed directories (downloads, documents)
-- [ ] `shell.openExternal` validates URL protocol (http/https only) before opening
-- [ ] Tray "Quit" bypasses the `close` event prevention (`app.quit()`)
-- [ ] Auto-update configured with GitHub Releases as publish target
-- [ ] Update downloaded banner shows in renderer with "Restart and install" CTA
-- [ ] EXE/DMG not committed to git — built in CI and attached to GitHub Release
-- [ ] Code signing certificate stored in GitHub Secrets (Windows: `CSC_LINK`, `CSC_KEY_PASSWORD`)
+- [ ] `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true` on every `BrowserWindow`
+- [ ] Only named channels exposed via `contextBridge` — never the raw `ipcRenderer`
+- [ ] Closing the main window hides to tray, it does not kill the live-wall session
+- [ ] `productName` / `appId` are **Aniston VMS** / `com.aniston.vms`, not boilerplate values
+- [ ] Auto-updater never force-restarts without an explicit operator confirmation
+- [ ] Code-signing secrets referenced by env var only, never hardcoded

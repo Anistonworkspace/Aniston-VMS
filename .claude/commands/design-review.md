@@ -25,7 +25,11 @@ first if it doesn't.
 ## Flow
 
 1. **Locate the target ADR.** Newest by number, or the one named.
-2. **Load associated PRD + ERD** — cross-file consistency check.
+2. **Load associated PRD + ERD** — cross-file consistency check; if the PRD's
+   Screens section conflicts with the established visual language in
+   `docs/04-uiux-brief.md` / `docs/actual-design.png` (soft-SaaS tokens —
+   rounded white cards, slate sidebar, status-pill semantics), flag it as a
+   LOW finding rather than silently inventing a new look.
 3. **Spawn 3 reviewers in parallel** (via the `Workflow` tool if available,
    sequentially otherwise):
    - `agent-code-review` — reads the API contract table + state machines,
@@ -44,27 +48,27 @@ first if it doesn't.
 ## Output format
 
 ```
-## Design Review — ADR-0009 (Fitly)
+## Design Review — ADR-0009 (FleetWatch)
 
 ### CRITICAL
-- [SEC-001] payments.write permission has no encrypted-field discipline
-  Location: ADR-0009 § API contract, row "POST /api/payments"
-  Fix: add `cardTokenEncrypted` to the Payment entity in ERD; call out AES-256-GCM in NFRs.
+- [SEC-001] camera.credentials.write permission has no encrypted-field discipline
+  Location: ADR-0009 § API contract, row "PATCH /api/cameras/:id/credentials"
+  Fix: add `rtspPasswordEncrypted` to the Camera entity in ERD; call out AES-256-GCM in NFRs.
 
 ### HIGH
-- [LOGIC-001] Workout state machine has PUBLISHED but no ARCHIVED handler in Q4
+- [LOGIC-001] Incident state machine has ESCALATED but no RESOLVED handler in Q4
   Location: ADR-0009 § Core workflows
-  Fix: add ARCHIVED as terminal state; explain trainer-side cancellation path.
+  Fix: add RESOLVED as terminal state; explain operator-side acknowledgment path.
 
 ### MEDIUM
-- [REVIEW-001] RBAC matrix row "workouts.publish" doesn't exist in "actions" enum
+- [REVIEW-001] RBAC matrix row "cameras.publish" doesn't exist in "actions" enum
   Location: ADR-0009 § RBAC matrix
-  Fix: either add a "publish" action or model publish as a workouts.update mutation with a status field.
+  Fix: either add a "publish" action or model publish as a cameras.update mutation with a status field.
 
 ### LOW
-- [DOC-001] PRD success metric #3 ("high engagement") is not numeric
-  Location: docs/prd-fitly.md line 22
-  Fix: name a specific metric — DAU/MAU ≥ 0.4, or 3+ workouts per week per active user.
+- [DOC-001] PRD success metric #3 ("good coverage") is not numeric
+  Location: docs/prd-fleetwatch.md line 22
+  Fix: name a specific metric — mean time-to-acknowledge ≤ 5 min, or 95%+ of cameras healthy at any time.
 
 ### Score: 7.5/10 — solid but 1 CRITICAL blocker; fix before /build-loop.
 ```

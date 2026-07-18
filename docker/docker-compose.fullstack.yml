@@ -7,33 +7,33 @@ version: '3.9'
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: boilerplate_postgres
+    container_name: aniston_vms_postgres
     restart: unless-stopped
     ports:
-      - "127.0.0.1:5432:5432"
+      - '127.0.0.1:5432:5432'
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-boilerplate_app}
+      POSTGRES_DB: ${POSTGRES_DB:-aniston_vms}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpassword123}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-postgres}']
       interval: 5s
       timeout: 5s
       retries: 10
 
   redis:
     image: redis:7-alpine
-    container_name: boilerplate_redis
+    container_name: aniston_vms_redis
     restart: unless-stopped
     ports:
-      - "127.0.0.1:6379:6379"
+      - '127.0.0.1:6379:6379'
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
       timeout: 3s
       retries: 5
@@ -42,13 +42,13 @@ services:
     build:
       context: ..
       dockerfile: backend/Dockerfile
-    container_name: boilerplate_backend
+    container_name: aniston_vms_backend
     restart: unless-stopped
     ports:
-      - "127.0.0.1:4000:4000"
+      - '127.0.0.1:4000:4000'
     env_file: ../.env
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-devpassword123}@postgres:5432/${POSTGRES_DB:-boilerplate_app}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-devpassword123}@postgres:5432/${POSTGRES_DB:-aniston_vms}
       REDIS_URL: redis://redis:6379
       NODE_ENV: production
     depends_on:
@@ -57,7 +57,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:4000/api/health"]
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:4000/api/health']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -69,13 +69,30 @@ services:
       dockerfile: frontend/Dockerfile
       args:
         VITE_API_URL: ${VITE_API_URL:-http://localhost:4000}
-    container_name: boilerplate_frontend
+    container_name: aniston_vms_frontend
     restart: unless-stopped
     ports:
-      - "127.0.0.1:5173:80"
+      - '127.0.0.1:5173:80'
     depends_on:
       backend:
         condition: service_healthy
+
+  # Optional camera simulator (MediaMTX only — the 6 ffmpeg test-pattern
+  # publishers live in simulator/docker-compose.sim.yml, not here, so this
+  # file's default `docker compose up` behavior is completely unaffected).
+  # Enable with: docker compose -f docker-compose.fullstack.yml --profile sim up -d
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: aniston_vms_mediamtx
+    restart: unless-stopped
+    profiles: ['sim']
+    ports:
+      - '127.0.0.1:8554:8554' # RTSP
+      - '127.0.0.1:8888:8888' # HLS
+      - '127.0.0.1:8889:8889' # WebRTC
+      - '127.0.0.1:9997:9997' # API
+    volumes:
+      - ../simulator/mediamtx.yml:/mediamtx.yml:ro
 
 volumes:
   postgres_data:

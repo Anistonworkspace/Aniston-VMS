@@ -1,6 +1,6 @@
 ---
-name: agent-ui-ux
-description: General UI/UX auditor and design-system guardian. Learns the project's design system from actual code, prevents random redesigns, and gives minimal implementation-ready guidance. Pair with skill-ui-ux-checklist.md for token-level conformance.
+name: agent-vms-uiux
+description: Aniston VMS UI/UX auditor and design-system guardian. Enforces the light "soft SaaS" design system from docs/04-uiux-brief.md (v1.4) and docs/actual-design.png — cream canvas, slate sidebar, white rounded cards, sage/indigo/coral/sand accents. Learns the real design system from code, prevents random redesigns, and gives minimal implementation-ready guidance. Pair with skill-ui-ux-checklist.md for token-level conformance.
 model: opus
 ---
 
@@ -25,7 +25,7 @@ View layer — audits React components, design tokens, responsive behavior, anim
 
 ## Role
 
-For this project, become the UI/UX source of truth. Read the actual code, learn the design language from the code (not from memory), document it, and use that documented system to evaluate every proposed change.
+For this project (Aniston VMS), become the UI/UX source of truth. The canonical design spec is **`docs/04-uiux-brief.md`** (v1.4) with the visual reference at **`docs/actual-design.png`**. Read the actual code, reconcile it against that brief, document the real design language (not from memory), and use it to evaluate every proposed change. When the code and the brief disagree, surface the gap — don't silently pick one.
 
 You inspect, document, and advise. You do not freelance redesigns.
 
@@ -52,39 +52,45 @@ Document what you find. Cite real file paths and line numbers. Do not invent pat
 
 ## Design System Knowledge Model
 
-For this project (Boilerplate Design System), the reference spec is in `.claude/skills/skill-ui-ux-checklist.md`. Before any UI change, verify the current code against that spec. The key values are:
+For this project (Aniston VMS — the light "soft SaaS" design system, brief v1.4), the canonical spec is **`docs/04-uiux-brief.md`** with the visual reference at **`docs/actual-design.png`**, and the token-level conformance checklist lives in `.claude/skills/skill-ui-ux-checklist.md`. Before any UI change, verify the current code against these. The key values are:
 
 ### Colors / tokens
-- Primary: `--primary-color: #0073ea` / hover `--primary-hover-color: #0060b9`
-- Text: primary `#323338`, secondary `#676879`, tertiary `#c5c7d0`, muted `#c4c4c4`
-- Background: primary `#ffffff`, allgrey `#f6f7fb`, backdrop `rgba(41, 47, 76, 0.7)`
-- Border: layout `#d0d4e4`, ui `#c3c6d4`, ui-bg `#e7e9ef`
-- Status: positive `#00854d`, negative `#d83a52`, warning `#ffcb00`
-- Base tint (shell): light `#f1ece3`, dark `#231f1a`
-- Dark mode via `.dark` class on `<html>`
+- Surfaces: `--canvas #E8E8E6` (viewport bg behind the app frame) · `--surface #F6F5F1` (cream content bg) · `--card #FFFFFF` (cards, topbar controls, list rows)
+- Sidebar: `--sidebar #5C6672` (slate gray-blue); sidebar text `#F3F4F5`, muted `#C6CCD2`
+- Text: `--ink #21201E` (primary) · `--muted #8A8F94` (secondary text, icons)
+- Hairline: `--hairline #ECEAE4` (borders, dividers)
+- Accents — Sage (primary/healthy) `--sage #8FBCA0`, hover `#7FAE92`, soft `#E7F1EA` · Indigo (secondary/maintenance) `--indigo #484C89`, soft `#E6E7F3` · Coral (critical/alert) `--coral #F25B3D`, soft `#FDE7E1` · Sand (tertiary/warning-soft) `--sand #EFE3C0`, deep `#C9A94E`
+- Video / player chrome: `--charcoal #2B2724`
+- Status pills: Healthy `#4E9C77` on `#E7F1EA` · Warning `#E2A93B` on `#FBF3DF` · Critical `#F25B3D` on `#FDE7E1` · Maintenance `#484C89` on `#E6E7F3` · Unknown `#9AA1A9` on `#F0F0EE`. Status dots are 8px filled circles.
+- **Light theme only in v1** (video surfaces stay charcoal). Dark mode is deferred — do NOT add `.dark` overrides yet.
 
 ### Typography
-- Body: `Figtree, Roboto, sans-serif` (root 15px)
-- Headings: `Poppins, Roboto, sans-serif`
-- Monospace / data: `JetBrains Mono`
-- Scale: xxs 10 / xs 12 / sm 13 / base 14 / md 15 / lg 17 / xl 20 / 2xl 24 / 3xl 30
+- Display / headings: `Poppins` 600–700 — page hero ~34–40px, card titles 20px
+- Body / UI: `Inter` 400/500/600 at 14–15px; numbers tabular
+- Icons: `lucide-react` at 20px, 1.5px stroke, muted color
 
-### Shell pattern
-- Tan base (`--base-tint`) as page background
-- Main content in `.floating-card .floating-card--stuck` (white, 14px top-corner radius, layered shadow, flush right + bottom)
-- Tan strip visible between sidebar and floating card (left padding ~6px)
-- Sidebar and header backgrounds transparent over the tan base
+### App frame / shell
+- Viewport background `--canvas`; the app is a **`rounded-[28px]`** shell (max-width ~1440px, centered, `overflow-hidden`, soft shadow) wrapping sidebar + content
+- Below `lg`: shell goes edge-to-edge (radius 0), sidebar becomes a slide-over (hamburger) + bottom tab bar (Dashboard · Wall · Cameras · Incidents)
 
-### Spacing / radii
-- Radii: small `4px`, medium `8px`, big `16px` — no other values
-- Shadows: xs / small / medium / large — no bespoke values outside `.floating-card`
-- Spacing scale: multiples of 4 (Tailwind default)
+### Spacing / radii / shadow
+- Radii: app frame `28px`, cards `20px`, inner tiles / list icons `14px`, buttons / inputs `12px`, pills `999`
+- Shadow: `0 10px 30px rgba(33,32,30,.07)` (hover `.10`) — soft, layered, never harsh
+- Spacing: `24px` card padding and grid gaps; whitespace is a feature, not empty space
 
-### Motion
-- Productive: 70ms / 100ms / 150ms
-- Expressive: 250ms / 400ms
-- Canonical easing: `cubic-bezier(0.16, 1, 0.3, 1)` for smooth enters
-- Sidebar: 280ms `cubic-bezier(0.4, 0, 0.2, 1)`
+### Layout signatures (must match `docs/actual-design.png`)
+- Sidebar (~260px, `--sidebar`): "Aniston VMS" logo · centered user block with status ring · nav (active = white-10% pill) · "Zones ⌄" tree with colored health dots · bottom "Add camera" dashed card (admin) or platform-health chip (non-admin)
+- Topbar: page title (Poppins) + coral critical-count pill · centered search · bell + profile + exactly one sage primary CTA per page
+- Page hero: large Poppins heading + one-line muted subtitle
+- Dashboard: row 1 = ZoneCards row (dashed "+ Add zone" then pastel `ZoneCard`s tinted by state) + "Latest evidence" photo card; row 2 = `DonutCard` "Camera health" + `ActivityListCard` "Recent incidents" with `AvatarStack`
+
+### Component inventory (canonical names — reuse, never reinvent)
+`AppShell, Sidebar, SidebarZoneItem, TopBar, HeroHeader, PrimaryCTA, ZoneCard, EvidencePhotoCard, DonutCard, ActivityListCard, AvatarStack, CameraCard, StatusBadge, StatusDot, HealthScoreRing, DiagnosisBanner, VideoTile, LiveWallGrid, PlayerShell, TimelineScrubber, ClipRangeSelector, SnapshotCompare, IncidentKanban, EscalationTimeline, SimSignalIndicator, ConnectionQualityChart, ZoneTree, ScopeBadge, MaintenanceTaskCard, ReportExportBar, PlatformHealthTile, SearchInput, FilterChips`
+
+### Motion & don'ts
+- Soft and restrained: soft shadows, big radii, generous whitespace. **No** default shadcn slate/dark palette, **no** gradients (except photo-card overlays), **no** harsh borders or 1px gray boxes, **no** dense tables without card wrapping, **no** more than one sage primary button per view.
+- `PlayerShell`: auto-hide controls on idle; live reconnect uses backoff + "Reconnecting…" overlay.
+- Loading skeletons on every list, guided empty states, retry-able errors. IST times with relative hints ("8 min ago").
 - `prefers-reduced-motion` short-circuits all animations
 
 ---
@@ -92,10 +98,10 @@ For this project (Boilerplate Design System), the reference spec is in `.claude/
 ## Strict Rules
 
 1. **No random colors.** Every new color resolves to a CSS variable from the spec. If a token doesn't exist, propose adding it before using a literal.
-2. **No parallel spacing systems.** Use the spec's radii (4/8/16px). Don't introduce bespoke `px` margins inside components.
+2. **No parallel spacing systems.** Use the spec's radii (frame 28 / card 20 / tile 14 / control 12 / pill 999) and 24px spacing. Don't introduce bespoke `px` margins inside components.
 3. **No new UI libraries without explicit need.** Extend the in-house primitive or wrap the existing one — don't add a parallel dependency.
-4. **Reuse existing primitives.** `.floating-card`, `.btn`, `.sidebar-item`, `.status-pill`, `.badge`, `.input-field`, `.tabs-compact`, modals, toasts — if it exists, use it.
-5. **Preserve theme behavior.** Every new color must resolve in both light and `.dark` modes.
+4. **Reuse existing components.** `AppShell`, `Sidebar`, `TopBar`, `PrimaryCTA`, `ZoneCard`, `DonutCard`, `CameraCard`, `PlayerShell`, `StatusBadge`, `SearchInput` and the rest of the component inventory — if it exists, use it; don't reinvent.
+5. **Light theme only (v1).** Do not add `.dark` overrides; video surfaces stay `--charcoal`. Dark mode is deferred.
 6. **Preserve accessibility.** Focus management, ARIA, keyboard shortcuts, reduced motion — never weaken any of these.
 7. **Preserve responsive behavior.** Don't break existing breakpoints or the mobile drawer pattern.
 8. **Avoid rewrites.** The smallest possible diff wins. A rewrite needs a written reason.
@@ -103,7 +109,7 @@ For this project (Boilerplate Design System), the reference spec is in `.claude/
 10. **Do not remove user-facing workflows.** Especially production safety rails (session locks, role-gated banners, confirmation dialogs, audit trails).
 11. **Ask before destructive visual changes.** Restructuring navigation, removing tabs, hiding fields, changing primary color — confirm before touching.
 12. **Match the project's code style.** Function components + hooks. Follow what's there.
-13. **No second tooltip / animation / icon library.** Lucide icons at `size={14-16}`, `strokeWidth={1.8}`. No second icon set.
+13. **No second tooltip / animation / icon library.** Lucide icons at 20px, `strokeWidth={1.5}`, muted color. No second icon set.
 14. **i18n parity.** Every new string must land in all locale files.
 15. **Comment discipline.** Only comment a non-obvious WHY. Never narrate what the code does.
 
@@ -164,12 +170,12 @@ existing tokens with basic reveal-on-scroll.
 - [globals.css:1](frontend/src/styles/globals.css#L1)
 
 ### 3. Spec section reused
-§ Shell signature — .floating-card pattern
-§ Buttons — .btn primitive, heights, focus ring
+§ Shell signature — rounded-[28px] app frame + cream surface
+§ Buttons — PrimaryCTA (sage), one per view, heights, focus ring
 
 ### 4. Checklist result (relevant sections only)
 - §1 Shell signature: Pass
-- §6 Buttons: Fail — custom button styling found, not using .btn primitive
+- §6 Buttons: Fail — custom button styling found, not using PrimaryCTA
 - §18 Accessibility: Needs verification — icon-only buttons unchecked
 
 ### 5. Recommended change
@@ -177,16 +183,16 @@ existing tokens with basic reveal-on-scroll.
 
 ### 6. Exact implementation plan
 [file.tsx:42](path#L42) — change X to Y
-[globals.css:15](path#L15) — add .btn primitive
+[globals.css:15](path#L15) — use PrimaryCTA
 
 ### 7. Risk / edge cases
-- Dark mode parity: --primary-color needs .dark override
+- Token parity: new colors must map to --canvas / --surface / --sage / --coral tokens, not raw hex
 - Mobile: drawer must auto-collapse on route change
 - Reduced motion: animation must short-circuit
 
 ### 8. Test checklist
 - [ ] Verify at 375px (iPhone SE) — no horizontal overflow
-- [ ] Toggle .dark class — all tokens resolve correctly
+- [ ] No hardcoded hex outside the token set — all colors resolve to design tokens
 - [ ] Keyboard Tab — focus ring visible on every element
 - [ ] Reduced motion enabled — animations disabled
 

@@ -1,241 +1,167 @@
 # Skill — Infinite Scroll Patterns
 
-Intersection Observer, RTK Query cursor pagination, virtual list for large datasets.
+Intersection Observer, RTK Query cursor pagination, virtual list for large camera/incident datasets.
+
+Design tokens: see `docs/04-uiux-brief.md`.
 
 ---
 
-## Backend — cursor pagination
+## Backend — cursor pagination (incident activity log)
 
-```typescript
-// Cursor pagination for infinite scroll — more efficient than OFFSET for large datasets
-// The cursor is the `id` of the last item in the previous page
+```ts
+// backend/src/modules/activity/activity.service.ts
+import { z } from 'zod';
 
-export class ActivityService {
-  static async list(query: InfiniteListQuery, actor: AuthUser) {
-    const { cursor, limit = 20 } = query;
-
-    const items = await prisma.activityLog.findMany({
-      where: {
-        organizationId: actor.organizationId,
-        // If cursor provided: only items AFTER the cursor
-        ...(cursor ? { id: { lt: cursor } } : {}),    // UUID v4 sorts lexicographically
-      },
-      orderBy: { createdAt: 'desc' },
-      take:    limit + 1,    // fetch one extra to detect if there's a next page
-    });
-
-    const hasMore   = items.length > limit;
-    const data      = hasMore ? items.slice(0, limit) : items;
-    const nextCursor = hasMore ? data[data.length - 1].id : null;
-
-    return { data, nextCursor, hasMore };
-  }
-}
-
-// Validation schema:
 export const InfiniteListQuerySchema = z.object({
-  cursor: z.string().uuid().optional(),
-  limit:  z.coerce.number().int().min(1).max(100).default(20),
+  cursor: z.string().datetime().optional(),
+  limit: z.coerce.number().min(1).max(100).default(20),
+  zoneId: z.string().uuid().optional(),
+  incidentId: z.string().optional(),
 });
+
+export async function getActivities(organizationId: string, params: z.infer<typeof InfiniteListQuerySchema>) {
+  const rows = await prisma.activityLog.findMany({
+    where: { organizationId, zoneId: params.zoneId, incidentId: params.incidentId },
+    orderBy: { createdAt: 'desc' },
+    take: params.limit + 1,
+    ...(params.cursor && { cursor: { createdAt: new Date(params.cursor) }, skip: 1 }),
+  });
+
+  const hasMore = rows.length > params.limit;
+  const items = hasMore ? rows.slice(0, -1) : rows;
+  const nextCursor = hasMore ? items[items.length - 1].createdAt.toISOString() : null;
+  return { items, nextCursor, hasMore };
+}
 ```
 
----
+Cursor is `createdAt` (indexed, monotonic) — never `OFFSET`, which drifts and duplicates rows once new activity is streaming in live from health checks.
 
-## RTK Query — infinite scroll endpoint
+## RTK Query — infinite cache merge
 
-```typescript
+```ts
 // frontend/src/features/activity/activityApi.ts
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 
-interface InfiniteActivityResult {
-  data:       ActivityItem[];
-  nextCursor: string | null;
-  hasMore:    boolean;
-}
-
 export const activityApi = createApi({
   reducerPath: 'activityApi',
-  baseQuery:   fetchBaseQuery({ baseUrl: '/api' }),
+  baseQuery: fetchBaseQuery({ baseUrl: '/api' }),
+  tagTypes: ['Activity'],
   endpoints: (builder) => ({
-    getActivities: builder.query<InfiniteActivityResult, { cursor?: string; limit?: number }>({
-      query: (params) => ({ url: '/activities', params }),
-      // Merge pages — new page appended to existing data
-      serializeQueryArgs: ({ endpointName }) => endpointName,    // single cache key
+    getActivities: builder.query<InfiniteActivityResult, { zoneId?: string; incidentId?: string; cursor?: string }>({
+      query: (filter) => ({ url: '/activity', params: filter }),
+      serializeQueryArgs: ({ endpointName, queryArgs }) => `${endpointName}-${queryArgs.zoneId ?? 'all'}-${queryArgs.incidentId ?? 'all'}`,
       merge: (currentCache, newItems) => {
-        currentCache.data.push(...newItems.data);
+        currentCache.items.push(...newItems.items);
         currentCache.nextCursor = newItems.nextCursor;
-        currentCache.hasMore    = newItems.hasMore;
+        currentCache.hasMore = newItems.hasMore;
       },
-      forceRefetch: ({ currentArg, previousArg }) => currentArg !== previousArg,
+      forceRefetch: ({ currentArg, previousArg }) => currentArg?.cursor !== previousArg?.cursor,
       providesTags: ['Activity'],
     }),
   }),
 });
-
-export const { useGetActivitiesQuery } = activityApi;
 ```
 
----
+`serializeQueryArgs` keys the cache by **filter**, not by `cursor` — otherwise every page fetch creates a brand-new cache bucket instead of appending. Switching `zoneId` (jumping to a different zone's feed) resets to page one automatically because it's a different cache key entirely.
 
-## Intersection Observer hook
+## Frontend — Intersection Observer sentinel
 
-```typescript
-// frontend/src/hooks/useIntersectionObserver.ts
-import { useEffect, useRef, useState } from 'react';
-
-export function useIntersectionObserver(options?: IntersectionObserverInit) {
-  const ref       = useRef<HTMLDivElement>(null);
-  const [isVisible, setIsVisible] = useState(false);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-
-    const observer = new IntersectionObserver(([entry]) => {
-      setIsVisible(entry.isIntersecting);
-    }, { threshold: 0.1, ...options });
-
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
-  return { ref, isVisible };
-}
-```
-
----
-
-## Infinite scroll list component
-
-```typescript
+```tsx
 // frontend/src/features/activity/ActivityFeed.tsx
-import { useEffect, useState } from 'react';
-import { useIntersectionObserver } from '@/hooks/useIntersectionObserver';
+import { useEffect, useRef, useState } from 'react';
 import { useGetActivitiesQuery } from './activityApi';
+import { useIntersectionObserver } from '@/hooks/useIntersectionObserver';
+import { ActivityListCard, ActivityListCardSkeleton } from '@/components/ActivityListCard';
+import { EmptyState } from '@/components/EmptyState';
 
-export function ActivityFeed() {
-  const [cursor, setCursor] = useState<string | undefined>(undefined);
-  const { ref, isVisible }  = useIntersectionObserver();
+export function ActivityFeed({ zoneId, incidentId }: { zoneId?: string; incidentId?: string }) {
+  const [cursor, setCursor] = useState<string | undefined>();
+  const { data, isFetching } = useGetActivitiesQuery({ zoneId, incidentId, cursor });
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const isVisible = useIntersectionObserver(sentinelRef, { rootMargin: '200px' });
 
-  const { data, isFetching } = useGetActivitiesQuery({ cursor, limit: 20 });
-
-  // When the sentinel comes into view, load the next page
   useEffect(() => {
-    if (isVisible && data?.hasMore && !isFetching) {
-      setCursor(data.nextCursor ?? undefined);
-    }
+    if (isVisible && data?.hasMore && !isFetching) setCursor(data.nextCursor ?? undefined);
   }, [isVisible, data?.hasMore, data?.nextCursor, isFetching]);
 
   return (
-    <div className="space-y-3">
-      {(data?.data ?? []).map(item => (
-        <ActivityCard key={item.id} item={item} />
+    <div className="space-y-2">
+      {data?.items.map((activity) => (
+        <ActivityListCard key={activity.id} activity={activity} />
       ))}
-
-      {/* Sentinel element — observed by IntersectionObserver */}
-      {data?.hasMore && (
-        <div ref={ref} className="py-4 flex justify-center">
-          {isFetching ? (
-            <div className="flex gap-2">
-              {[0,1,2].map(i => <div key={i} className="w-2 h-2 rounded-full bg-[var(--primary-color)] animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />)}
-            </div>
-          ) : (
-            <span className="text-xs text-[var(--secondary-text-color)]">Scroll for more</span>
-          )}
-        </div>
-      )}
-
-      {!data?.hasMore && (data?.data.length ?? 0) > 0 && (
-        <p className="text-center text-xs text-[var(--secondary-text-color)] py-4">All caught up</p>
+      <div ref={sentinelRef} className="h-4" />
+      {isFetching && <ActivityListCardSkeleton count={3} />}
+      {!isFetching && !data?.hasMore && data?.items.length === 0 && (
+        <EmptyState icon={ActivityIcon} title="No activity yet" description="Health checks, acknowledgements, and status changes will show up here." />
       )}
     </div>
   );
 }
 ```
 
----
+```ts
+// frontend/src/hooks/useIntersectionObserver.ts
+import { useEffect, useState } from 'react';
+import type { RefObject } from 'react';
 
-## Virtual list for very large datasets (react-virtual)
+export function useIntersectionObserver(ref: RefObject<Element>, opts: IntersectionObserverInit = {}) {
+  const [isIntersecting, setIsIntersecting] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(([entry]) => setIsIntersecting(entry.isIntersecting), opts);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [ref, opts.root, opts.rootMargin, opts.threshold]);
+  return isIntersecting;
+}
+```
 
-```typescript
-// For lists with 1000+ items — use virtualizer to render only visible rows
+`rootMargin: '200px'` prefetches the next page before the sentinel is actually on screen — the feed never shows visible jank at the exact bottom edge.
+
+## Virtual list — camera inventory at scale (1,000+ cameras)
+
+A single organization's camera table can outgrow "just render every row." Pair the fetch with `@tanstack/react-virtual` so the DOM only holds visible rows regardless of how many pages have been fetched.
+
+```tsx
+// frontend/src/features/camera/CameraVirtualList.tsx
+import { useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
-export function VirtualItemList({ items }: { items: Item[] }) {
+export function CameraVirtualList({ cameras }: { cameras: Camera[] }) {
   const parentRef = useRef<HTMLDivElement>(null);
-
   const virtualizer = useVirtualizer({
-    count:         items.length,
+    count: cameras.length,
     getScrollElement: () => parentRef.current,
-    estimateSize:  () => 64,   // estimated row height in px
-    overscan:      5,          // render 5 extra rows above/below visible area
+    estimateSize: () => 56,
+    overscan: 8,
   });
 
   return (
-    <div ref={parentRef} className="overflow-y-auto" style={{ height: '600px' }}>
-      {/* Total height spacer — lets browser scroll correctly */}
-      <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}>
-        {virtualizer.getVirtualItems().map((virtualItem) => {
-          const item = items[virtualItem.index];
-          return (
-            <div
-              key={virtualItem.key}
-              style={{
-                position:  'absolute',
-                top:       0,
-                transform: `translateY(${virtualItem.start}px)`,
-                width:     '100%',
-                height:    `${virtualItem.size}px`,
-              }}
-              className="flex items-center px-4 gap-3 border-b border-[var(--ui-bg-border-color)]"
-            >
-              <Avatar name={`${item.firstName} ${item.lastName}`} />
-              <div>
-                <p className="text-sm font-medium">{item.firstName} {item.lastName}</p>
-                <p className="text-xs text-[var(--secondary-text-color)]">{item.email}</p>
-              </div>
-            </div>
-          );
-        })}
+    <div ref={parentRef} className="h-[600px] overflow-auto rounded-[var(--card-radius)] border border-[var(--hairline)]">
+      <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+        {virtualizer.getVirtualItems().map((virtualItem) => (
+          <div
+            key={virtualItem.key}
+            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: virtualItem.size, transform: `translateY(${virtualItem.start}px)` }}
+          >
+            <CameraRow camera={cameras[virtualItem.index]} />
+          </div>
+        ))}
       </div>
     </div>
   );
 }
 ```
 
----
-
-## Refresh — reset to first page
-
-```typescript
-// Reset infinite scroll when filters change
-function ActivityFeedWithFilters() {
-  const [filter, setFilter] = useState('');
-  const [cursor, setCursor] = useState<string | undefined>(undefined);
-
-  // When filter changes, reset to page 1
-  const handleFilterChange = (newFilter: string) => {
-    setFilter(newFilter);
-    setCursor(undefined);    // ← reset cursor to reload from beginning
-    // Also need to reset the RTK Query cache for this endpoint:
-    dispatch(activityApi.util.resetApiState());
-  };
-
-  // ...
-}
-```
-
----
-
 ## Checklist
 
-- [ ] Cursor-based pagination — NOT offset pagination (more efficient at scale)
-- [ ] Backend: `take: limit + 1` to determine `hasMore` without extra COUNT query
-- [ ] RTK Query `merge` function appends new pages to existing cache (not replaces)
-- [ ] Sentinel div observed with `IntersectionObserver` — no scroll event listeners
-- [ ] Loading indicator shown while fetching next page (not a spinner that causes layout shift)
-- [ ] "All caught up" message shown when `hasMore` is false
-- [ ] Filter/search change resets cursor to `undefined` and clears cache
-- [ ] Virtual list used when dataset exceeds ~500 rows (react-virtual or @tanstack/react-virtual)
-- [ ] `estimateSize` returns a reasonable row height to prevent scroll jumps
-- [ ] Pull-to-refresh supported on mobile (resets cursor)
+- [ ] Backend cursor is an indexed, monotonic column (`createdAt` + tiebreak `id`) — never `OFFSET/LIMIT` on a live-updating table
+- [ ] `serializeQueryArgs` keys the RTK Query cache by filter (zone/incident), not by cursor — pages append, filter changes reset to page one
+- [ ] Sentinel `rootMargin` gives at least one screen-height of lookahead so the next page is ready before the user reaches bottom
+- [ ] Skeleton rows shown while fetching the next page — never a full-page spinner replacing already-loaded content
+- [ ] Empty state (`ActivityFeed` with zero rows) is visually distinct from "still loading first page"
+- [ ] Large lists (1,000+ cameras) use `@tanstack/react-virtual` — DOM node count stays roughly constant regardless of fetched item count
+- [ ] `IntersectionObserver` disconnected on unmount — no leaked observers when navigating away mid-scroll
+- [ ] Live-updating feeds (new incident activity arriving via socket) prepend without disturbing scroll position
+- [ ] `organizationId` scoping present on the backend query — one tenant's activity feed never bleeds into another's

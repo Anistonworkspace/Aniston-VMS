@@ -25,8 +25,8 @@ Skills read: `skill-system-design-patterns.md`, `skill-ddd-bounded-contexts-patt
 
 Examples:
 
-- `/design-first Fitly "workout tracker for gym members and their trainers"`
-- `/design-first Ledger "transaction insights and simple tax prep for freelancers"`
+- `/design-first FleetWatch "RTSP/ONVIF health monitoring for a logistics fleet's dash-cams"`
+- `/design-first SiteGuard "multi-site CCTV health monitoring and incident escalation for facilities teams"`
 - `/design-first` — asks for the name and description via AskUserQuestion if not provided
 
 ---
@@ -58,8 +58,14 @@ After all 8, the agent writes the three documents.
 - **`memory/project-state.md` frontmatter updated** — `project_name`,
   `project_slug`, `domain`, `target_platforms`, `primary_roles`, `status:
   designed` (per Q1-Q7 answers).
-- **`CLAUDE.md` header updated** — "Boilerplate App" → `<ProjectName>` in the
-  title and description paragraph (same rename as `/project-init`).
+- **`CLAUDE.md` header updated** — the template's placeholder project title →
+  `<ProjectName>` in the title and description paragraph (same rename as
+  `/project-init`).
+- **New screens stay visually consistent** — Q6 screen labels should map
+  onto the established soft-SaaS visual language already defined in
+  `docs/04-uiux-brief.md` / `docs/actual-design.png` (rounded white cards,
+  slate sidebar, status-pill semantics) rather than inventing a new design
+  system for the feature.
 - **`.claude/mcp.json` extended** if Q7 answers demand — e.g. payments = add
   a Stripe MCP; search over content = add context7 for docs; etc.
 
@@ -73,9 +79,9 @@ After the design is captured:
 ## Design captured
 
 Files written:
-- memory/decisions/ADR-0009-system-design-fitly.md
-- docs/prd-fitly.md
-- docs/erd-fitly.md
+- memory/decisions/ADR-0009-system-design-fleetwatch.md
+- docs/prd-fleetwatch.md
+- docs/erd-fleetwatch.md
 
 Next steps:
 1. /design-review — cross-check the design against correctness, security, and RBAC gaps
@@ -92,7 +98,7 @@ Design score: <X>/10
 - **Every entity has explicit scope** (org / user / global).
 - **Every state machine has terminal states named.**
 - **Every permission uses 2-arg `requirePermission(resource, action)` form** —
-  matches `shared/src/permissions.ts` shape.
+  matches `packages/shared/src/permissions.ts` shape.
 - **NFRs are numeric** — "100 concurrent users at launch", not "many users".
 - **`Explicitly out of scope for v1` section is non-empty.**
 

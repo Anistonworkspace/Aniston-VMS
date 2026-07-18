@@ -2,6 +2,9 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 
+# Skip husky's prepare hook inside Docker (no .git in build context)
+ENV HUSKY=0
+
 # Copy workspace manifests first (better layer caching)
 COPY package.json package-lock.json ./
 COPY shared/package.json ./shared/
@@ -16,9 +19,13 @@ COPY backend/ ./backend/
 COPY prisma/ ./prisma/
 COPY tsconfig*.json ./
 
-# Build shared package first, then backend
-RUN npm run build --workspace=shared 2>/dev/null || true
+# Generate Prisma client (backend compiles against it), then build shared + backend
+RUN npx prisma generate --schema=prisma/schema.prisma
+RUN npm run build --workspace=shared
 RUN npm run build --workspace=backend
+
+# Point shared's exports at the compiled dist so Node (not tsx) can load it at runtime
+RUN node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('shared/package.json','utf8'));p.main='dist/index.js';p.types='dist/index.d.ts';p.exports={'.':'./dist/index.js','./enums':'./dist/enums.js','./types':'./dist/types.js'};fs.writeFileSync('shared/package.json',JSON.stringify(p,null,2));"
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────
 FROM node:20-alpine AS runtime
@@ -26,19 +33,24 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-# Install only production dependencies
+# Install only production dependencies (shared/package.json comes from the
+# builder so its exports point at dist/, which Node can load at runtime)
 COPY package.json package-lock.json ./
-COPY shared/package.json ./shared/
+COPY --from=builder /app/shared/package.json ./shared/
 COPY backend/package.json ./backend/
-RUN npm ci --omit=dev
+# --ignore-scripts: husky (prepare) is a devDependency and absent here;
+# no prod dep needs install scripts (bcryptjs is pure JS, Prisma client is copied from builder)
+RUN npm ci --omit=dev --ignore-scripts
 
-# Copy built output
+# Copy built output (backend/dist imports @aniston-vms/shared at runtime,
+# resolved via the npm workspace symlink to ./shared/dist)
 COPY --from=builder /app/backend/dist ./backend/dist
-COPY --from=builder /app/shared/dist ./shared/dist 2>/dev/null || true
+COPY --from=builder /app/shared/dist ./shared/dist
 
-# Copy Prisma schema and generate client
+# Copy Prisma schema + the client generated in the builder (same node:20-alpine platform)
 COPY prisma/ ./prisma/
-RUN npx prisma generate --schema=prisma/schema.prisma
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
 
 EXPOSE 4000
 

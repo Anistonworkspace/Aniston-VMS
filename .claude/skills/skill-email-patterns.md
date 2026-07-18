@@ -1,228 +1,149 @@
-# Skill — Email Patterns
+# Skill — Email Patterns (Transactional + Incident/Escalation Alerts)
 
-Nodemailer + BullMQ email worker, HTML templates, welcome/reset flows.
+Aniston VMS sends two kinds of email: **auth/account** transactional mail (welcome, password
+reset, MFA/TOTP-related OTP) and **incident/escalation alerts** (camera/site down, unresolved
+escalation, recovery verified). WhatsApp Cloud API is the primary channel for incident/escalation
+notifications (see `docs/02-TRD.md §12`, `docs/tech-stack-targets.md` "Notifications &
+observability"); email via **AWS SES** is the secondary channel plus all auth-flow mail, and is
+also where SES bounce/complaint handling lands. Nodemailer talks to SES over its SMTP interface —
+same `nodemailer.createTransport({ ... })` call as any SMTP provider, just pointed at SES's
+per-region SMTP endpoint with SES SMTP credentials (**not** your AWS IAM access key — SES issues
+separate SMTP credentials).
+
+All email is queued through BullMQ, never sent inline from a request handler — an SES hiccup must
+never block an API response or an incident-creation transaction.
 
 ---
 
-## Email service (Nodemailer transport)
+## Env config (`apps/api/src/config/env.ts`)
 
 ```typescript
-// backend/src/services/email.service.ts
+SMTP_HOST: z.string().optional(),   // e.g. email-smtp.ap-south-1.amazonaws.com — SES SMTP endpoint, per environment
+SMTP_PORT: z.coerce.number().int().optional(), // 587 (STARTTLS)
+SMTP_USER: z.string().optional(),   // SES SMTP username (NOT the AWS access key id)
+SMTP_PASS: z.string().optional(),   // SES SMTP password (NOT the AWS secret key)
+SMTP_FROM: z.string().optional(),   // verified SES sender identity, e.g. alerts@<project domain>
+APP_NAME: z.string().default('Aniston VMS'),
+FRONTEND_URL: z.string(),           // used to build absolute links in emails
+```
+
+Never hardcode a real inbox in code or docs — every `SMTP_*` value above is a per-environment
+placeholder; local/dev typically points at a catch-all (Mailhog/Ethereal), staging/prod point at
+the verified SES identity for that environment.
+
+---
+
+## Mail service (`apps/api/src/notifications/mail.service.ts`, NestJS `@Injectable`)
+
+```typescript
+import { Injectable, Logger } from '@nestjs/common';
 import nodemailer from 'nodemailer';
-import { env } from '../config/env.js';
+import { env } from '../config/env';
 
-const transport = nodemailer.createTransport({
-  host: env.SMTP_HOST,
-  port: env.SMTP_PORT,
-  secure: env.SMTP_PORT === 465,
-  auth: { user: env.SMTP_USER, pass: env.SMTP_PASS },
-});
+@Injectable()
+export class MailService {
+  private readonly logger = new Logger(MailService.name);
 
-export const emailService = {
-  async send(to: string, subject: string, html: string): Promise<void> {
-    await transport.sendMail({
-      from: `"${env.APP_NAME}" <${env.SMTP_FROM}>`,
-      to,
-      subject,
-      html,
-    });
-  },
-};
-```
+  private readonly transport = nodemailer.createTransport({
+    host: env.SMTP_HOST,
+    port: env.SMTP_PORT,
+    secure: false, // STARTTLS on 587, not implicit TLS
+    auth: { user: env.SMTP_USER, pass: env.SMTP_PASS },
+  });
 
-`.env` keys required:
-```
-SMTP_HOST=smtp.example.com
-SMTP_PORT=587
-SMTP_USER=no-reply@example.com
-SMTP_PASS=secret
-SMTP_FROM=no-reply@example.com
-APP_NAME="Boilerplate App"
-```
-
----
-
-## BullMQ email queue + worker
-
-```typescript
-// backend/src/jobs/queues.ts (add to existing queues file)
-import { Queue } from 'bullmq';
-import { bullConnection } from '../lib/redis.js';
-import { JobQueueName } from '@boilerplate/shared';
-
-export const emailQueue = new Queue(JobQueueName.EMAIL, { connection: bullConnection });
-```
-
-```typescript
-// backend/src/jobs/workers/email.worker.ts
-import { Worker } from 'bullmq';
-import { bullConnection } from '../../lib/redis.js';
-import { JobQueueName } from '@boilerplate/shared';
-import { emailService } from '../../services/email.service.js';
-import { renderWelcome, renderPasswordReset, renderOtp } from '../../services/emailTemplates.js';
-import { logger } from '../../lib/logger.js';
-
-export interface EmailJobData {
-  type: 'welcome' | 'password-reset' | 'otp';
-  to: string;
-  payload: Record<string, string>;
+  async sendMail(to: string, subject: string, html: string) {
+    try {
+      await this.transport.sendMail({ from: env.SMTP_FROM, to, subject, html });
+    } catch (error) {
+      this.logger.error({ error, to, subject }, 'Email send failed');
+      throw error; // let the BullMQ worker's retry policy handle it
+    }
+  }
 }
+```
+
+## Queue + worker (`apps/api/src/notifications/mail.queue.ts` producer, `apps/workers/src/mail/mail.worker.ts`)
+
+```typescript
+// apps/api/src/notifications/mail.queue.ts — producer, registered via the NestJS BullModule
+import { JobQueueName, type EmailJobData } from '@aniston-vms/shared';
+export const emailQueue = new Queue<EmailJobData>(JobQueueName.EMAIL, { connection: bullConnection });
+```
+
+```typescript
+// apps/workers/src/mail/mail.worker.ts — @aniston-vms/workers resolves MailService from the Nest app context
+import { Worker } from 'bullmq';
+import { JobQueueName, type EmailJobData } from '@aniston-vms/shared';
+import { MailService } from './mail.service';
+import { renderIncidentAlert, renderEscalationAlert, renderWelcome, renderPasswordReset, renderOtp } from './email-templates';
+
+const mail = new MailService();
 
 export const emailWorker = new Worker<EmailJobData>(
   JobQueueName.EMAIL,
   async (job) => {
     const { type, to, payload } = job.data;
-    let subject = '';
-    let html = '';
-
-    if (type === 'welcome') {
-      subject = `Welcome to ${payload.appName}!`;
-      html = renderWelcome(payload);
-    } else if (type === 'password-reset') {
-      subject = 'Reset your password';
-      html = renderPasswordReset(payload);
-    } else if (type === 'otp') {
-      subject = 'Your verification code';
-      html = renderOtp(payload);
+    switch (type) {
+      case 'INCIDENT_ALERT':
+        return mail.sendMail(to, `[Aniston VMS] Incident: ${payload.siteName}`, renderIncidentAlert(payload));
+      case 'ESCALATION_ALERT':
+        return mail.sendMail(to, `[Aniston VMS] Unresolved escalation: ${payload.siteName}`, renderEscalationAlert(payload));
+      case 'WELCOME':
+        return mail.sendMail(to, 'Welcome to Aniston VMS', renderWelcome(payload));
+      case 'PASSWORD_RESET':
+        return mail.sendMail(to, 'Reset your Aniston VMS password', renderPasswordReset(payload));
+      case 'OTP':
+        return mail.sendMail(to, 'Your Aniston VMS verification code', renderOtp(payload));
     }
-
-    await emailService.send(to, subject, html);
-    logger.info('Email sent', { jobId: job.id, type, to });
   },
   { connection: bullConnection, concurrency: 5 },
 );
-
-emailWorker.on('failed', (job, err) => {
-  logger.error('Email job failed', {
-    jobId: job?.id,
-    queue: JobQueueName.EMAIL,
-    error: err.message,
-    stack: err.stack,
-  });
-});
 ```
 
----
+`type` drives which template renders — incident/escalation payloads carry `siteName`, `zoneName`,
+`cameraLabel`, `incidentId`, `severity`; auth payloads carry `resetUrl`/`loginUrl`/`expiresIn`/`otp`.
 
-## HTML email templates
+## Templates (`apps/api/src/notifications/email-templates.ts`)
 
 ```typescript
-// backend/src/services/emailTemplates.ts
-// Inline styles are required — email clients strip <style> tags
-
-function baseLayout(content: string, preheader = ''): string {
-  return `
-<!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#f1ece3;font-family:Arial,Helvetica,sans-serif;">
-  ${preheader ? `<span style="display:none;max-height:0;overflow:hidden;">${preheader}</span>` : ''}
-  <table width="100%" cellpadding="0" cellspacing="0">
-    <tr><td align="center" style="padding:40px 16px;">
-      <table width="600" cellpadding="0" cellspacing="0"
-             style="background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
-        <tr><td style="background:#0073ea;padding:24px 32px;">
-          <span style="color:#fff;font-size:20px;font-weight:700;">Boilerplate App</span>
-        </td></tr>
-        <tr><td style="padding:32px;">${content}</td></tr>
-        <tr><td style="padding:16px 32px;background:#f9f9f9;color:#888;font-size:12px;text-align:center;">
-          © ${new Date().getFullYear()} Aniston Technologies LLP. All rights reserved.
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`;
+function baseLayout(appName: string, bodyHtml: string) {
+  return `<!DOCTYPE html><html><body style="font-family:sans-serif;margin:0;padding:24px;background:#f5f7fa">
+    <table style="max-width:480px;margin:0 auto;background:#fff;border-radius:var(--card-radius,8px);overflow:hidden">
+      <tr><td style="padding:24px">${bodyHtml}</td></tr>
+    </table>
+    <p style="text-align:center;color:#8a8a8a;font-size:12px">© ${new Date().getFullYear()} ${appName}</p>
+  </body></html>`;
 }
 
-export function renderWelcome(p: { name: string; appName: string; loginUrl: string }): string {
-  return baseLayout(`
-    <h1 style="color:#1a1a1a;font-size:24px;margin:0 0 16px;">Welcome, ${p.name}!</h1>
-    <p style="color:#555;line-height:1.6;">Your account on <strong>${p.appName}</strong> is ready.</p>
-    <a href="${p.loginUrl}"
-       style="display:inline-block;margin-top:24px;padding:12px 28px;background:#0073ea;
-              color:#fff;border-radius:4px;text-decoration:none;font-weight:600;">
-      Sign in
-    </a>
-  `, `Your ${p.appName} account is ready`);
+export function renderIncidentAlert({ siteName, zoneName, cameraLabel, incidentId, severity }: IncidentAlertPayload) {
+  return baseLayout(env.APP_NAME, `
+    <h2 style="color:#c0392b">Incident — ${siteName} (${zoneName})</h2>
+    <p><strong>${cameraLabel}</strong> reported <strong>${severity}</strong>.</p>
+    <a href="${env.FRONTEND_URL}/incidents/${incidentId}" style="display:inline-block;margin-top:12px;padding:10px 20px;background:#0073ea;color:#fff;border-radius:6px;text-decoration:none">
+      View incident
+    </a>`);
 }
 
-export function renderPasswordReset(p: { name: string; resetUrl: string; expiresIn: string }): string {
-  return baseLayout(`
-    <h1 style="color:#1a1a1a;font-size:24px;margin:0 0 16px;">Reset your password</h1>
-    <p style="color:#555;line-height:1.6;">Hi ${p.name}, click below to reset your password. This link expires in <strong>${p.expiresIn}</strong>.</p>
-    <a href="${p.resetUrl}"
-       style="display:inline-block;margin-top:24px;padding:12px 28px;background:#0073ea;
-              color:#fff;border-radius:4px;text-decoration:none;font-weight:600;">
-      Reset password
-    </a>
-    <p style="color:#999;font-size:12px;margin-top:24px;">If you didn't request this, you can ignore this email.</p>
-  `, 'Reset your password');
-}
-
-export function renderOtp(p: { otp: string; expiresIn: string }): string {
-  return baseLayout(`
-    <h1 style="color:#1a1a1a;font-size:24px;margin:0 0 16px;">Your verification code</h1>
-    <p style="color:#555;">Use this code to verify your account:</p>
-    <div style="margin:24px 0;text-align:center;font-size:40px;font-weight:700;
-                letter-spacing:12px;color:#0073ea;font-family:monospace;">${p.otp}</div>
-    <p style="color:#999;font-size:12px;">Expires in ${p.expiresIn}. Never share this code.</p>
-  `, 'Your verification code');
+export function renderPasswordReset({ resetUrl, expiresIn }: { resetUrl: string; expiresIn: string }) {
+  return baseLayout(env.APP_NAME, `
+    <h2>Reset your password</h2>
+    <p>Click below to set a new password. This link expires in ${expiresIn}.</p>
+    <a href="${resetUrl}" style="display:inline-block;margin-top:12px;padding:10px 20px;background:#0073ea;color:#fff;border-radius:6px;text-decoration:none">Reset password</a>
+    <p style="color:#8a8a8a;font-size:12px;margin-top:16px">If you didn't request this, you can safely ignore this email.</p>`);
 }
 ```
 
----
-
-## Sending from a service
-
-```typescript
-// In any service method — enqueue, don't await SMTP directly
-import { emailQueue } from '../../jobs/queues.js';
-
-// Welcome email after user registration
-await emailQueue.add('welcome', {
-  type: 'welcome',
-  to: user.email,
-  payload: {
-    name: user.name,
-    appName: 'Boilerplate App',
-    loginUrl: `${env.FRONTEND_URL}/login`,
-  },
-});
-
-// Password reset
-await emailQueue.add('password-reset', {
-  type: 'password-reset',
-  to: user.email,
-  payload: {
-    name: user.name,
-    resetUrl: `${env.FRONTEND_URL}/reset-password?token=${token}`,
-    expiresIn: '15 minutes',
-  },
-});
-```
+`renderIncidentAlert` / `renderEscalationAlert` are the VMS-specific templates — `renderWelcome`,
+`renderPasswordReset`, `renderOtp` are the generic auth-flow templates every module in this repo
+shares (see `skill-auth-patterns.md` for the MFA/TOTP flow the OTP template supports).
 
 ---
 
-## env.ts additions
+## Checklist before shipping an email change
 
-```typescript
-// Add to backend/src/config/env.ts schema
-SMTP_HOST: z.string(),
-SMTP_PORT: z.coerce.number().default(587),
-SMTP_USER: z.string(),
-SMTP_PASS: z.string(),
-SMTP_FROM: z.string().email(),
-```
-
----
-
-## Checklist
-
-- [ ] SMTP credentials in `.env` — never hardcoded
-- [ ] All sends go through `emailQueue.add()` — never `emailService.send()` directly from a controller
-- [ ] Templates use inline styles — not `<style>` blocks (stripped by Gmail etc.)
-- [ ] Reset-token links expire — never permanent URLs
-- [ ] OTP never logged — only sent via email
-- [ ] `emailWorker.on('failed')` logs use structured logger, never console.error
-- [ ] `concurrency: 5` on the email worker — SMTP rate limits
+- [ ] Every send goes through `emailQueue`, never `MailService.sendMail()` called directly from a NestJS controller
+- [ ] `SMTP_*` values are read from `env`, never hardcoded — and never a real inbox in sample code
+- [ ] `APP_NAME` renders as **Aniston VMS** everywhere in templates, not a leftover product name
+- [ ] Incident/escalation templates link to `${FRONTEND_URL}/incidents/:id`, a real deep link
+- [ ] Worker failures are logged with enough context (`to`, `type`, `incidentId`) to retry/diagnose
+- [ ] No SES/SMTP credentials committed — only referenced via `env.SMTP_USER`/`env.SMTP_PASS`

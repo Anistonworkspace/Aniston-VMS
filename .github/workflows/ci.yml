@@ -16,7 +16,7 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_DB: boilerplate_test
+          POSTGRES_DB: aniston_vms_test
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
         ports:
@@ -39,7 +39,7 @@ jobs:
 
     env:
       NODE_ENV: test
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/boilerplate_test
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/aniston_vms_test
       REDIS_URL: redis://localhost:6379
       JWT_SECRET: ci-test-jwt-secret-32chars-minimum
       JWT_REFRESH_SECRET: ci-test-refresh-secret-32chars-min

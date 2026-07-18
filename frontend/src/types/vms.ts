@@ -1,6 +1,6 @@
 // Aniston VMS domain types for the Overview dashboard (Stage 1).
 // shared/src does not export zone/camera/incident contracts yet — when the
-// backend contract lands in @boilerplate/shared, replace these with the
+// backend contract lands in @aniston-vms/shared, replace these with the
 // shared definitions (never import from prisma).
 
 export type VmsRole =
@@ -79,7 +79,7 @@ export interface CurrentUser {
 }
 
 // NOTE: rule-frontend.md expects hasPermission() from
-// '@boilerplate/shared/permissions', which shared/src does not ship yet.
+// '@aniston-vms/shared/permissions', which shared/src does not ship yet.
 // Local stand-in kept inside frontend/ (hard boundary) — swap it out once
 // the shared helper exists.
 const REGISTRY_ADMIN_ROLES: readonly VmsRole[] = ['SUPER_ADMIN', 'PROJECT_ADMIN'];

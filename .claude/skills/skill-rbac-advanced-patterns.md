@@ -1,300 +1,186 @@
-# Skill — RBAC Advanced Patterns
-
-Dynamic permissions, resource ownership guards, owner-based scoping, multi-role edge cases.
-
-> **Canonical permission API:** `requirePermission(resource, action)` on the backend, `hasPermission(role, resource, action)` on both sides. The single source of truth is [`shared/src/permissions.ts`](../../shared/src/permissions.ts). Resource keys are lowercase plural (`items`, `categories`); actions are exactly `'read' | 'create' | 'update' | 'delete'`.
->
-> **Adding a new module?** Add a row to `PERMISSIONS` in `shared/src/permissions.ts` before using its resource key in any route — `hasPermission()` returns `false` for unknown resources and your route will 403.
+# Skill — RBAC Advanced Patterns (zone-scoped, NestJS guards)
 
 ---
 
-## Permission registry — shared/src/permissions.ts (the only source)
+Dynamic permissions, resource-scope guards, zone-scoped visibility, multi-role edge cases. Canonical
+permission API: `hasPermission(role, resource, action)` on the frontend, `RequirePermission(resource, action)`
++ `ZoneScopeGuard` on the backend. The single source of truth is `packages/shared/src/permissions.ts`
+(`@aniston-vms/shared`).
+
+## The three roles + ScopeType
 
 ```typescript
-// shared/src/permissions.ts
-import { UserRole } from './enums.js';
+// packages/shared/src/enums.ts
+export enum UserRole {
+  SUPER_ADMIN = 'SUPER_ADMIN',      // platform ops — every org, every site/zone/camera, user + role management
+  PROJECT_ADMIN = 'PROJECT_ADMIN',  // customer-side admin — full CRUD within their organization
+  CLIENT_VIEWER = 'CLIENT_VIEWER',  // read-only, and only within their assigned scope
+}
 
+export enum ScopeType {
+  ORG = 'ORG',       // no restriction beyond organizationId
+  SITE = 'SITE',      // restricted to one site (and every zone/camera under it)
+  ZONE = 'ZONE',      // restricted to one zone (and every camera under it)
+  CAMERA = 'CAMERA',  // restricted to a single camera — narrowest grant
+}
+```
+
+`scopeType`/`scopeId` live on the `User` row (nullable — `SUPER_ADMIN` and org-wide `PROJECT_ADMIN`s have
+both `null`). A scoped `CLIENT_VIEWER` has e.g. `scopeType: ZONE, scopeId: '<zone-uuid>'` and must never see
+cameras, incidents, clips or health data outside that zone, even by guessing an id in the URL.
+
+## Permission matrix (packages/shared/src/permissions.ts — the single source of truth)
+
+```typescript
+// Add a ROW per module here BEFORE writing any controller route that uses its resource key.
+// hasPermission() returns false for unknown resources → guard 403s closed, not open.
 export type PermissionAction = 'read' | 'create' | 'update' | 'delete';
 
 export const PERMISSIONS: Record<string, Record<PermissionAction, UserRole[]>> = {
-  organizations: {
-    read:   [UserRole.SUPER_ADMIN, UserRole.ADMIN],
-    create: [UserRole.SUPER_ADMIN],
-    update: [UserRole.SUPER_ADMIN, UserRole.ADMIN],
+  cameras: {
+    read:   [UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.CLIENT_VIEWER],
+    create: [UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN],
+    update: [UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN],
+    delete: [UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN],
+  },
+  cameraCredentials: {
+    read:   [UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN],   // CLIENT_VIEWER never decrypts RTSP/ONVIF creds
+    create: [UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN],
+    update: [UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN],
     delete: [UserRole.SUPER_ADMIN],
   },
-  items: {
-    read:   [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MEMBER],
-    create: [UserRole.SUPER_ADMIN, UserRole.ADMIN],
-    update: [UserRole.SUPER_ADMIN, UserRole.ADMIN],
-    delete: [UserRole.SUPER_ADMIN, UserRole.ADMIN],
+  incidents: {
+    read:   [UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.CLIENT_VIEWER],
+    create: [UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN],
+    update: [UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN],   // acknowledge/resolve
+    delete: [UserRole.SUPER_ADMIN],
   },
-  // ... add a row PER MODULE you build. See shared/src/permissions.ts for the full registry.
+  // ... see packages/shared/src/permissions.ts for the full registry (zones, sites, routers, users, reports)
 };
 
 export function hasPermission(role: UserRole, resource: string, action: PermissionAction): boolean {
   const resourcePerms = PERMISSIONS[resource];
-  if (!resourcePerms) return false;          // unknown resource → deny
+  if (!resourcePerms) return false;
   return resourcePerms[action]?.includes(role) ?? false;
 }
 ```
 
----
-
-## Backend `requirePermission` middleware (already implemented)
+## Backend: RequirePermission decorator + RolesGuard
 
 ```typescript
-// backend/src/middleware/auth.middleware.ts — already wired
-import { hasPermission, type PermissionAction } from '@boilerplate/shared';
-import type { RequestHandler } from 'express';
+// apps/api/src/common/decorators/require-permission.decorator.ts
+export const RequirePermission = (resource: string, action: PermissionAction) =>
+  SetMetadata('permission', { resource, action });
 
-export function requirePermission(resource: string, action: PermissionAction): RequestHandler {
-  return (req, _res, next) => {
-    if (!req.user) return next(new UnauthorizedError());
-    if (!hasPermission(req.user.role, resource, action)) {
-      return next(new ForbiddenError(`Permission required: ${resource}.${action}`));
+// apps/api/src/modules/cameras/cameras.controller.ts
+@Post()
+@RequirePermission('cameras', 'create')          // ✅ resource + action, never a single SCREAMING_SNAKE string
+create(@CurrentUser() actor: AuthUser, @Body() dto: CreateCameraDto) {
+  return this.camerasService.create(actor, dto);
+}
+```
+
+```typescript
+// apps/api/src/common/guards/roles.guard.ts
+@Injectable()
+export class RolesGuard implements CanActivate {
+  constructor(private reflector: Reflector) {}
+
+  canActivate(ctx: ExecutionContext): boolean {
+    const meta = this.reflector.get<{ resource: string; action: PermissionAction }>('permission', ctx.getHandler());
+    if (!meta) return true; // no @RequirePermission on this route — public within the auth boundary
+    const { user } = ctx.switchToHttp().getRequest<{ user: AuthUser }>();
+    if (!hasPermission(user.role, meta.resource, meta.action)) {
+      throw new ForbiddenException(`Role ${user.role} cannot ${meta.action} ${meta.resource}`);
     }
-    next();
-  };
-}
-```
-
-```typescript
-// Usage in routes — always 2-arg form
-router.post(
-  '/',
-  authenticate,
-  requirePermission('items', 'create'),     // ✅ resource + action
-  validateRequest({ body: CreateSchema }),
-  ItemController.create,
-);
-```
-
-### Any-of and all-of patterns
-
-For routes that need composite permission checks, compose `hasPermission()` inside the service rather than chaining many middlewares:
-
-```typescript
-// backend/src/modules/report/report.service.ts
-import { hasPermission } from '@boilerplate/shared';
-
-static async exportInvoices(actor: AuthUser) {
-  const canViewInvoices  = hasPermission(actor.role, 'invoices',  'read');
-  const canExportReports = hasPermission(actor.role, 'reports',   'create');
-  if (!canViewInvoices || !canExportReports) {
-    throw new ForbiddenError('Need both invoices.read and reports.create');
-  }
-  // ...
-}
-```
-
----
-
-## Resource ownership guard
-
-```typescript
-// backend/src/utils/ownershipGuard.ts
-
-// Guard: the actor can only act on their OWN record (unless admin)
-export function assertOwnerOrAdmin(
-  resourceOwnerId: string,
-  actor: AuthUser,
-  message = 'You can only perform this action on your own record',
-) {
-  const isOwner = actor.id === resourceOwnerId;
-  const isAdmin = [UserRole.ADMIN, UserRole.SUPER_ADMIN].includes(actor.role);
-
-  if (!isOwner && !isAdmin) {
-    throw new ForbiddenError(message);
+    return true;
   }
 }
+```
 
-// Usage in service:
-static async getInvoice(id: string, actor: AuthUser) {
-  const invoice = await prisma.invoice.findFirst({
-    where: { id, organizationId: actor.organizationId, deletedAt: null },
-  });
-  if (!invoice) throw new NotFoundError('Invoice not found');
+## ZoneScopeGuard — enforce scoped visibility for CLIENT_VIEWER / scoped PROJECT_ADMIN
 
-  // A MEMBER can only see their own invoice
-  assertOwnerOrAdmin(invoice.ownerId, actor);
+```typescript
+// apps/api/src/common/guards/zone-scope.guard.ts
+@Injectable()
+export class ZoneScopeGuard implements CanActivate {
+  constructor(private zonesService: ZonesService) {}
 
-  return invoice;
+  async canActivate(ctx: ExecutionContext): Promise<boolean> {
+    const req = ctx.switchToHttp().getRequest<{ user: AuthUser; params: { id?: string } }>();
+    const { user } = req;
+    if (!user.scopeType || user.scopeType === ScopeType.ORG) return true; // unscoped — org-wide access
+
+    const cameraId = req.params.id;
+    if (!cameraId) return true; // list endpoints filter via buildScopeWhere() instead, see below
+    const inScope = await this.zonesService.isCameraInScope(cameraId, user.scopeType, user.scopeId!);
+    if (!inScope) {
+      // 404, not 403 — never confirm a resource exists outside the caller's scope
+      throw new NotFoundException('Camera not found');
+    }
+    return true;
+  }
 }
 ```
 
----
-
-## Owner scope (restricted role)
-
 ```typescript
-// backend/src/utils/ownerScope.ts
-
-// Build the organizationId + ownership scope based on role
-export function buildItemScope(
-  actor: AuthUser,
-  extraWhere: Prisma.ItemWhereInput = {},
-): Prisma.ItemWhereInput {
-  const base: Prisma.ItemWhereInput = {
-    organizationId: actor.organizationId,
-    deletedAt: null,
-    ...extraWhere,
-  };
-
-  if (actor.role === UserRole.MEMBER) {
-    // A restricted MEMBER sees only the records it owns
-    base.ownerId = actor.id;
+// ✅ CORRECT — scope-aware WHERE clause for list endpoints, always combined with organizationId
+function buildScopeWhere(actor: AuthUser): Prisma.CameraWhereInput {
+  const base: Prisma.CameraWhereInput = { organizationId: actor.organizationId, deletedAt: null };
+  switch (actor.scopeType) {
+    case ScopeType.SITE:   return { ...base, zone: { siteId: actor.scopeId! } };
+    case ScopeType.ZONE:   return { ...base, zoneId: actor.scopeId! };
+    case ScopeType.CAMERA: return { ...base, id: actor.scopeId! };
+    default:               return base; // ORG / null — every camera in the organization
   }
-
-  // ADMIN / SUPER_ADMIN: no extra filter — sees all
-  return base;
-}
-
-// Usage in service:
-static async list(query: ListItemQuery, actor: AuthUser) {
-  const where = buildItemScope(actor, {
-    // Additional item-specific filters applied here
-  });
-  // ...
 }
 ```
 
----
-
-## Self-approval prevention guard
+## Self-approval prevention (MANDATORY on every approval/acknowledgement endpoint)
 
 ```typescript
-// CRITICAL — must exist on every approval endpoint
-export function assertNotSelfApproval(requesterId: string, actor: AuthUser) {
-  // The approver must not be the same user who created the request
-  if (actor.id === requesterId) {
-    throw new ForbiddenError('You cannot approve your own request');
+// ✅ CORRECT — check in the service, not the controller
+async acknowledgeIncident(id: string, actor: AuthUser) {
+  const incident = await this.getOne(id, actor);
+  if (incident.reportedById === actor.id && actor.role !== UserRole.SUPER_ADMIN) {
+    throw new ForbiddenException('You cannot acknowledge an incident you reported yourself');
   }
-}
-
-// Usage:
-static async approveItem(id: string, actor: AuthUser) {
-  const item = await prisma.item.findFirst({
-    where: { id, organizationId: actor.organizationId, deletedAt: null },
-  });
-  if (!item) throw new NotFoundError('Item not found');
-
-  assertNotSelfApproval(item.createdById, actor);  // ← CRITICAL
-
-  // Proceed with approval...
+  // proceed with acknowledgement
 }
 ```
 
----
-
-## Role escalation prevention
+## Role-escalation guard (only SUPER_ADMIN can mint SUPER_ADMIN / reassign roles)
 
 ```typescript
-// Only SUPER_ADMIN can assign ADMIN role
-// Only ADMIN / SUPER_ADMIN can assign MEMBER role
-export function assertCanAssignRole(targetRole: UserRole, actor: AuthUser) {
-  if (targetRole === UserRole.SUPER_ADMIN) {
-    throw new ForbiddenError('Cannot create SUPER_ADMIN users via API');
+function assertCanAssignRole(actor: AuthUser, targetRole: UserRole) {
+  if (targetRole === UserRole.SUPER_ADMIN && actor.role !== UserRole.SUPER_ADMIN) {
+    throw new ForbiddenException('Only SUPER_ADMIN can create or promote SUPER_ADMIN users');
   }
-  if (targetRole === UserRole.ADMIN && actor.role !== UserRole.SUPER_ADMIN) {
-    throw new ForbiddenError('Only SUPER_ADMIN can create ADMIN users');
-  }
-  if (targetRole === UserRole.MEMBER && ![UserRole.ADMIN, UserRole.SUPER_ADMIN].includes(actor.role)) {
-    throw new ForbiddenError('Only ADMIN can create MEMBER users');
-  }
-}
-
-// In user creation service:
-static async create(dto: CreateUserInput, actor: AuthUser) {
-  assertCanAssignRole(dto.role, actor);
-  // Never set role from dto directly — set it after the guard passes
-  const user = await prisma.user.create({
-    data: { ...dto, organizationId: actor.organizationId, role: dto.role },
-  });
-  return user;
 }
 ```
 
----
-
-## Frontend permission hooks
+## Frontend RBAC (hide admin-only UI)
 
 ```typescript
-// frontend/src/hooks/usePermission.ts
-import { useSelector } from 'react-redux';
-import { hasPermission, type PermissionAction } from '@boilerplate/shared';
-import type { RootState } from '@/app/store';
+import { hasPermission } from '@aniston-vms/shared';
 
-export function usePermission(resource: string, action: PermissionAction): boolean {
-  const role = useSelector((s: RootState) => s.auth.user?.role);
-  if (!role) return false;
-  return hasPermission(role, resource, action);
-}
+// ✅ CORRECT — hide button if role/scope doesn't have permission. 3-arg form: role, resource, action.
+{hasPermission(user.role, 'cameras', 'create') && (
+  <Button onClick={openAddCameraModal}>Add Camera</Button>
+)}
 
-// Usage in component:
-function ItemActions({ item }: { item: Item }) {
-  const canApprove = usePermission('items', 'update');
-  const canCancel  = usePermission('items', 'delete');
-
-  return (
-    <div className="flex gap-2">
-      {canApprove && <button className="btn btn--positive btn--sm">Approve</button>}
-      {canCancel  && <button className="btn btn--negative btn--sm">Cancel</button>}
-    </div>
-  );
-}
-```
-
----
-
-## Permission guard component
-
-```typescript
-// frontend/src/components/auth/PermissionGuard.tsx
-import type { PermissionAction } from '@boilerplate/shared';
-
-interface PermissionGuardProps {
-  resource: string;
-  action:   PermissionAction;
-  fallback?: React.ReactNode;
-  children: React.ReactNode;
-}
-
-export function PermissionGuard({ resource, action, fallback = null, children }: PermissionGuardProps) {
-  const allowed = usePermission(resource, action);
-  return allowed ? <>{children}</> : <>{fallback}</>;
-}
-
-// Role guard for coarser checks (when permission matrix doesn't yet cover the case)
-export function RoleGuard({ roles, children, fallback = null }: {
-  roles: UserRole[];
-  children: React.ReactNode;
-  fallback?: React.ReactNode;
-}) {
-  const role = useSelector((s: RootState) => s.auth.user?.role);
-  return role && roles.includes(role) ? <>{children}</> : <>{fallback}</>;
-}
-
-// Usage:
-<PermissionGuard resource="items" action="create">
-  <button className="btn btn--primary">Add Item</button>
+// PermissionGuard wraps whole sections (e.g. hide the credentials panel entirely from CLIENT_VIEWER)
+<PermissionGuard resource="cameraCredentials" action="read">
+  <CameraCredentialsPanel cameraId={camera.id} />
 </PermissionGuard>
-
-<RoleGuard roles={[UserRole.ADMIN, UserRole.SUPER_ADMIN]}>
-  <AdminSettingsPanel />
-</RoleGuard>
 ```
 
----
+## Testing checklist for every new RBAC-guarded endpoint
 
-## Checklist
-
-- [ ] All permissions defined in `shared/src/permissions.ts` — NOT scattered in service files
-- [ ] Every new module added one row to `PERMISSIONS` BEFORE its routes were written
-- [ ] `requirePermission(resource, action)` used on every route — always 2-arg form, never single SCREAMING_SNAKE
-- [ ] `assertOwnerOrAdmin()` called on every endpoint that touches user-specific data
-- [ ] `assertNotSelfApproval()` called on EVERY approval endpoint — critical
-- [ ] `buildItemScope()` called in every list/search that a MEMBER can access
-- [ ] Role escalation guard: no API can create ADMIN without SUPER_ADMIN actor
-- [ ] Frontend `PermissionGuard resource="x" action="y"` wraps every admin-only UI element
-- [ ] RBAC test matrix: every critical route tested with all 3 roles (SUPER_ADMIN, ADMIN, MEMBER) — 403 for unauthorized, 200 for authorized
+1. `SUPER_ADMIN` — allowed on every path.
+2. `PROJECT_ADMIN` (unscoped) — allowed within their organization, 404 across organizations.
+3. `CLIENT_VIEWER` scoped to a `ZONE` — allowed for cameras/incidents inside the zone, 404 outside it,
+   `403` on any write action, never receives decrypted credentials.
+4. Role escalation — no role can create/assign a `SUPER_ADMIN` account except `SUPER_ADMIN`.
+5. No endpoint returns `200`/`204` for a write with a missing `@RequirePermission` guard — CI's route-audit
+   script flags any registered route without one.

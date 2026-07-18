@@ -3,6 +3,8 @@
 Versions/targets per the plan docs (`02-TRD.md` v1.0 · 17 July 2026 · built for plan v1.3).
 Update this file when dependencies are bumped.
 
+**Canonical stack (decided):** the plan docs are the source of truth — the target is a **pnpm monorepo**: **NestJS** (`apps/api`) · **BullMQ workers** (`apps/workers`) · **MediaMTX** (`services/media`) · **FastAPI + OpenCV** (`services/image-analysis`) · **`packages/shared`** (`@aniston-vms/shared`). The current on-disk `backend/` (npm-workspaces Express + Prisma + BullMQ scaffold) is **legacy being migrated to NestJS** — it is not the pattern to follow.
+
 **Primary target: the web SPA.** The boilerplate's Capacitor/Electron shells remain in the repo
 but are **out of scope for Aniston VMS v1** (a control-room web app).
 
@@ -15,7 +17,7 @@ but are **out of scope for Aniston VMS v1** (a control-room web app).
 | Framework | **React 18** | function components + hooks only |
 | Language | **TypeScript 5.7** strict, ESM | |
 | Build | **Vite 5** | `frontend/vite.config.ts` |
-| Styling | **Tailwind CSS v3** + VMS design tokens | tokens per `04-uiux-brief.md` + `design-reference.jpeg` |
+| Styling | **Tailwind CSS v3** + VMS design tokens | tokens per `04-uiux-brief.md` + `actual-design.png` |
 | State | **Redux Toolkit + RTK Query** | server state in RTK Query cache only |
 | Animation | **Framer Motion** | |
 | Router | **React Router v6** | |
@@ -27,7 +29,7 @@ but are **out of scope for Aniston VMS v1** (a control-room web app).
 | Concern | Choice | Notes |
 |---|---|---|
 | Runtime | **Node.js 20+**, TypeScript, ESM | |
-| Framework | **Express 4** | thin controllers → services (MVC modules) |
+| Framework | **NestJS** | modules → controllers → providers/services, guards + pipes + interceptors, class-validator DTOs (current `backend/` is an Express 4 scaffold being ported to this target) |
 | ORM / DB | **Prisma 6** + **PostgreSQL 16** | schema source: `05-backend-schema.md` (28 tables) |
 | Cache/queues | **Redis 7** + **BullMQ** | probes, snapshots, notifications, clip exports |
 | Realtime | **Socket.io** | live health/incident updates to dashboards |

@@ -5,6 +5,9 @@ WORKDIR /app
 ARG VITE_API_URL=http://localhost:4000
 ENV VITE_API_URL=$VITE_API_URL
 
+# Skip husky's prepare hook inside Docker (no .git in build context)
+ENV HUSKY=0
+
 # Copy workspace manifests
 COPY package.json package-lock.json ./
 COPY shared/package.json ./shared/
@@ -32,6 +35,6 @@ COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
 
 HEALTHCHECK --interval=10s --timeout=3s --retries=3 \
-  CMD wget -qO- http://localhost/ || exit 1
+  CMD wget -qO- http://127.0.0.1/ || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]

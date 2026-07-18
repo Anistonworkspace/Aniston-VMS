@@ -16,8 +16,9 @@ cheaply. Usage: `/resume` (uses the latest capsule) or `/resume <path-to-capsule
    - If neither exists, say so and offer to run `/start` instead.
 
 2. **Read the capsule**, then read ONLY the files it lists under "Files in play"
-   (with their line ranges). **Do NOT grep/search the whole repo** — the capsule's
-   file list is authoritative; that is the whole point (zero discovery cost).
+   (with their line ranges) — e.g. `apps/api/src/modules/incidents/incidents.service.ts:40-90` or
+   `apps/web/src/features/liveWall/LiveWallGrid.tsx:1-60`. **Do NOT grep/search the whole repo** — the
+   capsule's file list is authoritative; that is the whole point (zero discovery cost).
 
 3. Also read the referenced active plan and latest changes log if named in the capsule.
 

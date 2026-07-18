@@ -1,217 +1,180 @@
 # Skill: Keyboard Shortcuts & UI Hotkey Patterns
 
+Design tokens: see `docs/04-uiux-brief.md`.
+
 ## Prerequisites — create `frontend/src/app/uiSlice.ts` first
 
-The snippets below dispatch actions from `@/app/uiSlice` (open command palette,
-open keyboard-help overlay, open create modal, toggle search bar). That slice
-doesn't ship with the boilerplate — create it before the hotkeys compile.
+The snippets below dispatch actions from `@/app/uiSlice` (open command palette, open keyboard-help overlay, open create-camera modal, toggle search bar, move focus within the Live Wall). That slice must exist before any hotkey below compiles.
 
-```typescript
+```ts
 // frontend/src/app/uiSlice.ts
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 
-export type UiState = {
+interface UiState {
   commandPaletteOpen: boolean;
-  keyboardHelpOpen:   boolean;
-  createModalOpen:    boolean;
-  searchBarOpen:      boolean;
-};
+  keyboardHelpOpen: boolean;
+  createModalOpen: { type: 'camera' | 'zone' | 'site' | null };
+  searchBarOpen: boolean;
+  liveViewFocusedTile: number; // index into the active LiveWallGrid
+}
 
 const initialState: UiState = {
   commandPaletteOpen: false,
-  keyboardHelpOpen:   false,
-  createModalOpen:    false,
-  searchBarOpen:      false,
+  keyboardHelpOpen: false,
+  createModalOpen: { type: null },
+  searchBarOpen: false,
+  liveViewFocusedTile: 0,
 };
 
 const uiSlice = createSlice({
   name: 'ui',
   initialState,
   reducers: {
-    openCommandPalette:  (s) => { s.commandPaletteOpen = true; },
+    openCommandPalette: (s) => { s.commandPaletteOpen = true; },
     closeCommandPalette: (s) => { s.commandPaletteOpen = false; },
-    openKeyboardHelp:    (s) => { s.keyboardHelpOpen   = true; },
-    closeKeyboardHelp:   (s) => { s.keyboardHelpOpen   = false; },
-    openCreateModal:     (s) => { s.createModalOpen    = true; },
-    closeCreateModal:    (s) => { s.createModalOpen    = false; },
-    toggleSearchBar:     (s) => { s.searchBarOpen      = !s.searchBarOpen; },
+    openKeyboardHelp: (s) => { s.keyboardHelpOpen = true; },
+    closeKeyboardHelp: (s) => { s.keyboardHelpOpen = false; },
+    openCreateModal: (s, a: PayloadAction<{ type: 'camera' | 'zone' | 'site' }>) => { s.createModalOpen = a.payload; },
+    closeCreateModal: (s) => { s.createModalOpen = { type: null }; },
+    toggleSearchBar: (s) => { s.searchBarOpen = !s.searchBarOpen; },
+    setLiveViewFocusedTile: (s, a: PayloadAction<number>) => { s.liveViewFocusedTile = a.payload; },
   },
 });
-
 export const {
-  openCommandPalette, closeCommandPalette,
-  openKeyboardHelp,   closeKeyboardHelp,
-  openCreateModal,    closeCreateModal,
-  toggleSearchBar,
+  openCommandPalette, closeCommandPalette, openKeyboardHelp, closeKeyboardHelp,
+  openCreateModal, closeCreateModal, toggleSearchBar, setLiveViewFocusedTile,
 } = uiSlice.actions;
-export const uiReducer = uiSlice.reducer;
+export default uiSlice.reducer;
 ```
 
-Then register it in `frontend/src/app/store.ts`:
+Prereq package:
 
-```typescript
-import { uiReducer } from './uiSlice';
-// inside configureStore({ reducer: { ... } }) — add:
-//   ui: uiReducer,
 ```
-
-`useAppDispatch` is exported alongside `useAppSelector` from
-`frontend/src/hooks/useAuth.ts` (already in the boilerplate). With those two
-pieces in place the snippets below compile as-is.
+pnpm add react-hotkeys-hook
+```
 
 ---
 
-## Global hotkey hook (useHotkeys)
+## Global shortcuts hook
 
-Install `react-hotkeys-hook` — the standard for React keyboard shortcuts.
-
-```bash
-npm install react-hotkeys-hook
-```
-
-```typescript
+```ts
 // frontend/src/hooks/useGlobalShortcuts.ts
 import { useHotkeys } from 'react-hotkeys-hook';
-import { useNavigate } from 'react-router-dom';
-import { useAppDispatch } from '@/hooks/useAuth';
-import { openCommandPalette } from '@/app/uiSlice';
+import { useAppDispatch, useAppSelector } from '@/app/hooks';
+import { openCommandPalette, closeCommandPalette, openKeyboardHelp, openCreateModal, toggleSearchBar } from '@/app/uiSlice';
 
 export function useGlobalShortcuts() {
-  const navigate = useNavigate();
   const dispatch = useAppDispatch();
+  const commandPaletteOpen = useAppSelector((s) => s.ui.commandPaletteOpen);
 
-  // Command palette (industry standard: Cmd+K or Ctrl+K)
-  useHotkeys('meta+k, ctrl+k', (e) => {
-    e.preventDefault();
-    dispatch(openCommandPalette());
-  }, { enableOnFormTags: false });
-
-  // Navigation shortcuts
-  useHotkeys('g d', () => navigate('/dashboard'),     { enableOnFormTags: false });
-  useHotkeys('g i', () => navigate('/items'),         { enableOnFormTags: false });
-  useHotkeys('g c', () => navigate('/categories'),    { enableOnFormTags: false });
-  useHotkeys('g s', () => navigate('/settings'),      { enableOnFormTags: false });
-  useHotkeys('g p', () => navigate('/profile'),       { enableOnFormTags: false });
-
-  // Quick actions
-  useHotkeys('meta+n, ctrl+n', (e) => { e.preventDefault(); dispatch(openCreateModal()); },  { enableOnFormTags: false });
-  useHotkeys('meta+/, ctrl+/', (e) => { e.preventDefault(); dispatch(toggleSearchBar()); },   { enableOnFormTags: false });
-
-  // Help overlay
-  useHotkeys('shift+?', () => dispatch(openKeyboardShortcutsHelp()), { enableOnFormTags: false });
+  useHotkeys('meta+k, ctrl+k', (e) => { e.preventDefault(); dispatch(openCommandPalette()); }, { enableOnFormTags: true });
+  useHotkeys('escape', () => { if (commandPaletteOpen) dispatch(closeCommandPalette()); }, { enableOnFormTags: true });
+  useHotkeys('shift+/', () => dispatch(openKeyboardHelp()), { enableOnFormTags: false }); // "?"
+  useHotkeys('meta+shift+c, ctrl+shift+c', (e) => { e.preventDefault(); dispatch(openCreateModal({ type: 'camera' })); });
+  useHotkeys('/', (e) => { e.preventDefault(); dispatch(toggleSearchBar()); }, { enableOnFormTags: false });
 }
-
-// Mount once at app root:
-// function App() {
-//   useGlobalShortcuts();
-//   return <RouterProvider router={router} />;
-// }
 ```
 
----
+Register once at the app shell (`<AppShell>`), never per-page — duplicate registrations fire the same action twice per keypress.
 
-## Command palette (Cmd+K)
+## Live View controls
 
-```typescript
-// frontend/src/components/CommandPalette.tsx
-import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+The Live Wall tile grid (`LiveWallGrid` + single-camera `PlayerShell`) gets its own scoped hotkey set, active only while a wall or player has DOM focus, so typing `/` in an incident-note form elsewhere on the page never mutes a stream by accident.
+
+| Key | Action |
+|---|---|
+| `Space` | Play / pause the focused tile |
+| `M` | Mute / unmute the focused tile |
+| `F` | Toggle fullscreen on the focused tile |
+| `S` | Capture snapshot from the focused tile |
+| `←` `→` `↑` `↓` | Move focus between tiles in the grid |
+| `1`–`9` | Jump focus directly to tile N |
+| `N` / `P` | Next / previous camera (single-camera `PlayerShell` view) |
+| `Esc` | Exit fullscreen, then exit live view |
+
+```ts
+// frontend/src/features/live-wall/useLiveWallShortcuts.ts
 import { useHotkeys } from 'react-hotkeys-hook';
 
-interface Command {
-  id: string;
-  label: string;
-  description?: string;
-  icon?: React.ReactNode;
-  action: () => void;
-  keywords?: string[];
+export function useLiveWallShortcuts({ tileCount, gridCols, focusedTile, setFocusedTile, tiles }: {
+  tileCount: number;
+  gridCols: number;
+  focusedTile: number;
+  setFocusedTile: (i: number) => void;
+  tiles: WallTile[];
+}) {
+  const focused = tiles[focusedTile];
+  const clamp = (v: number) => Math.max(0, Math.min(tileCount - 1, v));
+
+  useHotkeys('space', (e) => { e.preventDefault(); togglePlay(focused.cameraId); });
+  useHotkeys('m', () => toggleMute(focused.cameraId));
+  useHotkeys('f', () => toggleFullscreen(focused.cameraId));
+  useHotkeys('s', () => captureSnapshot(focused.cameraId));
+  useHotkeys('left', () => setFocusedTile(clamp(focusedTile - 1)));
+  useHotkeys('right', () => setFocusedTile(clamp(focusedTile + 1)));
+  useHotkeys('up', () => setFocusedTile(clamp(focusedTile - gridCols)));
+  useHotkeys('down', () => setFocusedTile(clamp(focusedTile + gridCols)));
+  for (let n = 1; n <= 9; n++) {
+    useHotkeys(String(n), () => { if (n - 1 < tileCount) setFocusedTile(n - 1); });
+  }
+  useHotkeys('escape', () => exitFullscreenThenLiveView());
 }
+```
 
-interface CommandPaletteProps {
-  isOpen: boolean;
-  onClose: () => void;
-  commands: Command[];
-}
+Mount this hook only while `<LiveWallGrid>` / `<PlayerShell>` is on screen (or gate it on a "live view has focus" ref) — these single-letter keys (`m`, `f`, `s`) must **not** fire while the operator is typing in an incident note or any form field elsewhere on the same page.
 
-export function CommandPalette({ isOpen, onClose, commands }: CommandPaletteProps) {
-  const [query, setQuery] = useState('');
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
+## Keyboard shortcuts help overlay (`?`)
 
-  useEffect(() => {
-    if (isOpen) {
-      setQuery('');
-      setSelectedIndex(0);
-      setTimeout(() => inputRef.current?.focus(), 0);
-    }
-  }, [isOpen]);
+```tsx
+// frontend/src/components/KeyboardShortcutsHelp.tsx
+import { useHotkeys } from 'react-hotkeys-hook';
 
-  // Close on Escape
-  useHotkeys('escape', onClose, { enabled: isOpen });
+const SHORTCUTS: { section: string; items: { keys: string[]; label: string }[] }[] = [
+  { section: 'Navigation', items: [
+    { keys: ['⌘', 'K'], label: 'Command palette' },
+    { keys: ['/'], label: 'Focus search' },
+  ]},
+  { section: 'Live View', items: [
+    { keys: ['Space'], label: 'Play / pause tile' },
+    { keys: ['M'], label: 'Mute / unmute' },
+    { keys: ['F'], label: 'Fullscreen' },
+    { keys: ['S'], label: 'Snapshot' },
+    { keys: ['1', '–', '9'], label: 'Jump to tile' },
+  ]},
+  { section: 'Incidents', items: [
+    { keys: ['A'], label: 'Acknowledge selected incident' },
+    { keys: ['⌘', 'Shift', 'C'], label: 'Add camera' },
+  ]},
+  { section: 'General', items: [
+    { keys: ['Esc'], label: 'Close modal / exit live view' },
+    { keys: ['?'], label: 'Show this help' },
+  ]},
+];
 
-  const filtered = query
-    ? commands.filter((cmd) =>
-        cmd.label.toLowerCase().includes(query.toLowerCase()) ||
-        cmd.keywords?.some((k) => k.toLowerCase().includes(query.toLowerCase()))
-      )
-    : commands;
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setSelectedIndex((i) => Math.min(i + 1, filtered.length - 1));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setSelectedIndex((i) => Math.max(i - 1, 0));
-    } else if (e.key === 'Enter' && filtered[selectedIndex]) {
-      filtered[selectedIndex].action();
-      onClose();
-    }
-  };
-
-  if (!isOpen) return null;
+export function KeyboardShortcutsHelp({ open, onClose }: { open: boolean; onClose: () => void }) {
+  useHotkeys('escape', onClose, { enabled: open });
+  if (!open) return null;
 
   return (
-    // Portal so it renders above everything
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh]">
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-
-      {/* Palette */}
-      <div className="relative w-full max-w-lg rounded-[8px] bg-white shadow-2xl overflow-hidden">
-        <input
-          ref={inputRef}
-          value={query}
-          onChange={(e) => { setQuery(e.target.value); setSelectedIndex(0); }}
-          onKeyDown={handleKeyDown}
-          placeholder="Type a command or search..."
-          className="w-full px-4 py-3 text-sm font-figtree border-b border-gray-200 outline-none"
-        />
-        <ul className="max-h-80 overflow-y-auto py-2">
-          {filtered.length === 0 && (
-            <li className="px-4 py-3 text-sm text-gray-500">No results for "{query}"</li>
-          )}
-          {filtered.map((cmd, i) => (
-            <li
-              key={cmd.id}
-              className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer text-sm ${
-                i === selectedIndex ? 'bg-[#0073ea]/10 text-[#0073ea]' : 'text-gray-700 hover:bg-gray-50'
-              }`}
-              onClick={() => { cmd.action(); onClose(); }}
-              onMouseEnter={() => setSelectedIndex(i)}
-            >
-              {cmd.icon && <span className="shrink-0 text-gray-400">{cmd.icon}</span>}
-              <div>
-                <div className="font-medium">{cmd.label}</div>
-                {cmd.description && <div className="text-xs text-gray-400">{cmd.description}</div>}
-              </div>
-            </li>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--backdrop-color)]" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} className="bg-[var(--card)] rounded-[var(--radius-big)] shadow-xl p-6 w-full max-w-lg max-h-[80vh] overflow-y-auto">
+        <h2 className="text-lg font-semibold text-[var(--ink)] mb-4">Keyboard shortcuts</h2>
+        <div className="space-y-5">
+          {SHORTCUTS.map((s) => (
+            <div key={s.section}>
+              <h3 className="text-xs uppercase tracking-wide text-[var(--muted)] mb-2">{s.section}</h3>
+              {s.items.map((item) => (
+                <div key={item.label} className="flex items-center justify-between py-1.5 text-sm">
+                  <span className="text-[var(--ink)]">{item.label}</span>
+                  <span className="flex gap-1">
+                    {item.keys.map((k) => (
+                      <kbd key={k} className="px-2 py-0.5 rounded border border-[var(--hairline)] bg-[var(--base-tint)] text-xs font-mono">{k}</kbd>
+                    ))}
+                  </span>
+                </div>
+              ))}
+            </div>
           ))}
-        </ul>
-        <div className="px-4 py-2 border-t border-gray-100 flex gap-4 text-xs text-gray-400">
-          <span><kbd className="font-mono">↑↓</kbd> navigate</span>
-          <span><kbd className="font-mono">↵</kbd> select</span>
-          <span><kbd className="font-mono">Esc</kbd> close</span>
         </div>
       </div>
     </div>
@@ -219,488 +182,148 @@ export function CommandPalette({ isOpen, onClose, commands }: CommandPaletteProp
 }
 ```
 
----
+## List / table keyboard navigation — incident & camera lists
 
-## Modal keyboard behavior
-
-All modals MUST close on Escape. Focus must be trapped inside the modal.
-
-```typescript
-// frontend/src/hooks/useModalKeyboard.ts
-import { useEffect } from 'react';
-
-export function useModalKeyboard(isOpen: boolean, onClose: () => void) {
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        onClose();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
-}
-
-// Focus trap for modals (accessibility requirement)
-export function useFocusTrap(containerRef: React.RefObject<HTMLElement>, isOpen: boolean) {
-  useEffect(() => {
-    if (!isOpen || !containerRef.current) return;
-
-    const focusable = containerRef.current.querySelectorAll<HTMLElement>(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-    );
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-
-    first?.focus();
-
-    const handleTab = (e: KeyboardEvent) => {
-      if (e.key !== 'Tab') return;
-      if (e.shiftKey) {
-        if (document.activeElement === first) { e.preventDefault(); last?.focus(); }
-      } else {
-        if (document.activeElement === last) { e.preventDefault(); first?.focus(); }
-      }
-    };
-
-    document.addEventListener('keydown', handleTab);
-    return () => document.removeEventListener('keydown', handleTab);
-  }, [isOpen]);
-}
-```
-
----
-
-## Table keyboard navigation
-
-```typescript
-// frontend/src/hooks/useTableKeyboard.ts
-import { useHotkeys } from 'react-hotkeys-hook';
+```ts
+// frontend/src/hooks/useTableKeyboardNav.ts
+import { useRef, useState } from 'react';
 
 interface UseTableKeyboardOptions {
   rowCount: number;
-  selectedIndex: number | null;
   onSelect: (index: number) => void;
-  onOpen?: (index: number) => void;   // Enter key
-  onDelete?: (index: number) => void; // Delete key
+  onOpen: (index: number) => void;
+  onDelete?: (index: number) => void;
 }
 
-export function useTableKeyboard({ rowCount, selectedIndex, onSelect, onOpen, onDelete }: UseTableKeyboardOptions) {
-  useHotkeys('arrowdown', (e) => {
-    e.preventDefault();
-    const next = selectedIndex === null ? 0 : Math.min(selectedIndex + 1, rowCount - 1);
-    onSelect(next);
-  });
+export function useTableKeyboardNav({ rowCount, onSelect, onOpen, onDelete }: UseTableKeyboardOptions) {
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  useHotkeys('arrowup', (e) => {
-    e.preventDefault();
-    const prev = selectedIndex === null ? rowCount - 1 : Math.max(selectedIndex - 1, 0);
-    onSelect(prev);
-  });
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); const next = Math.min(selectedIndex + 1, rowCount - 1); setSelectedIndex(next); onSelect(next); }
+    if (e.key === 'ArrowUp') { e.preventDefault(); const next = Math.max(selectedIndex - 1, 0); setSelectedIndex(next); onSelect(next); }
+    if (e.key === 'Enter') onOpen(selectedIndex);
+    if ((e.key === 'Delete' || e.key === 'Backspace') && onDelete && !e.metaKey && !e.ctrlKey) onDelete(selectedIndex);
+  }
 
-  useHotkeys('enter', () => {
-    if (selectedIndex !== null && onOpen) onOpen(selectedIndex);
-  });
-
-  useHotkeys('delete, backspace', () => {
-    if (selectedIndex !== null && onDelete) onDelete(selectedIndex);
-  });
-
-  useHotkeys('home', (e) => { e.preventDefault(); onSelect(0); });
-  useHotkeys('end',  (e) => { e.preventDefault(); onSelect(rowCount - 1); });
+  return { selectedIndex, containerRef, handleKeyDown };
 }
 ```
 
----
+```tsx
+// row rendering — selected vs. hover use the two dedicated tokens, never ad-hoc grays
+<div
+  className={idx === selectedIndex ? 'bg-[var(--primary-selected-color)]' : 'hover:bg-[var(--primary-hover-color)]'}
+  onClick={() => onSelect(idx)}
+>
+  {incident.code} · {incident.cameraName}
+</div>
+```
 
-## Form shortcuts
+Used identically on the incident list (arrow keys move the highlighted row, `Enter` opens the incident detail, `Delete` opens the "remove"/"escalate" confirm — never destructive on its own) and the camera inventory table.
 
-```typescript
-// Standard form keyboard behaviors (always wire these)
-// 1. Ctrl+Enter to submit (for multi-line forms where Enter ≠ submit)
-// 2. Escape to cancel/close
-// 3. Tab order must match visual order (use tabIndex only to fix broken order)
+## Focus trap for modals
 
-function ItemForm({ onSubmit, onCancel }: Props) {
-  const form = useForm<CreateItemInput>({ resolver: zodResolver(CreateItemSchema) });
+```ts
+// frontend/src/hooks/useFocusTrap.ts
+import { useEffect } from 'react';
+import type { RefObject } from 'react';
 
-  // Ctrl+Enter submits the form
-  useHotkeys('ctrl+enter', () => form.handleSubmit(onSubmit)(), { enableOnFormTags: true });
+export function useFocusTrap(containerRef: RefObject<HTMLElement>, active: boolean) {
+  useEffect(() => {
+    if (!active || !containerRef.current) return;
+    const container = containerRef.current;
+    const focusable = container.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    first?.focus();
 
-  // Escape cancels
-  useHotkeys('escape', onCancel, { enableOnFormTags: ['INPUT', 'SELECT'] });
-
-  return (
-    <form onSubmit={form.handleSubmit(onSubmit)}>
-      {/* Tab order follows visual layout naturally — don't set tabIndex */}
-      <Input {...form.register('name')} autoFocus /> {/* autoFocus on first field */}
-      <Input {...form.register('email')} />
-      <Button type="submit">Save <kbd className="ml-2 text-xs opacity-60">Ctrl+↵</kbd></Button>
-      <Button type="button" variant="outline" onClick={onCancel}>Cancel <kbd className="ml-2 text-xs opacity-60">Esc</kbd></Button>
-    </form>
-  );
+    function handleTab(e: KeyboardEvent) {
+      if (e.key !== 'Tab') return;
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+    }
+    container.addEventListener('keydown', handleTab);
+    return () => container.removeEventListener('keydown', handleTab);
+  }, [active, containerRef]);
 }
 ```
 
----
+Every modal (add camera, edit zone, confirm escalate, keyboard help) must trap focus — Tab cycles inside, focus never escapes to the page behind the backdrop.
 
-## Keyboard shortcuts help overlay
+## Electron shell — native menu + accelerators
 
-Show users what shortcuts exist (triggered by `?` key).
+Aniston VMS ships a desktop shell (control-room kiosk mode) via Electron. Native accelerators must dispatch the **same** Redux actions as the web hotkeys, routed through IPC, so behavior is identical in-browser and in the desktop app.
 
-```typescript
-// frontend/src/components/KeyboardShortcutsHelp.tsx
-const SHORTCUTS = [
-  { section: 'Navigation', shortcuts: [
-    { keys: ['G', 'D'], label: 'Go to Dashboard' },
-    { keys: ['G', 'I'], label: 'Go to Items' },
-    { keys: ['G', 'C'], label: 'Go to Categories' },
-  ]},
-  { section: 'Actions', shortcuts: [
-    { keys: ['Ctrl', 'K'], label: 'Open Command Palette' },
-    { keys: ['Ctrl', 'N'], label: 'Create New' },
-    { keys: ['Ctrl', '/'], label: 'Focus Search' },
-  ]},
-  { section: 'Tables', shortcuts: [
-    { keys: ['↑', '↓'], label: 'Navigate rows' },
-    { keys: ['↵'], label: 'Open selected row' },
-    { keys: ['Del'], label: 'Delete selected' },
-  ]},
-  { section: 'General', shortcuts: [
-    { keys: ['Esc'], label: 'Close modal / Cancel' },
-    { keys: ['Ctrl', '↵'], label: 'Submit form' },
-    { keys: ['?'], label: 'Show this help' },
-  ]},
-];
+```ts
+// electron/main/menu.ts
+import { Menu, type BrowserWindow, type MenuItemConstructorOptions } from 'electron';
 
-export function KeyboardShortcutsHelp({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
-  useHotkeys('escape', onClose, { enabled: isOpen });
-  if (!isOpen) return null;
+export function buildMenu(mainWindow: BrowserWindow) {
+  const send = (channel: string) => () => mainWindow.webContents.send(channel);
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative bg-white rounded-[16px] shadow-2xl p-6 w-full max-w-lg max-h-[80vh] overflow-y-auto">
-        <h2 className="font-poppins font-semibold text-lg mb-4">Keyboard Shortcuts</h2>
-        {SHORTCUTS.map((section) => (
-          <div key={section.section} className="mb-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">{section.section}</h3>
-            {section.shortcuts.map((s) => (
-              <div key={s.label} className="flex items-center justify-between py-1.5">
-                <span className="text-sm font-figtree text-gray-700">{s.label}</span>
-                <div className="flex gap-1">
-                  {s.keys.map((key) => (
-                    <kbd key={key} className="px-2 py-0.5 bg-gray-100 border border-gray-300 rounded-[4px] text-xs font-mono text-gray-600">
-                      {key}
-                    </kbd>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-```
-
----
-
-## Accessibility rules for keyboard users
-
-```
-WCAG 2.1 requirements (always follow these):
-- All interactive elements reachable by Tab
-- Focus indicator MUST be visible (never remove outline without a replacement)
-- Custom hotkeys must not conflict with browser/OS shortcuts (avoid Ctrl+W, Ctrl+T, Ctrl+N in default scope)
-- enableOnFormTags: false for navigation hotkeys (typing should not trigger nav)
-- enableOnFormTags: true only for action hotkeys that make sense in forms (Ctrl+Enter to submit)
-- Modal must trap focus (Tab cycles within modal, not outside)
-- After modal closes, return focus to the element that opened it
-
-Tailwind focus style (project standard — use on all interactive elements):
-focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0073ea] focus-visible:ring-offset-2
-```
-
----
-
-## Electron desktop shortcut integration
-
-When the app runs as a Windows EXE (agent-desktop/), shortcuts work at two layers:
-1. **Native menu accelerators** — defined in `main.ts` via `Menu.buildFromTemplate`, fire IPC events
-2. **Web hotkeys** — `react-hotkeys-hook` in the renderer, same as the browser
-
-The renderer must detect which environment it's in so shortcuts don't double-fire.
-
----
-
-### Environment detection helper (use everywhere)
-
-```typescript
-// frontend/src/lib/platform.ts
-export const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
-export const isMac     = navigator.platform.toLowerCase().includes('mac');
-
-// Use CmdOrCtrl label correctly in UI hints
-export const modKey = isMac ? '⌘' : 'Ctrl';
-```
-
----
-
-### Electron native menu with accelerators (agent-desktop/src/main.ts)
-
-Define the native application menu with accelerators. When a user presses the shortcut, Electron fires an IPC event to the renderer — the renderer handles navigation/actions via Redux.
-
-```typescript
-// agent-desktop/src/menuTemplate.ts
-import { Menu, app, BrowserWindow } from 'electron';
-
-export function buildMenu(mainWindow: BrowserWindow): void {
-  const send = (channel: string, payload?: unknown) =>
-    mainWindow.webContents.send(channel, payload);
-
-  const template: Electron.MenuItemConstructorOptions[] = [
-    {
-      label: app.name,
-      submenu: [
-        { label: 'About', role: 'about' },
-        { type: 'separator' },
-        { label: 'Quit',  role: 'quit', accelerator: 'CmdOrCtrl+Q' },
-      ],
-    },
-    {
-      label: 'File',
-      submenu: [
-        {
-          label: 'New…',
-          accelerator: 'CmdOrCtrl+N',
-          click: () => send('shortcut:action', 'create-new'),
-        },
-        {
-          label: 'Export…',
-          accelerator: 'CmdOrCtrl+E',
-          click: () => send('shortcut:action', 'export'),
-        },
-      ],
-    },
-    {
-      label: 'Go',
-      submenu: [
-        { label: 'Dashboard',  accelerator: 'CmdOrCtrl+1', click: () => send('shortcut:navigate', '/dashboard') },
-        { label: 'Items',      accelerator: 'CmdOrCtrl+2', click: () => send('shortcut:navigate', '/items') },
-        { label: 'Settings',   accelerator: 'CmdOrCtrl+,', click: () => send('shortcut:navigate', '/settings') },
-      ],
-    },
-    {
-      label: 'View',
-      submenu: [
-        { label: 'Command Palette', accelerator: 'CmdOrCtrl+K', click: () => send('shortcut:action', 'command-palette') },
-        { label: 'Keyboard Shortcuts', accelerator: 'CmdOrCtrl+/', click: () => send('shortcut:action', 'show-shortcuts') },
-        { type: 'separator' },
-        { label: 'Reload',      role: 'reload',      accelerator: 'CmdOrCtrl+R' },
-        { label: 'Force Reload', role: 'forceReload', accelerator: 'CmdOrCtrl+Shift+R' },
-        { label: 'Dev Tools',   role: 'toggleDevTools', accelerator: 'F12' },
-      ],
-    },
-    {
-      label: 'Edit',
-      submenu: [
-        { role: 'undo' }, { role: 'redo' },
-        { type: 'separator' },
-        { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' },
-      ],
-    },
+  const template: MenuItemConstructorOptions[] = [
+    { label: 'Aniston VMS', submenu: [{ role: 'about' }, { type: 'separator' }, { role: 'quit' }] },
+    { label: 'View', submenu: [
+      { label: 'Live Wall', accelerator: 'CmdOrCtrl+1', click: send('navigate:live-wall') },
+      { label: 'Incidents', accelerator: 'CmdOrCtrl+2', click: send('navigate:incidents') },
+      { label: 'Command Palette', accelerator: 'CmdOrCtrl+K', click: send('open:command-palette') },
+      { type: 'separator' },
+      { label: 'Toggle Fullscreen', accelerator: 'F', click: send('live:toggle-fullscreen') },
+      { role: 'reload' },
+      { role: 'toggleDevTools' },
+    ]},
+    { label: 'Camera', submenu: [
+      { label: 'Add Camera…', accelerator: 'CmdOrCtrl+Shift+C', click: send('open:add-camera') },
+    ]},
   ];
-
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 ```
 
-Call it from `main.ts`:
-```typescript
-// inside app.whenReady().then(...)
-buildMenu(mainWindow);
-```
+```ts
+// electron/preload.ts
+import { contextBridge, ipcRenderer } from 'electron';
 
----
-
-### Preload — expose shortcut IPC channels
-
-```typescript
-// agent-desktop/src/preload.ts — add to existing contextBridge
 contextBridge.exposeInMainWorld('electronAPI', {
-  // ... existing methods ...
-
-  // Menu shortcut events → renderer can listen to these
-  onShortcutNavigate: (cb: (route: string) => void) =>
-    ipcRenderer.on('shortcut:navigate', (_e, route) => cb(route)),
-  onShortcutAction: (cb: (action: string) => void) =>
-    ipcRenderer.on('shortcut:action', (_e, action) => cb(action)),
-
-  // Cleanup (call in useEffect return)
-  removeShortcutListeners: () => {
-    ipcRenderer.removeAllListeners('shortcut:navigate');
-    ipcRenderer.removeAllListeners('shortcut:action');
-  },
+  onNavigate: (cb: (route: string) => void) => ipcRenderer.on('navigate:live-wall', () => cb('live-wall')),
+  onOpenCommandPalette: (cb: () => void) => ipcRenderer.on('open:command-palette', cb),
+  onOpenAddCamera: (cb: () => void) => ipcRenderer.on('open:add-camera', cb),
 });
 ```
 
----
-
-### Renderer — useElectronShortcuts hook
-
-```typescript
-// frontend/src/hooks/useElectronShortcuts.ts
+```ts
+// frontend/src/hooks/useElectronShortcuts.ts — bridges native accelerators into the same Redux actions
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAppDispatch } from '@/hooks/useAuth';
-import { openCommandPalette, openKeyboardHelp, openCreateModal } from '@/app/uiSlice';
-import { isElectron } from '@/lib/platform';
+import { useAppDispatch } from '@/app/hooks';
+import { openCommandPalette, openCreateModal } from '@/app/uiSlice';
 
 export function useElectronShortcuts() {
-  const navigate   = useNavigate();
-  const dispatch   = useAppDispatch();
+  const dispatch = useAppDispatch();
+  const navigate = useNavigate();
+  const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
 
   useEffect(() => {
-    if (!isElectron || !window.electronAPI) return;
-
-    // Navigation events from native menu
-    window.electronAPI.onShortcutNavigate((route) => navigate(route));
-
-    // Action events from native menu
-    window.electronAPI.onShortcutAction((action) => {
-      if (action === 'command-palette') dispatch(openCommandPalette());
-      if (action === 'show-shortcuts')  dispatch(openKeyboardHelp());
-      if (action === 'create-new')      dispatch(openCreateModal());
-    });
-
-    return () => window.electronAPI?.removeShortcutListeners();
-  }, [navigate, dispatch]);
+    if (!isElectron) return;
+    window.electronAPI.onOpenCommandPalette(() => dispatch(openCommandPalette()));
+    window.electronAPI.onOpenAddCamera(() => dispatch(openCreateModal({ type: 'camera' })));
+    window.electronAPI.onNavigate((route) => navigate(`/${route}`));
+  }, [isElectron, dispatch, navigate]);
 }
 ```
 
----
-
-### useGlobalShortcuts — skip when Electron handles them natively
-
-```typescript
-// frontend/src/hooks/useGlobalShortcuts.ts
-import { useHotkeys } from 'react-hotkeys-hook';
-import { useNavigate } from 'react-router-dom';
-import { useAppDispatch } from '@/hooks/useAuth';
-import { openCommandPalette, openKeyboardHelp, openCreateModal, toggleSearchBar } from '@/app/uiSlice';
-import { isElectron } from '@/lib/platform';
-
-export function useGlobalShortcuts() {
-  const navigate = useNavigate();
-  const dispatch = useAppDispatch();
-
-  // In Electron, Ctrl+K / Ctrl+N are already handled by the native menu.
-  // Only register them as web hotkeys when NOT in Electron, to avoid double-fire.
-  const skipNative = isElectron;
-
-  useHotkeys('meta+k, ctrl+k', (e) => {
-    e.preventDefault();
-    dispatch(openCommandPalette());
-  }, { enableOnFormTags: false, enabled: !skipNative });
-
-  useHotkeys('meta+n, ctrl+n', (e) => {
-    e.preventDefault();
-    dispatch(openCreateModal());
-  }, { enableOnFormTags: false, enabled: !skipNative });
-
-  // G-chord navigation — safe in both web and Electron (not in native menu)
-  useHotkeys('g d', () => navigate('/dashboard'),   { enableOnFormTags: false });
-  useHotkeys('g i', () => navigate('/items'),       { enableOnFormTags: false });
-  useHotkeys('g s', () => navigate('/settings'),    { enableOnFormTags: false });
-  useHotkeys('g p', () => navigate('/profile'),     { enableOnFormTags: false });
-
-  useHotkeys('meta+/, ctrl+/', (e) => { e.preventDefault(); dispatch(toggleSearchBar()); },
-    { enableOnFormTags: false, enabled: !skipNative });
-
-  useHotkeys('shift+?', () => dispatch(openKeyboardHelp()),
-    { enableOnFormTags: false });
-}
-```
-
----
-
-### Mount both hooks at app root
-
-```typescript
-// frontend/src/App.tsx
-import { useGlobalShortcuts }   from '@/hooks/useGlobalShortcuts';
-import { useElectronShortcuts } from '@/hooks/useElectronShortcuts';
-
-export function AppShell() {
-  useGlobalShortcuts();    // web browser shortcuts
-  useElectronShortcuts();  // Electron native menu IPC events (no-op in browser)
-  return <Outlet />;
-}
-```
-
----
-
-### Global system shortcut (works even when app is minimized)
-
-Use sparingly — system shortcuts conflict with other apps. Only register for critical "bring app to front" use cases.
-
-```typescript
-// agent-desktop/src/main.ts — inside app.whenReady().then(...)
-import { globalShortcut } from 'electron';
-
-// Ctrl+Shift+B — bring the app window to front from anywhere on the OS
-app.whenReady().then(() => {
-  globalShortcut.register('CmdOrCtrl+Shift+B', () => {
-    mainWindow?.show();
-    mainWindow?.focus();
-  });
-});
-
-app.on('will-quit', () => {
-  globalShortcut.unregisterAll();
-});
-```
-
----
-
-## Quick reference — all standard shortcuts in this boilerplate
-
-| Shortcut | Action | Web | Electron EXE |
-|----------|--------|-----|--------------|
-| `Ctrl+K` / `Cmd+K` | Open command palette | `react-hotkeys-hook` | Native menu accelerator → IPC |
-| `?` | Open keyboard shortcuts help | `react-hotkeys-hook` | `react-hotkeys-hook` (no native menu) |
-| `Ctrl+N` | Create new | `react-hotkeys-hook` | Native menu accelerator → IPC |
-| `Ctrl+/` | Focus search | `react-hotkeys-hook` | Native menu accelerator → IPC |
-| `Ctrl+1/2/3` | Navigate sections | — | Native menu "Go" submenu → IPC |
-| `Ctrl+,` | Open settings | — | Native menu accelerator → IPC |
-| `Ctrl+Q` | Quit app | — | Native menu `role: 'quit'` |
-| `Ctrl+Shift+B` | Bring app to front | — | `globalShortcut` (OS-level) |
-| `G D` | Go to Dashboard | `react-hotkeys-hook` | `react-hotkeys-hook` |
-| `G I` | Go to Items | `react-hotkeys-hook` | `react-hotkeys-hook` |
-| `Esc` | Close modal / Cancel | `useModalKeyboard` | `useModalKeyboard` |
-| `Ctrl+Enter` | Submit form | `react-hotkeys-hook` | `react-hotkeys-hook` |
-| `↑ ↓` | Navigate table rows | `useTableKeyboard` | `useTableKeyboard` |
-| `Enter` | Open selected row | `useTableKeyboard` | `useTableKeyboard` |
-| `Delete` | Delete selected row | `useTableKeyboard` | `useTableKeyboard` |
-| `Home` / `End` | First / last row | `useTableKeyboard` | `useTableKeyboard` |
-| `F12` | Toggle DevTools | — | Native menu (dev only) |
-
----
+Don't double-register: when `isElectron`, the browser-only `meta+k` binding still works fine as a fallback, but the native accelerator is the primary path — one action, one source of truth per platform, never divergent behavior between them.
 
 ## Checklist
 
-- [ ] `isElectron` guard in `useGlobalShortcuts` — prevents double-fire for shortcuts handled by native menu
-- [ ] All native menu accelerators send IPC events — never navigate directly (renderer owns routing)
-- [ ] `onShortcutNavigate` / `onShortcutAction` listeners cleaned up in `useEffect` return
-- [ ] `globalShortcut.unregisterAll()` called on `will-quit`
-- [ ] No `Ctrl+W`, `Ctrl+T`, `Ctrl+R` as custom shortcuts — these have browser/OS meanings
-- [ ] `enableOnFormTags: false` on all navigation hotkeys
-- [ ] `enableOnFormTags: true` only on `Ctrl+Enter` (form submit)
-- [ ] Focus returns to trigger element after modal closes
-- [ ] All modals: `Escape` closes, Tab cycles within, focus trapped
+- [ ] Every global hotkey registered exactly once, at the app shell — never re-registered per page/component
+- [ ] Single-letter live-view keys (`m`, `f`, `s`, `1`–`9`) scoped to when a `LiveWallGrid`/`PlayerShell` actually has focus — never fire while typing in a form (`enableOnFormTags: false` unless explicitly needed)
+- [ ] `Escape` closes exactly one thing at a time (fullscreen → live view → modal → command palette), in that priority order — never closes two layers on one keypress
+- [ ] Focus indicator MUST be visible (never `outline: none` without a replacement) for all interactive elements reachable via Tab
+- [ ] `useFocusTrap` present on every modal — Tab/Shift+Tab cycle within, never escape to the page behind the backdrop
+- [ ] `?` opens the keyboard-shortcuts help overlay from anywhere except an open text input
+- [ ] Electron accelerators and web hotkeys dispatch the identical Redux action — no divergent behavior between desktop shell and browser
+- [ ] List/table keyboard nav: arrow keys move selection, `Enter` opens, `Delete`/`Backspace` opens a confirm dialog — never deletes/escalates directly
+- [ ] All standard OS/browser shortcuts (`Cmd+R`, `Cmd+W`, `Cmd+Tab`) left untouched — the app only claims shortcuts it explicitly owns
+- [ ] All interactive UI reachable by Tab alone (WCAG 2.1) — true regardless of whether any custom shortcut is enabled

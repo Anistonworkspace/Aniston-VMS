@@ -10,7 +10,7 @@
 | [`04-uiux-brief.md`](04-uiux-brief.md) | UI/UX brief — design tokens, layout, component direction |
 | [`05-backend-schema.md`](05-backend-schema.md) | Backend schema — every table, enum, index (source of truth for the ERD) |
 | [`06-implementation-plan.md`](06-implementation-plan.md) | Staged build plan (Stage 1 Foundation → hardening), working agreement |
-| [`design-reference.jpeg`](design-reference.jpeg) | Visual design reference for the UI |
+| [`actual-design.png`](actual-design.png) | Visual design reference for the UI |
 
 Master prompt for AI agents: [`../CLAUDE.md`](../CLAUDE.md).
 

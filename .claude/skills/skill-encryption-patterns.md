@@ -1,233 +1,150 @@
-# Skill — Encryption & Sensitive Data Patterns
-
-AES-256-GCM for field encryption, which fields to encrypt, how to search encrypted data.
+# Skill — Encryption & Sensitive-Data Patterns (AES-256-GCM for camera/router credentials)
 
 ---
 
-## Encryption utility (already in boilerplate)
+Field-level encryption for **camera and router credentials at rest**: RTSP passwords, ONVIF passwords,
+router admin passwords, and SIM PINs. `ENCRYPTION_KEY` must already exist in boilerplate — do not add a
+second encryption scheme. Reference: `docs/02-TRD.md` §"credential storage".
+
+## Encryption utility (already exists — apps/api/src/common/utils/encryption.ts)
 
 ```typescript
-// backend/src/utils/encryption.ts — already exists
-import crypto from 'crypto';
+import { createCipheriv, createDecipheriv, randomBytes, createHash } from 'crypto';
 
-const ALGORITHM  = 'aes-256-gcm';
-const KEY_HEX    = process.env.ENCRYPTION_KEY!;   // 64 hex chars = 32 bytes
-const KEY        = Buffer.from(KEY_HEX, 'hex');
+const ALGORITHM = 'aes-256-gcm';
+const IV_LENGTH = 16;
+const KEY = Buffer.from(process.env.ENCRYPTION_KEY!, 'hex'); // 32 bytes / 64 hex chars — checked at bootstrap
 
-if (KEY.length !== 32) {
-  throw new Error('ENCRYPTION_KEY must be 64 hex characters (32 bytes)');
-}
-
-export function encrypt(plaintext: string): string {
-  const iv         = crypto.randomBytes(12);                   // 96-bit IV for GCM
-  const cipher     = crypto.createCipheriv(ALGORITHM, KEY, iv);
-  const encrypted  = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
-  const authTag    = cipher.getAuthTag();                      // 128-bit auth tag (tamper detection)
-
-  // Format: <iv_hex>:<authTag_hex>:<ciphertext_hex>
+export function encrypt(plainText: string): string {
+  const iv = randomBytes(IV_LENGTH);
+  const cipher = createCipheriv(ALGORITHM, KEY, iv);
+  const encrypted = Buffer.concat([cipher.update(plainText, 'utf8'), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  // Store iv:authTag:ciphertext as one string — all three are required to decrypt
   return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted.toString('hex')}`;
 }
 
 export function decrypt(ciphertext: string): string {
   const [ivHex, tagHex, dataHex] = ciphertext.split(':');
-  if (!ivHex || !tagHex || !dataHex) throw new Error('Invalid ciphertext format');
-
-  const iv       = Buffer.from(ivHex, 'hex');
-  const authTag  = Buffer.from(tagHex, 'hex');
-  const data     = Buffer.from(dataHex, 'hex');
-
-  const decipher = crypto.createDecipheriv(ALGORITHM, KEY, iv);
-  decipher.setAuthTag(authTag);
-
-  return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
+  if (!ivHex || !tagHex || !dataHex) throw new Error('Malformed ciphertext');
+  const decipher = createDecipheriv(ALGORITHM, KEY, Buffer.from(ivHex, 'hex'));
+  decipher.setAuthTag(Buffer.from(tagHex, 'hex'));
+  return Buffer.concat([decipher.update(Buffer.from(dataHex, 'hex')), decipher.final()]).toString('utf8');
 }
 
-// Safe decrypt — returns null if decryption fails (corrupted or tampered)
-export function safeDecrypt(ciphertext: string | null | undefined): string | null {
+// Safe decrypt: NEVER let a corrupted/tampered row 500 a list endpoint — surface a redacted placeholder
+export function safeDecrypt(ciphertext: string | null): string | null {
   if (!ciphertext) return null;
-  try { return decrypt(ciphertext); }
-  catch { return null; }
+  try {
+    return decrypt(ciphertext);
+  } catch {
+    return null; // caller renders "•••• unavailable" instead of leaking a stack trace
+  }
 }
 ```
 
----
-
-## Which fields MUST be encrypted
-
-| Field | Why |
-|-------|-----|
-| Bank account / card number | Financial PII |
-| National ID / SSN | Government ID |
-| Passport number | Government ID |
-| API key / access token | Credential |
-| Third-party integration secret | Credential |
-| Personal contact details | PII |
-
-**Field naming convention:** always suffix with `Encrypted`
+## Which fields get encrypted (naming convention: must end in `Encrypted`)
 
 ```prisma
-model Item {
-  id                 String  @id @default(uuid())
-  // ... standard fields (organizationId, createdAt, updatedAt, deletedAt)
+// docs/05-backend-schema.md — Camera / Router models
+model Camera {
+  id                       String  @id @default(uuid())
+  organizationId           String
+  rtspUrl                  String  // host/path only — never embed credentials in the URL
+  rtspUsername             String?
+  rtspPasswordEncrypted    String? // AES-256-GCM, iv:authTag:ciphertext
+  onvifUsername            String?
+  onvifPasswordEncrypted   String? // AES-256-GCM
+}
 
-  // Plain text — searchable, not sensitive
-  name               String
-  description        String?
-  createdById        String        // owner — used for ownership-scoped access
-
-  // Encrypted — sensitive data
-  secretEncrypted    String?
-  apiKeyEncrypted    String?
+model Router {
+  id                        String  @id @default(uuid())
+  organizationId            String
+  adminUsername             String
+  adminPasswordEncrypted    String  // AES-256-GCM
+  simPinEncrypted           String? // AES-256-GCM
 }
 ```
 
----
-
-## Service — encrypt on write, decrypt on read
+## On save / on read
 
 ```typescript
-import { encrypt, safeDecrypt } from '../../utils/encryption.js';
-
-export class ItemService {
-  static async create(dto: CreateItemInput, actor: AuthUser) {
-    return prisma.$transaction(async (tx) => {
-      const item = await tx.item.create({
-        data: {
-          ...dto,
-          organizationId: actor.organizationId,
-          // Encrypt sensitive fields before storing
-          secretEncrypted: dto.secret ? encrypt(dto.secret) : null,
-          apiKeyEncrypted: dto.apiKey ? encrypt(dto.apiKey) : null,
-          // Remove plain text from the stored object
-          secret: undefined,
-          apiKey: undefined,
-        },
-      });
-      return item;
-    });
-  }
-
-  // ── Decrypt for response ─────────────────────────────────────────────────
-  static decryptItem(item: ItemWithEncrypted): ItemResponse {
-    return {
-      ...item,
-      // Expose decrypted fields under their plain names
-      secret: safeDecrypt(item.secretEncrypted),
-      apiKey: safeDecrypt(item.apiKeyEncrypted),
-      // Remove encrypted versions from the response
-      secretEncrypted: undefined,
-      apiKeyEncrypted: undefined,
-    };
-  }
-
-  static async getOne(id: string, actor: AuthUser) {
-    const item = await prisma.item.findFirst({
-      where: { id, organizationId: actor.organizationId, deletedAt: null },
-    });
-    if (!item) throw new NotFoundError('Item not found');
-    return this.decryptItem(item);
-  }
-}
-```
-
----
-
-## Role-based field exposure — only privileged roles see sensitive data
-
-```typescript
-// Limit sensitive-data visibility by role
-static async getOne(id: string, actor: AuthUser) {
-  const item = await prisma.item.findFirst({
-    where: { id, organizationId: actor.organizationId, deletedAt: null },
+// apps/api/src/modules/cameras/cameras.service.ts
+async create(actor: AuthUser, dto: CreateCameraInput) {
+  return this.prisma.camera.create({
+    data: {
+      organizationId: actor.organizationId,
+      rtspUrl: dto.rtspUrl,
+      rtspUsername: dto.rtspUsername,
+      rtspPasswordEncrypted: dto.rtspPassword ? encrypt(dto.rtspPassword) : null, // field name ends in Encrypted
+      onvifUsername: dto.onvifUsername,
+      onvifPasswordEncrypted: dto.onvifPassword ? encrypt(dto.onvifPassword) : null,
+    },
   });
-  if (!item) throw new NotFoundError('Item not found');
+}
 
-  const base = this.decryptItem(item);
-
-  // A restricted role (MEMBER) gets a redacted view of records it does not own
-  if (actor.role === UserRole.MEMBER && item.createdById !== actor.id) {
-    return {
-      id:          base.id,
-      name:        base.name,
-      description: base.description,
-      // Sensitive fields omitted entirely
-    };
-  }
-
-  return base;
+// Only PROJECT_ADMIN/SUPER_ADMIN reach this — see skill-rbac-advanced-patterns.md's cameraCredentials rows
+async getDecryptedCredentials(actor: AuthUser, id: string) {
+  const camera = await this.prisma.camera.findFirst({ where: { id, organizationId: actor.organizationId } });
+  if (!camera) throw new NotFoundException('Camera not found');
+  await this.auditLogger.log({ action: 'CAMERA_CREDENTIALS_VIEWED', actorId: actor.id, entityId: id });
+  return {
+    rtspPassword: safeDecrypt(camera.rtspPasswordEncrypted),
+    onvifPassword: safeDecrypt(camera.onvifPasswordEncrypted),
+  };
 }
 ```
 
----
-
-## Searching encrypted data — strategies
-
-AES-GCM ciphertext is non-deterministic (different each time), so you CANNOT do `WHERE secretEncrypted LIKE '%..%'`.
-
-### Strategy 1 — Searchable hash (for exact match)
+## Encrypted values are never returned in list endpoints
 
 ```typescript
-// Store a SHA-256 hash alongside the encrypted value for exact-match search
-const secretHash = crypto.createHash('sha256')
-  .update(dto.secret + process.env.HASH_PEPPER)  // add pepper to prevent rainbow tables
-  .digest('hex');
-
-await tx.item.create({
-  data: {
-    secretEncrypted: encrypt(dto.secret),
-    secretHash,      // searchable — add @@index([secretHash])
-  },
-});
-
-// Search by exact secret value:
-const hash = crypto.createHash('sha256').update(searchSecret + HASH_PEPPER).digest('hex');
-const item = await prisma.item.findFirst({ where: { secretHash: hash, organizationId } });
+// ✅ CORRECT — strip *Encrypted fields from the list/read DTO; only the single-credential endpoint decrypts
+function toCameraResponse(camera: Camera): CameraResponse {
+  const { rtspPasswordEncrypted, onvifPasswordEncrypted, ...safe } = camera;
+  return { ...safe, hasCredentials: Boolean(rtspPasswordEncrypted || onvifPasswordEncrypted) };
+}
 ```
 
-### Strategy 2 — Search by non-encrypted fields only
-
-For most searches: search by name, description, item ID. Never offer full sensitive-data search in the UI.
-
-### Strategy 3 — Decrypt in application for admin operations
-
-For admin bulk export: fetch all records, decrypt in the service, format report. Never SQL-search decrypted values.
-
----
-
-## Key rotation procedure
+## Searchable hash for exact-match lookups (e.g. router MAC / SIM ICCID dedupe)
 
 ```typescript
-// When ENCRYPTION_KEY changes, re-encrypt all existing records
-// Run as a one-time migration script — NOT in the API server
+// SHA-256 + pepper — deterministic, so it CAN be indexed and queried, unlike AES-256-GCM (random IV per call)
+const HASH_PEPPER = process.env.HASH_PEPPER!;
+function searchHash(value: string): string {
+  return createHash('sha256').update(value + HASH_PEPPER).digest('hex');
+}
 
-async function rotateEncryptionKey() {
-  const OLD_KEY = Buffer.from(process.env.OLD_ENCRYPTION_KEY!, 'hex');
-  const NEW_KEY = Buffer.from(process.env.NEW_ENCRYPTION_KEY!, 'hex');
+// Router.simIccidHash is a unique-indexed column alongside Router.simIccidEncrypted
+async findBySimIccid(iccid: string) {
+  return this.prisma.router.findFirst({ where: { simIccidHash: searchHash(iccid) } });
+}
+```
 
-  const items = await prisma.item.findMany({ where: { secretEncrypted: { not: null } } });
+## Key rotation (ENCRYPTION_KEY rollover, dual-key window)
 
-  for (const item of items) {
-    // Decrypt with old key
-    const plain = decryptWithKey(item.secretEncrypted!, OLD_KEY);
-    // Re-encrypt with new key
+```typescript
+// Run once during a planned rotation — decrypt every *Encrypted column with OLD_ENCRYPTION_KEY,
+// re-encrypt with NEW_ENCRYPTION_KEY, verified in a staging restore before promoting NEW → ENCRYPTION_KEY.
+const OLD_KEY = Buffer.from(process.env.OLD_ENCRYPTION_KEY!, 'hex');
+const NEW_KEY = Buffer.from(process.env.NEW_ENCRYPTION_KEY!, 'hex');
+
+async function rotateEncryptionKey(prisma: PrismaClient) {
+  const cameras = await prisma.camera.findMany({ where: { rtspPasswordEncrypted: { not: null } } });
+  for (const camera of cameras) {
+    const plain = decryptWithKey(camera.rtspPasswordEncrypted!, OLD_KEY);
     const reEncrypted = encryptWithKey(plain, NEW_KEY);
-    await prisma.item.update({ where: { id: item.id }, data: { secretEncrypted: reEncrypted } });
+    await prisma.camera.update({ where: { id: camera.id }, data: { rtspPasswordEncrypted: reEncrypted } });
   }
-
-  console.log(`Rotated ${items.length} records`);
 }
 ```
 
----
+## Rules
 
-## Checklist
-
-- [ ] `ENCRYPTION_KEY` is 64 hex chars (32 bytes) — validated on server start
-- [ ] All sensitive field names end in `Encrypted` in Prisma schema
-- [ ] `encrypt()` called on all sensitive fields BEFORE `prisma.create/update`
-- [ ] `safeDecrypt()` used on all reads (not `decrypt()`) — handles corrupted data gracefully
-- [ ] Encrypted ciphertext strings NEVER returned in API responses — always decrypted or omitted
-- [ ] Role check before exposing sensitive data — a MEMBER cannot see records it does not own
-- [ ] Searchable fields use SHA-256 hash with pepper, not the ciphertext
-- [ ] Key rotation script exists and is tested in staging before production
-- [ ] `ENCRYPTION_KEY` in GitHub secrets — never in `.env` committed to git
+1. Any DB column holding a plaintext credential (RTSP/ONVIF/router admin password, SIM PIN) is a bug — it
+   must be `*Encrypted` and go through `encrypt()`/`decrypt()`.
+2. Decryption failures never 500 a list/dashboard endpoint — use `safeDecrypt()` and show a redacted
+   placeholder; only the dedicated single-camera credentials endpoint may throw.
+3. `getDecryptedCredentials` is always audit-logged (`CAMERA_CREDENTIALS_VIEWED` / `ROUTER_CREDENTIALS_VIEWED`)
+   — see `skill-audit-log-patterns.md`.
+4. `ENCRYPTION_KEY` (and `OLD_/NEW_ENCRYPTION_KEY` during rotation) are read once at bootstrap and never
+   logged, never included in error messages, never sent to the frontend.

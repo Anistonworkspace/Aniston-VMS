@@ -1,35 +1,58 @@
 # Skill — Notification System Patterns
 
-Full lifecycle: create DB record → BullMQ → email + socket push → bell icon → mark as read.
+Full lifecycle: enqueue on BullMQ → worker persists + delivers (WhatsApp / Email via SES / in-app socket push) → bell icon → mark as read. Delivery is channel-abstracted, template-rendered, retried on failure, status-tracked, and deduped so the same alert doesn't storm a user's inbox.
+
+> Canon: `docs/03-app-flow.md` (notification triggers across user flows) · `docs/05-backend-schema.md` (`Notification` model + enums). Skim, don't re-derive.
 
 ---
 
 ## Prisma model
 
 ```prisma
-// prisma/schema.prisma — add this model
-model Notification {
-  id             String    @id @default(uuid())
-  organizationId String
-  userId         String    // recipient
+// prisma/schema.prisma — add these
+enum NotificationChannel {
+  IN_APP    // socket push only, no external delivery
+  EMAIL     // Amazon SES
+  WHATSAPP  // WhatsApp Business API
+}
 
-  type           String    // e.g. 'ITEM_APPROVED', 'TASK_ASSIGNED'
+enum NotificationStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+}
+
+model Notification {
+  id             String              @id @default(uuid())
+  organizationId String
+  userId         String              // recipient
+
+  type           String              // e.g. 'CAMERA_OFFLINE', 'RECORDING_FAILED' — see NotificationType
+  channel        NotificationChannel @default(IN_APP)
+  status         NotificationStatus  @default(PENDING)
+
   title          String
   body           String
-  isRead         Boolean   @default(false)
+  isRead         Boolean             @default(false)
   readAt         DateTime?
 
-  entityId       String?   // the record this notification is about
-  entityType     String?   // 'Item', 'Category', etc.
-  actionUrl      String?   // optional deep link
+  entityId       String?             // the record this notification is about
+  entityType     String?             // 'Camera', 'Recording', 'Export', etc.
+  actionUrl      String?             // deep link, e.g. /cameras/:id
+
+  dedupeKey      String?             // e.g. `camera-offline:${cameraId}` — guards against alert storms
+  sentAt         DateTime?
+  failedReason   String?
 
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   deletedAt      DateTime?
 
-  user           User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Restrict)
   organization   Organization @relation(fields: [organizationId], references: [id])
 
+  @@unique([organizationId, dedupeKey], name: "uq_notification_dedupe") // idempotency: null dedupeKey never conflicts
   @@index([organizationId])
   @@index([userId])
   @@index([userId, isRead])         // for fetching unread count efficiently
@@ -39,102 +62,215 @@ model Notification {
 
 ---
 
-## Shared enum
+## Shared enums
 
 ```typescript
-// shared/src/enums.ts — add to existing enums
+// libs/shared/src/enums.ts — add to existing enums
 export enum NotificationType {
-  ITEM_SUBMITTED    = 'ITEM_SUBMITTED',
-  ITEM_APPROVED     = 'ITEM_APPROVED',
-  ITEM_REJECTED     = 'ITEM_REJECTED',
-  TASK_ASSIGNED     = 'TASK_ASSIGNED',
-  DOCUMENT_UPLOADED = 'DOCUMENT_UPLOADED',
-  MENTION           = 'MENTION',
-  SYSTEM            = 'SYSTEM',
+  CAMERA_OFFLINE   = 'CAMERA_OFFLINE',
+  CAMERA_ONLINE    = 'CAMERA_ONLINE',
+  RECORDING_FAILED = 'RECORDING_FAILED',
+  STORAGE_LOW      = 'STORAGE_LOW',
+  MOTION_DETECTED  = 'MOTION_DETECTED',
+  EXPORT_READY     = 'EXPORT_READY',
+  SYSTEM           = 'SYSTEM',
+}
+
+export enum NotificationChannel {
+  IN_APP   = 'IN_APP',
+  EMAIL    = 'EMAIL',
+  WHATSAPP = 'WHATSAPP',
+}
+
+export enum NotificationStatus {
+  PENDING   = 'PENDING',
+  SENT      = 'SENT',
+  DELIVERED = 'DELIVERED',
+  FAILED    = 'FAILED',
 }
 ```
 
 ---
 
-## Notification service
+## Notification service (NestJS)
 
 ```typescript
-// backend/src/modules/notification/notification.service.ts
-import { prisma } from '../../lib/prisma.js';
-import { notificationQueue } from '../../jobs/queues.js';
-import { getIO } from '../../lib/socket.js';
-import type { AuthUser } from '@boilerplate/shared';
+// apps/api/src/modules/notifications/dto/create-notification.dto.ts
+import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
+import { NotificationType, NotificationChannel } from '@aniston-vms/shared';
 
-export class NotificationService {
+export class CreateNotificationDto {
+  @IsUUID() organizationId!: string;
+  @IsUUID() userId!: string;
+  @IsEnum(NotificationType) type!: NotificationType;
+  @IsOptional() @IsEnum(NotificationChannel) channel?: NotificationChannel;
+  @IsString() title!: string;
+  @IsString() body!: string;
+  @IsOptional() @IsUUID() entityId?: string;
+  @IsOptional() @IsString() entityType?: string;
+  @IsOptional() @IsString() actionUrl?: string;
+  @IsOptional() @IsString() dedupeKey?: string;
+}
+```
 
-  // ── Send a notification (called by other services) ───────────────────────
-  static async send({
-    organizationId,
-    userId,
-    type,
-    title,
-    body,
-    entityId,
-    entityType,
-    actionUrl,
-  }: {
-    organizationId: string;
-    userId: string;
-    type: string;
-    title: string;
-    body: string;
-    entityId?: string;
-    entityType?: string;
-    actionUrl?: string;
-  }) {
-    // For real-time delivery: add to queue (worker persists + emits)
-    await notificationQueue.add('send', {
-      organizationId, userId, type, title, body, entityId, entityType, actionUrl,
-    }, {
-      attempts: 3,
-      backoff: { type: 'exponential', delay: 3000 },
-    });
+```typescript
+// apps/api/src/modules/notifications/notifications.service.ts
+import { Injectable } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
+import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationsGateway } from './notifications.gateway';
+import { CreateNotificationDto } from './dto/create-notification.dto';
+import { NotificationChannel, type AuthUser } from '@aniston-vms/shared';
+
+@Injectable()
+export class NotificationsService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly gateway: NotificationsGateway,
+    @InjectQueue('notifications') private readonly notificationsQueue: Queue,
+  ) {}
+
+  // ── Send a notification (called by other services, e.g. CameraHealthService) ──
+  async send(dto: CreateNotificationDto) {
+    const { organizationId, dedupeKey } = dto;
+
+    // Idempotency: don't re-queue an alert already raised for the same entity
+    if (dedupeKey) {
+      const existing = await this.prisma.notification.findUnique({
+        where: { organizationId_dedupeKey: { organizationId, dedupeKey } },
+      });
+      if (existing) return existing;
+    }
+
+    // Queue only — the worker persists the row AND delivers on the chosen channel.
+    // Never write the DB record synchronously inside the request/response cycle.
+    return this.notificationsQueue.add(
+      'deliver',
+      { ...dto, channel: dto.channel ?? NotificationChannel.IN_APP },
+      { attempts: 3, backoff: { type: 'exponential', delay: 3000 }, removeOnComplete: true },
+    );
   }
 
   // ── List notifications for the current user ──────────────────────────────
-  static async list(actor: AuthUser, page = 1, limit = 20) {
-    const where = {
-      userId: actor.id,
-      organizationId: actor.organizationId,
-      deletedAt: null,
-    };
+  async list(actor: AuthUser, page = 1, limit = 20) {
+    const where = { userId: actor.id, organizationId: actor.organizationId, deletedAt: null };
 
-    const [data, total, unreadCount] = await prisma.$transaction([
-      prisma.notification.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-      prisma.notification.count({ where }),
-      prisma.notification.count({ where: { ...where, isRead: false } }),
+    const [data, total, unreadCount] = await this.prisma.$transaction([
+      this.prisma.notification.findMany({ where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * limit, take: limit }),
+      this.prisma.notification.count({ where }),
+      this.prisma.notification.count({ where: { ...where, isRead: false } }),
     ]);
 
     return { data, meta: { page, limit, total, unreadCount } };
   }
 
   // ── Mark one as read ─────────────────────────────────────────────────────
-  static async markRead(id: string, actor: AuthUser) {
-    await prisma.notification.updateMany({
+  async markRead(id: string, actor: AuthUser) {
+    await this.prisma.notification.updateMany({
       where: { id, userId: actor.id, organizationId: actor.organizationId },
       data: { isRead: true, readAt: new Date() },
     });
-    // Emit to update unread count in header
-    getIO().to(`user:${actor.id}`).emit('notification:read', { id });
+    this.gateway.emitToUser(actor.id, 'notification:read', { id });
   }
 
   // ── Mark all as read ─────────────────────────────────────────────────────
-  static async markAllRead(actor: AuthUser) {
-    await prisma.notification.updateMany({
+  async markAllRead(actor: AuthUser) {
+    await this.prisma.notification.updateMany({
       where: { userId: actor.id, organizationId: actor.organizationId, isRead: false },
       data: { isRead: true, readAt: new Date() },
     });
-    getIO().to(`user:${actor.id}`).emit('notification:all-read');
+    this.gateway.emitToUser(actor.id, 'notification:all-read', {});
+  }
+}
+```
+
+```typescript
+// apps/api/src/modules/notifications/notifications.controller.ts — scope-guarded RBAC
+@UseGuards(JwtAuthGuard, ScopeGuard)
+@Controller('notifications')
+export class NotificationsController {
+  constructor(private readonly notifications: NotificationsService) {}
+
+  @Get()
+  @RequireScope('notifications:read')
+  list(@CurrentUser() actor: AuthUser, @Query('page') page?: number) {
+    return this.notifications.list(actor, page);
+  }
+
+  @Patch(':id/read')
+  @RequireScope('notifications:read')
+  markRead(@Param('id') id: string, @CurrentUser() actor: AuthUser) {
+    return this.notifications.markRead(id, actor);
+  }
+
+  @Patch('read-all')
+  @RequireScope('notifications:read')
+  markAllRead(@CurrentUser() actor: AuthUser) {
+    return this.notifications.markAllRead(actor);
+  }
+}
+```
+
+---
+
+## BullMQ delivery worker
+
+```typescript
+// apps/workers/src/notifications/notifications.processor.ts
+import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Job } from 'bullmq';
+import { PrismaService } from '../prisma/prisma.service';
+import { EmailService } from '../email/email.service';         // Amazon SES
+import { WhatsAppService } from '../whatsapp/whatsapp.service';  // WhatsApp Business API
+import { NotificationsGateway } from '../notifications/notifications.gateway';
+import { NotificationChannel, NotificationStatus } from '@aniston-vms/shared';
+
+@Processor('notifications')
+export class NotificationsProcessor extends WorkerHost {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly email: EmailService,
+    private readonly whatsapp: WhatsAppService,
+    private readonly gateway: NotificationsGateway,
+  ) {
+    super();
+  }
+
+  async process(job: Job) {
+    const { organizationId, userId, type, title, body, entityId, entityType, actionUrl, channel, dedupeKey } = job.data;
+
+    // Persist first so the bell icon has a row even if the external channel below fails
+    const notification = await this.prisma.notification.create({
+      data: { organizationId, userId, type, title, body, entityId, entityType, actionUrl, channel, dedupeKey, status: NotificationStatus.PENDING },
+    });
+
+    try {
+      switch (channel) {
+        case NotificationChannel.EMAIL:
+          await this.email.send({ userId, template: type, data: { title, body, actionUrl } }); // renders the template mapped to `type`
+          break;
+        case NotificationChannel.WHATSAPP:
+          await this.whatsapp.sendTemplate({ userId, template: type, params: { title, body } });
+          break;
+        case NotificationChannel.IN_APP:
+        default:
+          break; // socket push below is the delivery for this channel
+      }
+      await this.prisma.notification.update({
+        where: { id: notification.id },
+        data: { status: NotificationStatus.SENT, sentAt: new Date() },
+      });
+    } catch (err) {
+      await this.prisma.notification.update({
+        where: { id: notification.id },
+        data: { status: NotificationStatus.FAILED, failedReason: (err as Error).message },
+      });
+      throw err; // rethrow so BullMQ applies the job's retry/backoff policy
+    }
+
+    // Real-time push regardless of channel, so the bell icon updates live
+    this.gateway.emitToUser(userId, 'notification:new', notification);
   }
 }
 ```
@@ -144,16 +280,18 @@ export class NotificationService {
 ## How other services send notifications
 
 ```typescript
-// In ItemService.approve()
-await NotificationService.send({
-  organizationId: actor.organizationId,
-  userId: item.ownerId,                   // the item owner's user ID
-  type:  NotificationType.ITEM_APPROVED,
-  title: 'Item approved',
-  body:  `Your ${item.type} item from ${item.startDate} has been approved.`,
-  entityId:   item.id,
-  entityType: 'Item',
-  actionUrl:  `/items/${item.id}`,
+// apps/api/src/modules/cameras/camera-health.service.ts
+await this.notifications.send({
+  organizationId: camera.organizationId,
+  userId: camera.ownerId,
+  type: NotificationType.CAMERA_OFFLINE,
+  channel: NotificationChannel.WHATSAPP,
+  title: 'Camera offline',
+  body: `${camera.name} at ${camera.location} stopped responding.`,
+  entityId: camera.id,
+  entityType: 'Camera',
+  actionUrl: `/cameras/${camera.id}`,
+  dedupeKey: `camera-offline:${camera.id}`, // re-pinging the same offline camera won't spam the user
 });
 ```
 
@@ -163,6 +301,8 @@ await NotificationService.send({
 
 ```typescript
 // frontend/src/features/notifications/notificationApi.ts
+import type { Notification, PaginatedResponse } from '@aniston-vms/shared';
+
 export const notificationApi = createApi({
   reducerPath: 'notificationApi',
   baseQuery,
@@ -193,7 +333,7 @@ export const notificationApi = createApi({
 import { useState, useEffect } from 'react';
 import { Bell } from 'lucide-react';
 import { useGetNotificationsQuery, useMarkReadMutation, useMarkAllReadMutation } from '@/features/notifications/notificationApi';
-import { getSocket } from '@/lib/socket';
+import { getSocket } from '@/lib/socket'; // connects to the NestJS NotificationsGateway (socket.io adapter)
 import { notificationApi } from '@/features/notifications/notificationApi';
 import { useDispatch } from 'react-redux';
 
@@ -206,7 +346,7 @@ export function NotificationBell() {
 
   const unreadCount = data?.meta?.unreadCount ?? 0;
 
-  // Listen for new notifications via socket
+  // Listen for real-time pushes from NotificationsGateway (in-app channel)
   useEffect(() => {
     const socket = getSocket();
     if (!socket) return;
@@ -214,13 +354,13 @@ export function NotificationBell() {
     const onNew = () => {
       dispatch(notificationApi.util.invalidateTags(['Notification']));
     };
-    socket.on('notification:new',     onNew);
-    socket.on('notification:read',    onNew);
+    socket.on('notification:new',      onNew);
+    socket.on('notification:read',     onNew);
     socket.on('notification:all-read', onNew);
 
     return () => {
-      socket.off('notification:new',     onNew);
-      socket.off('notification:read',    onNew);
+      socket.off('notification:new',      onNew);
+      socket.off('notification:read',     onNew);
       socket.off('notification:all-read', onNew);
     };
   }, [dispatch]);
@@ -279,10 +419,12 @@ export function NotificationBell() {
 ## Checklist
 
 - [ ] `Notification` model has `@@index([userId, isRead])` for fast unread count queries
-- [ ] `NotificationService.send()` adds to queue — never creates DB record synchronously in the API request
-- [ ] Worker persists notification AND emits socket event in one step
-- [ ] Bell icon updates count via socket — no polling
-- [ ] `markRead` and `markAllRead` both emit socket events to keep other tabs in sync
-- [ ] `actionUrl` on notification enables deep linking to the related record
-- [ ] Unread count badge shows `99+` for large counts (not `128`)
-- [ ] Clicking a notification marks it read AND navigates to `actionUrl`
+- [ ] `NotificationsService.send()` adds to the BullMQ queue — never creates the DB record synchronously inside the request
+- [ ] `NotificationsProcessor` (`apps/workers`) persists the row, delivers on the requested `channel`, and updates `status` — in that order
+- [ ] `dedupeKey` + the `[organizationId, dedupeKey]` unique index prevent alert storms (e.g. repeated `camera-offline` pings)
+- [ ] Every controller route sits behind `JwtAuthGuard` + `ScopeGuard`, and every Prisma query is scoped by `organizationId`
+- [ ] Bell icon updates count via the `NotificationsGateway` socket push — no polling
+- [ ] `markRead` and `markAllRead` both emit socket events to keep other tabs/devices in sync
+- [ ] `actionUrl` on a notification enables deep linking to the related record (e.g. `/cameras/:id`)
+- [ ] Unread count badge shows `99+` for large counts, never the raw number
+- [ ] Failed EMAIL/WHATSAPP deliveries set `status: FAILED` + `failedReason` and rethrow so BullMQ's retry/backoff policy applies

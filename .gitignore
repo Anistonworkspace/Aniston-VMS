@@ -109,3 +109,6 @@ graphify-out/
 
 # Graphify-first mode toggle (per-machine)
 .claude/graph-mode
+
+# Scratch working files (temporary, do not commit)
+.scratch/

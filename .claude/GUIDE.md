@@ -1,11 +1,14 @@
-# GUIDE — how this boilerplate works & how to use it
+# GUIDE — How the Aniston VMS toolkit works & how to use it
 
-The single entry point. This is a **generic AI-agent boilerplate**: it ships no application
-code — the value is the `.claude/` agent layer, the memory system, the token-saving proxy,
-the codebase graph, and the build tooling for 5 targets (web, PWA, Android, iOS, desktop).
-You describe what to build; the agents build it cheaply. Deep references are linked, not
-duplicated: [`docs/NEW-MACHINE-SETUP.md`](../docs/NEW-MACHINE-SETUP.md),
-[`docs/reference-index.md`](../docs/reference-index.md), [`docs/tech-stack-targets.md`](../docs/tech-stack-targets.md).
+The single entry point for the Aniston VMS project's Claude Code harness: the `.claude/` agent
+layer, the memory system, the token-saving proxy, the codebase graph, and the build tooling for
+5 targets (web, PWA, Android, iOS, desktop) — all aimed at building the CCTV monitoring platform
+described in the plan docs. You describe what to build; the agents build it against the target
+architecture in [`docs/02-TRD.md`](../docs/02-TRD.md) + [`docs/06-implementation-plan.md`](../docs/06-implementation-plan.md).
+Deep references are linked, not duplicated: [`docs/NEW-MACHINE-SETUP.md`](../docs/NEW-MACHINE-SETUP.md),
+[`docs/reference-index.md`](../docs/reference-index.md) (full canon doc index — `01-PRD.md` through
+`06-implementation-plan.md`, `claude-code-master-prompt.md`, `actual-design.png`),
+[`docs/tech-stack-targets.md`](../docs/tech-stack-targets.md).
 
 ---
 
@@ -162,7 +165,7 @@ when Claude judges a change needs it. Flip it with `/graph-always on`.
 | `/proxy-start` | Start pxpipe (token-saving proxy) |
 | `/proxy-status` | pxpipe health + tokens saved |
 | `/stop-anyway` | Override the completion gate once |
-| `/project-init` | Rename the boilerplate for a new project |
+| `/project-init` | Rename the toolkit for a new project |
 | `/help` | List all commands |
 
 ---

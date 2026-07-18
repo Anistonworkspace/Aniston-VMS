@@ -1,315 +1,251 @@
-# Skill — PWA Patterns
+# Skill — PWA Patterns (Operator Dashboard)
 
-Workbox cache strategies, offline data sync, install prompt, push notifications, background sync.
+Aniston VMS's `apps/web` (React + Vite) is the control-room web app operators use to watch the
+live wall, triage incidents and manage cameras across ~125 sites. This skill covers making it
+installable and usable on a flaky link (control-room PC, or a supervisor's tablet/phone): manifest,
+service worker caching strategy, offline fallback, install prompt, and push notifications for
+incident/escalation alerts. Canon: `docs/tech-stack-targets.md` (PWA is retained/deferred scope —
+the primary target is the web SPA; do not block Stages 1–10 work on this) and `docs/02-TRD.md §12`
+(self-monitoring/alerts) for what a push notification actually represents.
 
 ---
 
-## Vite PWA config (workbox injectManifest)
+## Vite PWA config (`apps/web/vite.config.ts`)
 
 ```typescript
-// vite.config.ts
 import { VitePWA } from 'vite-plugin-pwa';
 
-export default defineConfig({
-  plugins: [
-    react(),
-    VitePWA({
-      strategies:    'injectManifest',
-      srcDir:        'src',
-      filename:      'sw.ts',
-      registerType:  'autoUpdate',
-      injectRegister: 'auto',
-      manifest: {
-        name:             'Boilerplate App',
-        short_name:       'BPApp',
-        description:      'Enterprise HR Management',
-        theme_color:      '#0073ea',
-        background_color: '#f1ece3',
-        display:          'standalone',
-        orientation:      'portrait',
-        start_url:        '/',
-        icons: [
-          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
-          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
-        ],
-        screenshots: [
-          { src: '/screenshots/desktop.png', sizes: '1280x800', type: 'image/png', form_factor: 'wide' },
-          { src: '/screenshots/mobile.png',  sizes: '390x844',  type: 'image/png', form_factor: 'narrow' },
-        ],
-      },
-    }),
-  ],
+VitePWA({
+  registerType: 'prompt',        // never auto-reload a control-room tab mid-incident
+  injectRegister: 'auto',
+  strategies: 'injectManifest',  // custom sw.ts — we need fine-grained caching per route
+  srcDir: 'src',
+  filename: 'sw.ts',
+  manifest: {
+    name: 'Aniston VMS',
+    short_name: 'Aniston VMS',
+    description: 'Aniston VMS — CCTV monitoring & incident management for the camera fleet',
+    theme_color: '#0073ea',
+    background_color: '#ffffff',
+    display: 'standalone',
+    start_url: '/',
+    icons: [
+      { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+      { src: '/icon-maskable-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+      { src: '/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    ],
+  },
+  devOptions: { enabled: false },
 });
 ```
 
+`registerType: 'prompt'` (not `'autoUpdate'`) is deliberate: a background auto-reload while an
+operator is scrubbing playback or acknowledging an incident would drop their place. Use the
+update-prompt UI below instead.
+
 ---
 
-## Service worker (src/sw.ts)
+## Service worker (`apps/web/src/sw.ts`)
+
+Workbox `injectManifest` mode — precache the app shell, then hand-pick runtime strategies per
+route. **Never cache live video** (`/{path}/whep`, `/{path}/index.m3u8` from MediaMTX, or
+`/api/cameras/:id/live/*`) — streams must always hit the network.
 
 ```typescript
-// src/sw.ts — compiled by Workbox injectManifest
 import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching';
 import { registerRoute } from 'workbox-routing';
-import { NetworkFirst, StaleWhileRevalidate, CacheFirst } from 'workbox-strategies';
+import { NetworkFirst, CacheFirst, CacheOnly } from 'workbox-strategies';
 import { ExpirationPlugin } from 'workbox-expiration';
 import { BackgroundSyncPlugin } from 'workbox-background-sync';
 
-declare let self: ServiceWorkerGlobalScope;
-
-// Precache all assets injected by Vite
 precacheAndRoute(self.__WB_MANIFEST);
 cleanupOutdatedCaches();
 
-// API calls — NetworkFirst (always try network, fall back to cache)
+// Dashboard/API reads (incidents, cameras, zones) — fresh when online, stale-but-usable offline
 registerRoute(
-  ({ url }) => url.pathname.startsWith('/api/'),
+  ({ url }) => url.pathname.startsWith('/api/incidents') || url.pathname.startsWith('/api/cameras'),
   new NetworkFirst({
-    cacheName: 'api-cache',
-    plugins: [
-      new ExpirationPlugin({ maxEntries: 100, maxAgeSeconds: 5 * 60 }),
-    ],
+    cacheName: 'vms-api-cache',
+    plugins: [new ExpirationPlugin({ maxEntries: 60, maxAgeSeconds: 60 })],
   }),
 );
 
-// Static assets — CacheFirst (serve from cache, update in background)
+// Camera snapshots/thumbnails — safe to cache a bit longer, they're stills not live streams
 registerRoute(
-  ({ request }) => request.destination === 'image',
+  ({ url }) => url.pathname.startsWith('/api/cameras') && url.pathname.endsWith('/snapshot'),
   new CacheFirst({
-    cacheName: 'images',
-    plugins: [
-      new ExpirationPlugin({ maxEntries: 60, maxAgeSeconds: 30 * 24 * 60 * 60 }),
-    ],
+    cacheName: 'vms-snapshot-cache',
+    plugins: [new ExpirationPlugin({ maxEntries: 200, maxAgeSeconds: 300 })],
   }),
 );
 
-// Google Fonts — StaleWhileRevalidate
-registerRoute(
-  ({ url }) => url.origin === 'https://fonts.googleapis.com' || url.origin === 'https://fonts.gstatic.com',
-  new StaleWhileRevalidate({ cacheName: 'google-fonts' }),
-);
+// Never cache live/playback stream endpoints
+registerRoute(({ url }) => /\/(whep|index\.m3u8)$/.test(url.pathname), new CacheOnly());
 
-// Background sync for offline form submissions
-const bgSyncPlugin = new BackgroundSyncPlugin('offline-queue', {
-  maxRetentionTime: 24 * 60,   // retry for 24 hours
-});
-
+const bgSyncPlugin = new BackgroundSyncPlugin('incident-ack-queue', { maxRetentionTime: 24 * 60 });
 registerRoute(
-  ({ url, request }) => url.pathname.startsWith('/api/') && request.method === 'POST',
-  new NetworkFirst({
-    cacheName: 'api-post-cache',
-    plugins: [bgSyncPlugin],
-  }),
+  ({ url, request }) => url.pathname.match(/\/api\/incidents\/.*\/(ack|resolve)$/) && request.method === 'POST',
+  new NetworkFirst({ plugins: [bgSyncPlugin] }),
   'POST',
 );
 
-// Push notification handler
 self.addEventListener('push', (event) => {
   const data = event.data?.json() ?? {};
   event.waitUntil(
-    self.registration.showNotification(data.title ?? 'Notification', {
-      body:  data.body,
-      icon:  '/icons/icon-192.png',
+    self.registration.showNotification(data.title ?? 'Aniston VMS alert', {
+      body: data.body,
+      icon: '/icons/icon-192.png',
       badge: '/icons/badge-72.png',
-      data:  { url: data.url ?? '/' },
+      data: { url: data.url ?? '/incidents' },
     }),
   );
 });
 
-// Notification click — open the app
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+  const url = event.notification.data?.url ?? '/incidents';
   event.waitUntil(
-    clients.matchAll({ type: 'window' }).then((clientList) => {
-      const url = event.notification.data.url;
-      const existing = clientList.find(c => c.url.includes(url) && 'focus' in c);
+    self.clients.matchAll({ type: 'window' }).then((clientList) => {
+      const existing = clientList.find((c) => c.url.includes(url));
       if (existing) return existing.focus();
-      return clients.openWindow(url);
+      return self.clients.openWindow(url);
     }),
   );
 });
 ```
 
+If offline, the SPA falls back to `apps/web/public/offline.html` (a static "Reconnecting to
+Aniston VMS…" page) — no cached React bundle can safely render live camera state, so keep this
+fallback minimal and honest about what's stale.
+
 ---
 
-## Install prompt hook
+## Update prompt (`apps/web/src/components/PwaUpdatePrompt.tsx`)
 
 ```typescript
-// frontend/src/hooks/usePwaInstall.ts
-import { useState, useEffect } from 'react';
+import { useRegisterSW } from 'virtual:pwa-register/react';
+
+export function PwaUpdatePrompt() {
+  const { needRefresh, updateServiceWorker } = useRegisterSW();
+  if (!needRefresh) return null;
+  return (
+    <div className="fixed bottom-4 right-4 z-[9999] rounded-[var(--card-radius)] bg-white p-4 shadow-lg">
+      <p className="text-sm">A new version of Aniston VMS is available.</p>
+      <button className="btn-primary-sm mt-2" onClick={() => updateServiceWorker(true)}>
+        Reload now
+      </button>
+    </div>
+  );
+}
+```
+
+## Install prompt (`apps/web/src/hooks/usePwaInstall.ts`)
+
+```typescript
+import { useEffect, useState } from 'react';
 
 interface BeforeInstallPromptEvent extends Event {
-  prompt: () => Promise<void>;
+  prompt(): Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 }
 
 export function usePwaInstall() {
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [isInstalled,   setIsInstalled]   = useState(false);
+  const [canInstall, setCanInstall] = useState(false);
 
   useEffect(() => {
-    const handler = (e: Event) => {
-      e.preventDefault();
-      setInstallPrompt(e as BeforeInstallPromptEvent);
+    const handler = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as BeforeInstallPromptEvent);
+      setCanInstall(true);
     };
     window.addEventListener('beforeinstallprompt', handler);
-
-    // Detect if already installed
-    if (window.matchMedia('(display-mode: standalone)').matches) {
-      setIsInstalled(true);
-    }
-
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
 
-  const install = async () => {
+  const promptInstall = async () => {
     if (!installPrompt) return;
     await installPrompt.prompt();
-    const result = await installPrompt.userChoice;
-    if (result.outcome === 'accepted') {
-      setIsInstalled(true);
-      setInstallPrompt(null);
-    }
+    await installPrompt.userChoice;
+    setInstallPrompt(null);
+    setCanInstall(false);
   };
 
-  return { canInstall: !!installPrompt && !isInstalled, isInstalled, install };
-}
-
-// Usage in header/banner:
-function InstallBanner() {
-  const { canInstall, install } = usePwaInstall();
-  if (!canInstall) return null;
-
-  return (
-    <div className="floating-card rounded-[var(--card-radius)] p-3 flex items-center gap-3 mb-4">
-      <span className="text-sm">Install the app for offline access</span>
-      <button className="btn btn--primary btn--sm" onClick={install}>Install</button>
-    </div>
-  );
+  return { canInstall, promptInstall };
 }
 ```
 
----
+Useful on a supervisor's tablet mounted next to the video wall — installs Aniston VMS as a
+standalone app so it isn't lost among browser tabs.
 
-## Push notification subscription
-
-```typescript
-// frontend/src/hooks/usePushNotifications.ts
-export function usePushNotifications() {
-  const [subscribePush] = useSubscribePushMutation();
-
-  const subscribe = async () => {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
-
-    const reg = await navigator.serviceWorker.ready;
-    const existing = await reg.pushManager.getSubscription();
-    if (existing) return;    // already subscribed
-
-    const sub = await reg.pushManager.subscribe({
-      userVisibleOnly:      true,
-      applicationServerKey: process.env.VITE_VAPID_PUBLIC_KEY,
-    });
-
-    await subscribePush(sub).unwrap();
-    toast.success('Push notifications enabled');
-  };
-
-  const requestAndSubscribe = async () => {
-    const permission = await Notification.requestPermission();
-    if (permission === 'granted') await subscribe();
-  };
-
-  return { requestAndSubscribe };
-}
-
-// Backend — save subscription
-// POST /api/push/subscribe
-static async savePushSubscription(sub: PushSubscription, actor: AuthUser) {
-  await prisma.pushSubscription.upsert({
-    where:  { endpoint: sub.endpoint },
-    update: { keys: sub.keys, userId: actor.id },
-    create: { endpoint: sub.endpoint, keys: sub.keys, userId: actor.id, organizationId: actor.organizationId },
-  });
-}
-
-// Backend — send push notification via web-push
-import webpush from 'web-push';
-
-export async function sendPush(userId: string, payload: { title: string; body: string; url?: string }) {
-  const subs = await prisma.pushSubscription.findMany({ where: { userId } });
-  await Promise.allSettled(
-    subs.map(s => webpush.sendNotification(
-      { endpoint: s.endpoint, keys: s.keys as any },
-      JSON.stringify(payload),
-    )),
-  );
-}
-```
-
----
-
-## Offline indicator
+## Online status (`apps/web/src/hooks/useOnlineStatus.ts`)
 
 ```typescript
-// frontend/src/hooks/useOnlineStatus.ts
+import { useEffect, useState } from 'react';
+
 export function useOnlineStatus() {
-  const [online, setOnline] = useState(navigator.onLine);
+  const [isOnline, setOnline] = useState(navigator.onLine);
   useEffect(() => {
-    const on  = () => setOnline(true);
+    const on = () => setOnline(true);
     const off = () => setOnline(false);
-    window.addEventListener('online',  on);
+    window.addEventListener('online', on);
     window.addEventListener('offline', off);
-    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
+    return () => {
+      window.removeEventListener('online', on);
+      window.removeEventListener('offline', off);
+    };
   }, []);
-  return online;
-}
-
-// Global offline banner:
-function OfflineBanner() {
-  const online = useOnlineStatus();
-  if (online) return null;
-  return (
-    <div className="fixed bottom-0 left-0 right-0 z-[9999] bg-[var(--negative-color)] text-white text-center py-2 text-sm">
-      You are offline. Changes will sync when you reconnect.
-    </div>
-  );
+  return isOnline;
 }
 ```
 
+Drive an `<OfflineBanner />` from this — an operator needs to know *their browser* lost the
+network, as distinct from a camera/site going offline (that's an `Incident`, not a connectivity
+banner).
+
 ---
 
-## Workbox update prompt
+## Push notifications (incident/escalation)
+
+Push delivers the same incident/escalation events that also go out over WhatsApp Cloud API and
+email (SES) — see `skill-email-patterns.md` and `skill-notification-patterns.md`. It's an
+additional channel, not a replacement: `NotificationStatus` tracks delivery per channel.
 
 ```typescript
-// frontend/src/components/PwaUpdatePrompt.tsx
-import { useRegisterSW } from 'virtual:pwa-register/react';
+// apps/web/src/hooks/usePushNotifications.ts
+import { useSubscribePushMutation } from '@/features/notifications/notificationsApi';
 
-export function PwaUpdatePrompt() {
-  const { needRefresh: [needRefresh], updateServiceWorker } = useRegisterSW();
+export async function requestAndSubscribe(registration: ServiceWorkerRegistration) {
+  const permission = await Notification.requestPermission();
+  if (permission !== 'granted') return null;
 
-  if (!needRefresh) return null;
-
-  return (
-    <div className="fixed bottom-4 right-4 z-[9999] floating-card rounded-[var(--card-radius)] p-4 max-w-sm shadow-[var(--box-shadow-large)]">
-      <p className="text-sm font-medium">A new version is available</p>
-      <div className="flex gap-2 mt-3">
-        <button className="btn btn--primary btn--sm" onClick={() => updateServiceWorker(true)}>Update now</button>
-      </div>
-    </div>
-  );
+  const subscription = await registration.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: import.meta.env.VITE_VAPID_PUBLIC_KEY,
+  });
+  return subscription;
 }
 ```
 
+```typescript
+// apps/api/src/notifications/push.controller.ts (NestJS) — @Post('subscribe') → POST /api/push/subscribe
+// Persists { userId, organizationId, endpoint, keys } via Prisma — scoped like every other query
+// (see skill-prisma-patterns.md: organizationId + deletedAt: null on every read).
+```
+
+The `apps/workers` BullMQ notification worker that fans out incident/escalation events (see
+`skill-notification-patterns.md`) calls `webpush.sendNotification(subscription, payload)` for
+every stored subscription belonging to users with visibility on the affected zone/site.
+
 ---
 
-## Checklist
+## Checklist before shipping a PWA change
 
-- [ ] `manifest.json` has `display: "standalone"`, both icon sizes (192 + 512), `start_url: "/"`
-- [ ] `theme_color` matches `var(--primary-color)` (#0073ea)
-- [ ] Service worker precaches all static assets via `__WB_MANIFEST`
-- [ ] API routes use `NetworkFirst` — never `CacheOnly` for API calls
-- [ ] `beforeinstallprompt` captured and install button shown when appropriate
-- [ ] Offline banner shown when `navigator.onLine` is false
-- [ ] Push subscription endpoint saved to DB per user (for server-side send)
-- [ ] `notificationclick` handler opens the relevant in-app URL
-- [ ] Update prompt shown when new service worker is waiting
-- [ ] Lighthouse PWA score ≥ 90
+- [ ] Manifest `name`/`short_name`/`description` say **Aniston VMS**, not the boilerplate strings
+- [ ] Live stream endpoints (`whep`, `index.m3u8`, `/live/*`) are never cached
+- [ ] `registerType: 'prompt'` preserved — no silent reload during an active incident review
+- [ ] Offline banner clearly distinguishes "your browser is offline" from a camera/site incident
+- [ ] Push payload includes a `url` so `notificationclick` deep-links to the right incident
+- [ ] Icons exist at all four declared sizes/purposes in `apps/web/public/`
+- [ ] Lighthouse PWA score ≥ 90/100 on `apps/web/dist` before merging

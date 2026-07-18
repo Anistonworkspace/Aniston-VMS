@@ -18,7 +18,7 @@
 | `04-uiux-brief.md` | UI/UX brief + design tokens direction |
 | `05-backend-schema.md` | Full schema — tables, enums, indexes (ERD source of truth) |
 | `06-implementation-plan.md` | Staged build plan (Stage 1 Foundation → hardening) |
-| `design-reference.jpeg` | Visual design reference |
+| `actual-design.png` | Visual design reference |
 | `architecture.md` · `database-erd.md` · `api-conventions.md` · `tech-stack-targets.md` | Working docs kept in sync with the plan docs |
 
 ---
@@ -44,7 +44,7 @@
 | `agent-refactor` | 3+ duplicate code blocks found |
 | `agent-security` | `/security-scan`, auth changes, file uploads |
 | `agent-test-writer` | `/add-tests`, new module with no tests |
-| `agent-ui-ux` | New page/component, mobile layout issues |
+| `agent-vms-uiux` | New page/component, mobile layout issues |
 | `agent-electron` | Electron desktop, IPC handlers, auto-update, NSIS installer |
 | `agent-system-designer` | 8-question interview → ADR + PRD + ERD. Blocks `/new-module` when no design exists |
 | `agent-completion-loop` | Orchestrates `/build-loop` — test-first, iterate to green, wire-completeness gate. Cost-capped |

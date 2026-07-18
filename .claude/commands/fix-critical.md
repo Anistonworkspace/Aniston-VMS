@@ -30,7 +30,7 @@ For P0: confirm the rollback plan is ready BEFORE writing any code.
 
 **Step 4 — Verify**
 - Run the validation command from the plan
-- Run the full test suite: npm test
+- Run the full test suite: `pnpm test` (target the affected workspace, e.g. `pnpm --filter @aniston-vms/api test`)
 - Test manually using the steps to reproduce — confirm bug is gone
 
 **Step 5 — Write a unit test**

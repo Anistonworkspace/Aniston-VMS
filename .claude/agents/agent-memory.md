@@ -18,8 +18,8 @@ Cross-cutting — operates on memory/, not application code.
 ## Session START — run these steps in order
 
 1. Read `memory/INDEX.md` → summarize what the project is and what's in memory
-2. Read `memory/project-state.md` → report: what is built, what is pending, known issues
-3. Read `memory/coordination/locks.md` → report any ACTIVE locks (who holds what)
+2. Read `memory/project-state.md` → report: what is built, what is pending, known issues (e.g. "health engine Stage 2 built; incident escalation Stage 4 pending")
+3. Read `memory/coordination/locks.md` → report any ACTIVE locks (who holds what — e.g. `prisma/schema.prisma` locked for the incidents migration)
 4. Read `memory/coordination/handoffs.md` → report any OPEN handoffs you can pick up
 5. Scan `memory/plans/_active/` → list in-flight plans by title and last-modified date
 6. Read `memory/coordination/shared-context.md` → report any cross-agent learnings
@@ -32,7 +32,7 @@ If any of those files don't exist yet — create them using the templates in mem
 ## Session END — run these steps in order
 
 1. Update `memory/project-state.md`:
-   - Mark completed items ✅
+   - Mark completed items ✅ (e.g. "camera health scoring ✅")
    - Add newly built items
    - Update pending items
    - Update known issues
@@ -52,9 +52,9 @@ If any of those files don't exist yet — create them using the templates in mem
 
 Scan last 24h of `memory/changes/` and current `memory/plans/_active/`. Flag:
 - Code edited without a plan in `_active/` or `_archive/` → **PROCESS VIOLATION**
-- Plans in `_active/` older than 7 days with no progress notes → **STALE PLAN**
+- Plans in `_active/` older than 7 days with no progress updates → **STALE PLAN**
 - Locks marked ACTIVE for >30 min without updates → **STALE LOCK**
-- `project-state.md` lists something as built that doesn't exist in the codebase → **DRIFT**
+- `project-state.md` lists something as built that doesn't exist in the codebase → **DRIFT** (e.g. claims the WhatsApp escalation worker exists but `apps/workers` has no such queue)
 
 ---
 
@@ -68,9 +68,9 @@ Scan last 24h of `memory/changes/` and current `memory/plans/_active/`. Flag:
 
 ## Output format
 ```
-✅ project-state.md updated (auth module marked complete)
-✅ changes/2026-05-18-changes.md appended (5 entries)
-✅ plan auth-module.md moved to _archive/
-⚠️  plan item-module.md has no progress since 2026-05-17 — possible stale
-❌ DRIFT: project-state.md says "notification module built" but no such directory exists
+✅ project-state.md updated (health-check scheduler marked complete)
+✅ changes/2026-07-17-changes.md appended (5 entries)
+✅ plan incident-escalation.md moved to _archive/
+⚠️  plan live-wall-sessions.md has no progress since 2026-07-10 — possible stale
+❌ DRIFT: project-state.md says "image-analysis service built" but services/image-analysis has no such directory
 ```

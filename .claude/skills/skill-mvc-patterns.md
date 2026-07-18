@@ -1,345 +1,306 @@
-# Skill — MVC Code Patterns
+# Skill — NestJS Module Patterns
 
-Read this when writing or reviewing any backend module. These are the exact patterns every service/controller/route must follow.
+Read this when writing or reviewing any `apps/api` module. Aniston VMS's backend
+is **NestJS**, not Express: there is no bare `router.get(...)`. Every HTTP
+surface is a `Controller → Service → PrismaService` chain, wired by Nest's DI
+container. These are the exact patterns every module/controller/provider must
+follow. See `docs/02-TRD.md` §8 (auth & scope) and `docs/05-backend-schema.md`
+for the entities referenced below.
 
 ---
 
 ## Controller pattern (always thin)
 
-```typescript
-// ✅ CORRECT — controller is a pass-through
-static async create(req: Request, res: Response, next: NextFunction) {
-  try {
-    const result = await MyService.create(req.body, req.user);
-    res.status(201).json({ success: true, data: result });
-  } catch (err) { next(err); }
-}
+A controller's only job is: bind the HTTP request to a typed DTO, apply
+guards/pipes, call **one** service method, return what the service gives it.
+No Prisma import, no business logic, no manual `try/catch` for domain errors
+(a global filter handles that — see below).
 
-// ❌ WRONG — controller has business logic
-static async create(req: Request, res: Response, next: NextFunction) {
-  const exists = await prisma.thing.findFirst({ where: { name: req.body.name } });
-  if (exists) return res.status(409).json({ success: false, error: { code: 'CONFLICT' } });
-  // ^ This belongs in the service
+```typescript
+// ✅ CORRECT — apps/api/src/modules/incidents/incidents.controller.ts
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ScopeGuard } from '../auth/guards/scope.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { RequestScope } from '../auth/decorators/request-scope.decorator';
+import { Role } from '@aniston-vms/shared';
+import { IncidentsService } from './incidents.service';
+import { ListIncidentQueryDto } from './dto/list-incident-query.dto';
+import { AcknowledgeIncidentDto } from './dto/acknowledge-incident.dto';
+
+@UseGuards(JwtAuthGuard, ScopeGuard)
+@Controller('incidents')
+export class IncidentsController {
+  constructor(private readonly incidents: IncidentsService) {}
+
+  @Get()
+  list(@Query() query: ListIncidentQueryDto, @RequestScope() scope: AccessScope) {
+    return this.incidents.list(query, scope);
+  }
+
+  @Get(':id')
+  getOne(@Param('id') id: string, @RequestScope() scope: AccessScope) {
+    return this.incidents.getOne(id, scope);
+  }
+
+  @Patch(':id/acknowledge')
+  @Roles(Role.OPERATOR, Role.ENGINEER, Role.PROJECT_ADMIN, Role.SUPER_ADMIN)
+  acknowledge(
+    @Param('id') id: string,
+    @Body() dto: AcknowledgeIncidentDto,
+    @RequestScope() scope: AccessScope,
+  ) {
+    return this.incidents.acknowledge(id, dto, scope);
+  }
 }
 ```
 
-## Service guard pattern (always check before write)
-
 ```typescript
-// ✅ CORRECT — guard then write in transaction
-static async create(dto: CreateInput, actor: AuthUser) {
-  const existing = await prisma.thing.findFirst({
-    where: { name: dto.name, organizationId: actor.organizationId, deletedAt: null },
-  });
-  if (existing) throw new ConflictError('Already exists');
-
-  return prisma.$transaction(async (tx) => {
-    const record = await tx.thing.create({ data: { ...dto, organizationId: actor.organizationId } });
-    await auditLogger.log(tx, { action: 'THING_CREATED', entity: 'Thing', entityId: record.id, actorId: actor.id, organizationId: actor.organizationId });
-    return record;
-  });
+// ❌ WRONG — Express habits leaking into a Nest controller
+@Controller('incidents')
+export class IncidentsController {
+  @Patch(':id/acknowledge')
+  async acknowledge(@Param('id') id: string, @Body() body: any, @Req() req) {
+    // ❌ no DTO — `any` body, no validation
+    // ❌ importing prisma directly in a controller
+    const incident = await prisma.incident.findUnique({ where: { id } });
+    if (!incident) throw new Error('not found'); // ❌ generic Error, no HTTP mapping
+    if (incident.zoneId !== req.user.zoneId) { /* ❌ hand-rolled scope check */ }
+    incident.status = 'ACKNOWLEDGED'; // ❌ mutating a plain object, no transaction
+    await prisma.incident.update({ where: { id }, data: incident });
+    return incident;
+  }
 }
 ```
 
-## List with pagination (mandatory pattern)
+---
+
+## DTOs with class-validator (never a bare object)
+
+Every request body/query is a class decorated with `class-validator` +
+`class-transformer`, validated by the global `ValidationPipe`
+(`whitelist: true, forbidNonWhitelisted: true, transform: true` in
+`main.ts`). This replaces the old `zod` `CreateItemSchema` pattern — same
+intent, different library.
 
 ```typescript
-static async list(query: ListQuery, actor: AuthUser) {
-  const { page = 1, limit = 20 } = query;
-  const where = { organizationId: actor.organizationId, deletedAt: null };
-  const [data, total] = await prisma.$transaction([
-    prisma.thing.findMany({ where, skip: (page - 1) * limit, take: limit, orderBy: { createdAt: 'desc' } }),
-    prisma.thing.count({ where }),
-  ]);
-  return { data, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+// apps/api/src/modules/incidents/dto/acknowledge-incident.dto.ts
+import { IsOptional, IsString, MaxLength } from 'class-validator';
+
+export class AcknowledgeIncidentDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
+}
+
+// apps/api/src/modules/incidents/dto/list-incident-query.dto.ts
+import { IsEnum, IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IncidentStatus } from '@aniston-vms/shared';
+
+export class ListIncidentQueryDto {
+  @IsOptional() @IsUUID() siteId?: string;
+  @IsOptional() @IsUUID() zoneId?: string;
+  @IsOptional() @IsEnum(IncidentStatus) status?: IncidentStatus;
+
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) page = 1;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit = 20;
 }
 ```
 
-## Soft delete (never hard delete)
+`forbidNonWhitelisted: true` means any property not declared on the DTO is
+**rejected**, not silently dropped — this is what stops a client from
+smuggling `status: 'CLOSED'` into a create payload.
+
+---
+
+## Guards: authentication, scope, roles, permissions
+
+Four guards run, in order, in front of anything sensitive. None of this is
+`req.user.orgId === body.orgId` hand-rolled in a controller.
+
+1. **`JwtAuthGuard`** — verifies the access token, attaches `req.user`
+   (`{ userId, role }`).
+2. **`ScopeGuard`** — loads the caller's `user_access_scopes` rows and
+   attaches a resolved `AccessScope` (`{ scopeType, allowedRegionIds,
+   allowedSiteIds, allowedZoneIds }`) to the request via the
+   `@RequestScope()` param decorator. **Every** query in the service layer
+   must be filtered through this — see `skill-prisma-patterns.md`.
+3. **`RolesGuard`** + **`@Roles(...)`** — coarse role check
+   (`SUPER_ADMIN | PROJECT_ADMIN | OPERATOR | ENGINEER | CLIENT_VIEWER |
+   AUDITOR`).
+4. **`PermissionsGuard`** + **`@RequirePermission('incident:doctor-mark')`** —
+   fine-grained action check for the handful of actions that don't map
+   cleanly to a role (e.g. only an `ENGINEER` who has been assigned the
+   incident, or a `PROJECT_ADMIN`, may perform the physical-fix
+   `doctor-mark` on `CAM-042`, and only `PROJECT_ADMIN`/`SUPER_ADMIN` may
+   `CLOSED` an incident).
+
+```typescript
+// ✅ CORRECT — declarative, testable in isolation
+@Patch(':id/doctor-mark')
+@RequirePermission('incident:doctor-mark')
+doctorMark(@Param('id') id: string, @RequestScope() scope: AccessScope) {
+  return this.incidents.doctorMark(id, scope);
+}
+```
+
+```typescript
+// ❌ WRONG — permission logic buried inside the handler body
+@Patch(':id/doctor-mark')
+doctorMark(@Param('id') id: string, @Req() req) {
+  if (req.user.role !== 'ENGINEER' && req.user.role !== 'PROJECT_ADMIN') {
+    throw new ForbiddenException(); // works, but not reusable/auditable across routes
+  }
+  ...
+}
+```
+
+---
+
+## Error handling: domain exceptions + one global filter
+
+Services throw typed domain errors. Controllers never `try/catch` them. A
+single `AllExceptionsFilter` maps every thrown error to the response shape
+`{ statusCode, error, message }` and makes sure a raw Prisma error (which can
+leak column names) **never** reaches the client.
+
+```typescript
+// apps/api/src/common/errors/domain-errors.ts
+export class NotFoundError extends Error { constructor(entity: string, id: string) { super(`${entity} ${id} not found`); } }
+export class ForbiddenError extends Error {}
+export class ConflictError extends Error {} // e.g. optimistic-lock miss on a status transition
+export class ValidationError extends Error { constructor(public readonly issues: unknown) { super('Validation failed'); } }
+```
+
+```typescript
+// apps/api/src/common/filters/all-exceptions.filter.ts
+@Catch()
+export class AllExceptionsFilter implements ExceptionFilter {
+  catch(exception: unknown, host: ArgumentsHost) {
+    const res = host.switchToHttp().getResponse<Response>();
+    if (exception instanceof NotFoundError) return res.status(404).json({ statusCode: 404, error: 'NOT_FOUND', message: exception.message });
+    if (exception instanceof ForbiddenError) return res.status(403).json({ statusCode: 403, error: 'FORBIDDEN', message: exception.message });
+    if (exception instanceof ConflictError) return res.status(409).json({ statusCode: 409, error: 'CONFLICT', message: exception.message });
+    if (exception instanceof ValidationError) return res.status(422).json({ statusCode: 422, error: 'VALIDATION_ERROR', message: exception.message, issues: exception.issues });
+    // NEVER pass a raw Prisma error message through — log it, return a generic 500.
+    this.logger.error(exception);
+    return res.status(500).json({ statusCode: 500, error: 'INTERNAL', message: 'Something went wrong' });
+  }
+}
+```
+
+---
+
+## Service layer: business logic, transactions, side effects after commit
+
+The service is where the rule "acknowledging an incident stops future
+escalation steps" lives — never in the controller, never in the Prisma
+call site.
+
+```typescript
+// apps/api/src/modules/incidents/incidents.service.ts
+@Injectable()
+export class IncidentsService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditLogger,
+    @InjectQueue('escalation') private readonly escalationQueue: Queue,
+    @InjectQueue('notifications') private readonly notificationsQueue: Queue,
+  ) {}
+
+  async acknowledge(id: string, dto: AcknowledgeIncidentDto, scope: AccessScope) {
+    const updated = await this.prisma.$transaction(async (tx) => {
+      // Optimistic lock: only rows still in an escalatable status qualify.
+      const result = await tx.incident.updateMany({
+        where: { id, status: { in: ['ALERTED', 'CONFIRMED'] }, zoneId: { in: scope.allowedZoneIds } },
+        data: { status: 'ACKNOWLEDGED', acknowledgedAt: new Date(), acknowledgedById: scope.userId },
+      });
+      if (result.count === 0) throw new ConflictError('Incident already acknowledged, resolved, or out of scope');
+
+      await tx.incidentEvent.create({
+        data: { incidentId: id, type: 'ACKNOWLEDGED', actorId: scope.userId, note: dto.note },
+      });
+      await this.audit.record(tx, { entityType: 'Incident', entityId: id, action: 'ACKNOWLEDGE', actorId: scope.userId });
+      return tx.incident.findUniqueOrThrow({ where: { id } });
+    });
+
+    // Side effects go OUTSIDE the transaction — a Redis-backed queue add
+    // must never be rolled back by a DB failure, and a DB commit must
+    // never be blocked waiting on Redis.
+    await this.escalationQueue.removeRepeatableByKey(`incident:${id}:escalate`).catch(() => undefined);
+    await this.notificationsQueue.add('incident.acknowledged', { incidentId: id });
+
+    return updated;
+  }
+}
+```
+
+---
+
+## Soft delete — never a hard `DELETE` on operational data
+
+`cameras`, `incidents`, `users`, `routers` etc. are soft-deleted
+(`deletedAt: DateTime?`) for audit/compliance reasons — a camera that's been
+decommissioned must still resolve in a 6-month-old `incident_events`
+timeline. Every read filters `deletedAt: null`; the "delete" endpoint only
+ever sets the timestamp.
 
 ```typescript
 // ✅ CORRECT
-await tx.thing.update({ where: { id }, data: { deletedAt: new Date() } });
+await this.prisma.camera.update({ where: { id }, data: { deletedAt: new Date() } });
 
-// ❌ WRONG
-await prisma.thing.delete({ where: { id } });
-```
-
-## AppError subclasses (throw these, not raw Error)
-
-```typescript
-throw new NotFoundError('Thing not found');         // 404
-throw new ConflictError('Already exists');           // 409
-throw new ForbiddenError('Not authorized');          // 403
-throw new ValidationError('Invalid input');          // 400
-throw new AppError('Something went wrong', 500);    // custom
-```
-
-## Middleware chain (EXACT order, no deviation)
-
-```typescript
-router.post(
-  '/',
-  authenticate,                              // 1. verify JWT → set req.user
-  requirePermission('things', 'create'),     // 2. RBAC check — register 'things' in shared/src/permissions.ts FIRST
-  validateRequest({ body: CreateSchema }),   // 3. Zod parse → req.body typed
-  ThingController.create,                    // 4. thin controller
-);
+// ❌ WRONG — destroys audit trail, breaks historical incident/report joins
+await this.prisma.camera.delete({ where: { id } });
 ```
 
 ---
 
-## Full controller template (paste-able)
+## List endpoints: pagination is mandatory, scope is mandatory
 
 ```typescript
-// <name>.controller.ts — THIN: parse → service → respond
-import type { Request, Response, NextFunction } from 'express';
-import { ItemService } from './item.service.js';
-import type { CreateItemInput } from './item.validation.js';
-
-export class ItemController {
-  static async create(req: Request, res: Response, next: NextFunction) {
-    try {
-      const item = await ItemService.create(
-        req.body as CreateItemInput,
-        req.user,
-      );
-      res.status(201).json({ success: true, data: item });
-    } catch (err) {
-      next(err);
-    }
-  }
-
-  static async list(req: Request, res: Response, next: NextFunction) {
-    try {
-      const result = await ItemService.list(req.query, req.user);
-      res.json({ success: true, data: result.data, meta: result.meta });
-    } catch (err) {
-      next(err);
-    }
-  }
-
-  static async getOne(req: Request, res: Response, next: NextFunction) {
-    try {
-      const item = await ItemService.getOne(req.params.id, req.user);
-      res.json({ success: true, data: item });
-    } catch (err) {
-      next(err);
-    }
-  }
-
-  static async update(req: Request, res: Response, next: NextFunction) {
-    try {
-      const item = await ItemService.update(req.params.id, req.body, req.user);
-      res.json({ success: true, data: item });
-    } catch (err) {
-      next(err);
-    }
-  }
-
-  static async remove(req: Request, res: Response, next: NextFunction) {
-    try {
-      await ItemService.remove(req.params.id, req.user);
-      res.json({ success: true, data: null });
-    } catch (err) {
-      next(err);
-    }
-  }
+// ✅ CORRECT
+async list(query: ListIncidentQueryDto, scope: AccessScope) {
+  const where: Prisma.IncidentWhereInput = {
+    deletedAt: null,
+    zoneId: { in: scope.allowedZoneIds },
+    ...(query.siteId && { camera: { siteId: query.siteId } }),
+    ...(query.status && { status: query.status }),
+  };
+  const [items, totalItems] = await this.prisma.$transaction([
+    this.prisma.incident.findMany({ where, orderBy: { firstDetectedAt: 'desc' }, skip: (query.page - 1) * query.limit, take: query.limit }),
+    this.prisma.incident.count({ where }),
+  ]);
+  return { items, page: query.page, limit: query.limit, totalItems, totalPages: Math.ceil(totalItems / query.limit) };
 }
 ```
 
----
-
-## Full service template (paste-able)
-
-```typescript
-// <name>.service.ts — THICK: all logic, all DB, all side effects
-import { prisma } from '../../lib/prisma.js';
-import { auditLogger } from '../../utils/auditLogger.js';
-import { emailQueue } from '../../jobs/queues.js';
-import { ConflictError, NotFoundError } from '../../middleware/errorHandler.js';
-import type { AuthUser } from '@boilerplate/shared';
-import type { CreateItemInput, UpdateItemInput, ListItemQuery } from './item.validation.js';
-
-export class ItemService {
-  static async create(dto: CreateItemInput, actor: AuthUser) {
-    // 1. Guard: check uniqueness
-    const existing = await prisma.item.findFirst({
-      where: { email: dto.email, organizationId: actor.organizationId, deletedAt: null },
-    });
-    if (existing) throw new ConflictError('An item with this email already exists');
-
-    // 2. Write in a transaction
-    const item = await prisma.$transaction(async (tx) => {
-      const created = await tx.item.create({
-        data: { ...dto, organizationId: actor.organizationId },
-      });
-      await auditLogger.log(tx, {
-        action: 'ITEM_CREATED',
-        entity: 'Item',
-        entityId: created.id,
-        actorId: actor.id,
-        organizationId: actor.organizationId,
-        after: created,
-      });
-      return created;
-    });
-
-    // 3. Side effects outside the transaction
-    await emailQueue.add('welcome-item', { itemId: item.id });
-
-    return item;
-  }
-
-  static async list(query: ListItemQuery, actor: AuthUser) {
-    const { page = 1, limit = 20 } = query;
-    const where = { organizationId: actor.organizationId, deletedAt: null };
-
-    const [data, total] = await prisma.$transaction([
-      prisma.item.findMany({
-        where,
-        skip: (page - 1) * limit,
-        take: limit,
-        orderBy: { createdAt: 'desc' },
-      }),
-      prisma.item.count({ where }),
-    ]);
-
-    return { data, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } };
-  }
-
-  static async getOne(id: string, actor: AuthUser) {
-    const item = await prisma.item.findFirst({
-      where: { id, organizationId: actor.organizationId, deletedAt: null },
-    });
-    if (!item) throw new NotFoundError('Item not found');
-    return item;
-  }
-
-  static async update(id: string, dto: UpdateItemInput, actor: AuthUser) {
-    const item = await this.getOne(id, actor); // re-uses guard above
-
-    return prisma.$transaction(async (tx) => {
-      const updated = await tx.item.update({
-        where: { id },
-        data: dto,
-      });
-      await auditLogger.log(tx, {
-        action: 'ITEM_UPDATED',
-        entity: 'Item',
-        entityId: id,
-        actorId: actor.id,
-        organizationId: actor.organizationId,
-        before: item,
-        after: updated,
-      });
-      return updated;
-    });
-  }
-
-  static async remove(id: string, actor: AuthUser) {
-    await this.getOne(id, actor);
-
-    await prisma.$transaction(async (tx) => {
-      await tx.item.update({
-        where: { id },
-        data: { deletedAt: new Date() },
-      });
-      await auditLogger.log(tx, {
-        action: 'ITEM_DELETED',
-        entity: 'Item',
-        entityId: id,
-        actorId: actor.id,
-        organizationId: actor.organizationId,
-      });
-    });
-  }
-}
-```
+Never return an unbounded `findMany` on `incidents`, `health_checks`, or
+`audit_logs` — these tables grow forever.
 
 ---
 
-## Full validation template (paste-able)
+## Module wiring (providers, not singletons)
 
 ```typescript
-// <name>.validation.ts — Zod schemas imported from shared OR defined here
-import { z } from 'zod';
-import { PaginationSchema } from '@boilerplate/shared';
-
-export const CreateItemSchema = z.object({
-  name: z.string().min(2).max(100),
-  email: z.string().email(),
-  categoryId: z.string().uuid(),
-});
-
-export const UpdateItemSchema = CreateItemSchema.partial();
-
-export const ListItemQuerySchema = PaginationSchema.extend({
-  categoryId: z.string().uuid().optional(),
-  status: z.enum(['ACTIVE', 'INACTIVE']).optional(),
-});
-
-export type CreateItemInput = z.infer<typeof CreateItemSchema>;
-export type UpdateItemInput = z.infer<typeof UpdateItemSchema>;
-export type ListItemQuery = z.infer<typeof ListItemQuerySchema>;
+// apps/api/src/modules/incidents/incidents.module.ts
+@Module({
+  imports: [BullModule.registerQueue({ name: 'escalation' }, { name: 'notifications' })],
+  controllers: [IncidentsController],
+  providers: [IncidentsService, PrismaService, AuditLogger],
+  exports: [IncidentsService], // only the service crosses module boundaries — see skill-ddd-bounded-contexts-patterns.md
+})
+export class IncidentsModule {}
 ```
 
----
+## Anti-patterns to flag in review
 
-## Full routes template (paste-able)
-
-```typescript
-// <name>.routes.ts — wire middleware chain
-import { Router } from 'express';
-import { z } from 'zod';
-import { authenticate, requirePermission } from '../../middleware/auth.middleware.js';
-import { validateRequest } from '../../middleware/validation.js';
-import { ItemController } from './item.controller.js';
-import {
-  CreateItemSchema,
-  UpdateItemSchema,
-  ListItemQuerySchema,
-} from './item.validation.js';
-
-export const itemRouter = Router();
-
-itemRouter.get(
-  '/',
-  authenticate,
-  requirePermission('items', 'read'),
-  validateRequest({ query: ListItemQuerySchema }),
-  ItemController.list,
-);
-
-itemRouter.post(
-  '/',
-  authenticate,
-  requirePermission('items', 'create'),
-  validateRequest({ body: CreateItemSchema }),
-  ItemController.create,
-);
-
-itemRouter.get(
-  '/:id',
-  authenticate,
-  requirePermission('items', 'read'),
-  validateRequest({ params: z.object({ id: z.string().uuid() }) }),
-  ItemController.getOne,
-);
-
-itemRouter.patch(
-  '/:id',
-  authenticate,
-  requirePermission('items', 'update'),
-  validateRequest({ params: z.object({ id: z.string().uuid() }), body: UpdateItemSchema }),
-  ItemController.update,
-);
-
-itemRouter.delete(
-  '/:id',
-  authenticate,
-  requirePermission('items', 'delete'),
-  validateRequest({ params: z.object({ id: z.string().uuid() }) }),
-  ItemController.remove,
-);
-```
+| Express-era habit | Why it's wrong here | Correct NestJS pattern |
+|---|---|---|
+| `import { prisma } from '../../lib/prisma'` in a controller/service | Bypasses DI, untestable, no per-request scoping | `constructor(private prisma: PrismaService)` |
+| Validating with hand-rolled `if (!body.x)` | No consistent error shape, easy to miss a field | class-validator DTO + global `ValidationPipe` |
+| `req.user.role === 'ADMIN'` inline | Not reusable, not visible in route metadata | `@Roles()` / `@RequirePermission()` + guard |
+| Filtering only by `organizationId` | Aniston VMS has no multi-tenant `organizationId` — access is scoped by **region/site/zone** | filter by `scope.allowedZoneIds` (see `ScopeGuard`) |
+| Business logic in the controller | Untestable without an HTTP layer, hides rules from the domain model | move to the `*.service.ts` |
+| Enqueuing a BullMQ job inside `$transaction` | Redis isn't part of the Postgres transaction — a rollback won't un-queue the job | enqueue **after** the transaction commits |

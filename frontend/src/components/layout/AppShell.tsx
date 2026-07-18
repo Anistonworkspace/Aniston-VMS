@@ -2,20 +2,19 @@ import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 
-// Aniston VMS app frame — docs/04-uiux-brief.md §3: the app floats as a
-// rounded 28px shell (max-width ~1440px, centered, soft shadow) on the
-// --canvas background; below lg it goes edge-to-edge with radius 0.
+// Aniston VMS app frame — reference: .claude/docs/actual-design.png.
+// The dashboard fills the entire viewport (the dark "canvas" border seen in
+// some mockup exports is NOT part of the UI). The dark sidebar is a fixed
+// full-height rail with its own internal scroll; only the main column scrolls.
 export function AppShell(): JSX.Element {
   return (
-    <div className="min-h-screen bg-canvas font-inter text-ink antialiased lg:px-8 lg:py-6">
-      <div className="mx-auto flex min-h-screen max-w-[1440px] overflow-hidden bg-surface shadow-soft lg:min-h-[calc(100vh-3rem)] lg:rounded-frame">
-        <Sidebar />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <Topbar />
-          <main className="flex-1 px-6 pb-10 pt-6 lg:px-8">
-            <Outlet />
-          </main>
-        </div>
+    <div className="flex h-screen overflow-hidden bg-surface font-inter text-ink antialiased">
+      <Sidebar />
+      <div className="flex h-full min-w-0 flex-1 flex-col">
+        <Topbar />
+        <main className="min-h-0 flex-1 overflow-y-auto px-6 pb-10 pt-6 lg:px-8">
+          <Outlet />
+        </main>
       </div>
     </div>
   );

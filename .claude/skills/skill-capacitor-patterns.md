@@ -1,274 +1,154 @@
-# Skill — Capacitor Mobile Patterns
+# Skill — Capacitor Mobile Patterns (Field Operator App)
 
-Android/iOS build pipeline, push notifications (FCM), camera, filesystem, deep links, safe area.
-
----
-
-## Capacitor setup (already scaffolded in boilerplate)
-
-```bash
-# Add Android/iOS platforms
-npx cap add android
-npx cap add ios
-
-# Sync web build to native projects
-npm run build && npx cap sync
-
-# Open in native IDE
-npx cap open android   # Android Studio
-npx cap open ios       # Xcode
-```
-
----
-
-## capacitor.config.ts
+`apps/web` (Capacitor 6, already scaffolded via `apps/web/capacitor.config.ts`) wraps the same
+React app for Android/iOS: a field-engineer / on-site-operator companion app — push notifications
+for incident/escalation alerts while off the control-room floor, on-site network diagnostics
+(is *this* site's router/SIM actually reachable from here?), and photo capture for maintenance
+evidence (`EvidencePhotoCard`, `MaintenanceTaskCard`). Per `docs/tech-stack-targets.md`, mobile is
+retained/deferred capability — not required for Aniston VMS v1 (a control-room web app) — but the
+release pipeline (`store-releases/android/`, `store-releases/ios/`) already exists, so keep the
+native layer correct whenever it's touched. See `memory/decisions/ADR-0005-capacitor-over-react-native.md`
+for why Capacitor (not React Native) was chosen.
 
 ```typescript
-// capacitor.config.ts
-import type { CapacitorConfig } from '@capacitor/cli';
-
+// apps/web/capacitor.config.ts (already correct — do not regress this)
 const config: CapacitorConfig = {
-  appId:     'com.aniston.boilerplate',
-  appName:   'Boilerplate App',
-  webDir:    'dist',
-  server: {
-    // Dev: point to Vite dev server (hot reload in native app)
-    // Comment out for production builds
-    // url: 'http://192.168.1.100:5173',
-    // cleartext: true,
-  },
-  plugins: {
-    PushNotifications: {
-      presentationOptions: ['badge', 'sound', 'alert'],
-    },
-    SplashScreen: {
-      launchShowDuration: 2000,
-      launchAutoHide:     true,
-      backgroundColor:    '#f1ece3',
-      androidSplashResourceName: 'splash',
-      showSpinner:        false,
-    },
-    StatusBar: {
-      style:           'DEFAULT',
-      backgroundColor: '#f1ece3',
-    },
-  },
+  appId: 'com.aniston.vms',
+  appName: 'Aniston VMS',
+  webDir: 'dist',
+  bundledWebRuntime: false,
+  server: { androidScheme: 'https' },
+  android: { allowMixedContent: false },
 };
-
-export default config;
 ```
+
+`pnpm --filter @aniston-vms/web build && npx cap sync` (also `pnpm --filter @aniston-vms/web cap:build:android` / `cap:build:ios`) is the only
+way native assets get updated — always check `Capacitor.isNativePlatform()` before calling any
+`@capacitor/*` plugin, since the same bundle also runs as the plain web SPA and installable PWA.
 
 ---
 
-## Push notifications — FCM setup
+## Push notifications (`apps/web/src/lib/capacitorPush.ts`)
+
+Same incident/escalation events as the PWA push channel and WhatsApp/email — see
+`skill-notification-patterns.md`. Native push uses FCM (Android) / APNs (iOS) tokens instead of a
+Web Push subscription, everything else about the fan-out is identical.
 
 ```typescript
-// frontend/src/lib/capacitorPush.ts
 import { PushNotifications } from '@capacitor/push-notifications';
-import { Capacitor }          from '@capacitor/core';
-
-export async function registerPushNotifications(
-  onToken: (token: string) => void,
-) {
-  if (!Capacitor.isNativePlatform()) return;    // skip in browser
-
-  // Request permission
-  const perm = await PushNotifications.requestPermissions();
-  if (perm.receive !== 'granted') return;
-
-  // Register with FCM / APNS
-  await PushNotifications.register();
-
-  // Get FCM token — send to backend
-  PushNotifications.addListener('registration', ({ value: token }) => {
-    onToken(token);
-  });
-
-  PushNotifications.addListener('registrationError', (err) => {
-    console.error('Push registration error:', err);
-  });
-
-  // Handle foreground notification
-  PushNotifications.addListener('pushNotificationReceived', (notification) => {
-    // Show in-app banner when app is in foreground
-    toast(notification.title ?? 'Notification', { description: notification.body });
-  });
-
-  // Handle tap on notification (background/killed)
-  PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
-    const data = action.notification.data;
-    if (data?.route) {
-      // Navigate to the relevant screen
-      window.location.hash = data.route;
-    }
-  });
-}
-
-// Call this on app boot — after login:
-// await registerPushNotifications(token => saveFcmToken(token));
-```
-
----
-
-## Camera — photo capture
-
-```typescript
-// frontend/src/lib/capacitorCamera.ts
-import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
 
-export async function capturePhoto(): Promise<File | null> {
-  if (!Capacitor.isNativePlatform()) {
-    // Web fallback — use input[type=file]
-    return null;
-  }
+export async function registerPushNotifications(onToken: (token: string) => void) {
+  if (!Capacitor.isNativePlatform()) return;
 
-  const photo = await Camera.getPhoto({
-    quality:      80,
-    allowEditing: false,
-    resultType:   CameraResultType.DataUrl,
-    source:       CameraSource.Prompt,   // asks user: camera or gallery
-    width:        800,
-    height:       800,
-    correctOrientation: true,
+  const { receive } = await PushNotifications.requestPermissions();
+  if (receive !== 'granted') return;
+
+  await PushNotifications.register();
+
+  PushNotifications.addListener('registration', (token) => onToken(token.value));
+  PushNotifications.addListener('registrationError', (error) =>
+    console.error('Push registration error', error),
+  );
+  PushNotifications.addListener('pushNotificationReceived', (notification) => {
+    // Foreground incident/escalation push — surface via in-app toast, not a native banner
   });
-
-  if (!photo.dataUrl) return null;
-
-  // Convert dataURL to File for upload
-  const res  = await fetch(photo.dataUrl);
-  const blob = await res.blob();
-  return new File([blob], `photo_${Date.now()}.jpg`, { type: 'image/jpeg' });
-}
-
-// Usage in item photo upload:
-async function handlePhotoCapture() {
-  const file = await capturePhoto();
-  if (file) {
-    const formData = new FormData();
-    formData.append('photo', file);
-    await uploadPhoto(formData).unwrap();
-  }
+  PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
+    // Deep link into the tapped incident: action.notification.data.incidentId
+  });
 }
 ```
 
----
+```typescript
+// apps/api (NestJS) persists { userId, organizationId, platform: 'ANDROID' | 'IOS', token } via Prisma
+// scoped exactly like the web push subscription table — see skill-pwa-patterns.md
+```
 
-## Deep links — Android intent filter
+## Network status (`apps/web/src/hooks/useCapacitorNetwork.ts`)
+
+An engineer standing next to a site's router needs to know whether *their phone* has signal — a
+false "camera offline" read is useless if their own network is the problem.
+
+```typescript
+import { useEffect, useState } from 'react';
+import { Network } from '@capacitor/network';
+
+export function useCapacitorNetwork() {
+  const [isOnline, setOnline] = useState(true);
+
+  useEffect(() => {
+    Network.getStatus().then((status) => setOnline(status.connected));
+    const listener = Network.addListener('networkStatusChange', (status) =>
+      setOnline(status.connected),
+    );
+    return () => { listener.remove(); };
+  }, []);
+
+  return isOnline;
+}
+```
+
+## Evidence photo capture (`apps/web/src/lib/capacitorCamera.ts`)
+
+Used from `MaintenanceTaskCard` when an engineer closes out an on-site repair — the photo attaches
+to the `MaintenanceTask` / `AuditLog` record as proof of work.
+
+```typescript
+import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
+
+export async function capturePhoto() {
+  const photo = await Camera.getPhoto({
+    quality: 80,
+    allowEditing: false,
+    resultType: CameraResultType.DataUrl,
+    source: CameraSource.Camera,
+  });
+  return photo.dataUrl;
+}
+
+export async function uploadPhoto(taskId: string, dataUrl: string) {
+  const blob = await (await fetch(dataUrl)).blob();
+  const formData = new FormData();
+  formData.append('photo', blob, `${taskId}-${Date.now()}.jpg`);
+  return fetch(`/api/maintenance-tasks/${taskId}/photos`, { method: 'POST', body: formData });
+}
+```
+
+## Deep links (Android `AndroidManifest.xml`)
+
+Tapping an incident/escalation push or a WhatsApp-shared link should open the app straight to that
+incident, not just the app's home screen:
 
 ```xml
-<!-- android/app/src/main/AndroidManifest.xml -->
-<!-- Add inside the <activity> tag -->
 <intent-filter android:autoVerify="true">
   <action android:name="android.intent.action.VIEW" />
   <category android:name="android.intent.category.DEFAULT" />
   <category android:name="android.intent.category.BROWSABLE" />
-  <!-- Your app domain -->
-  <data android:scheme="https" android:host="app.yourdomain.com" />
-  <!-- Custom scheme for dev/testing -->
-  <data android:scheme="boilerplate" android:host="open" />
+  <data android:scheme="https" android:host="app.anistonvms.example" android:pathPrefix="/incidents" />
 </intent-filter>
 ```
 
-```typescript
-// Handle deep link in app boot:
-import { App } from '@capacitor/app';
-
-App.addListener('appUrlOpen', ({ url }) => {
-  const route = new URL(url).pathname;
-  // Navigate to the route
-  window.history.pushState({}, '', route);
-  window.dispatchEvent(new PopStateEvent('popstate'));
-});
-```
+(`anistonvms.example` is a placeholder — set the real production app-link host per environment;
+do not hardcode a client's actual domain into the skill/pattern doc.)
 
 ---
 
-## Safe area (notch / home indicator)
+## Android/iOS signing & release
 
-```css
-/* globals.css — use env() safe area variables */
-.app-container {
-  padding-top:    env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
-  padding-left:   env(safe-area-inset-left);
-  padding-right:  env(safe-area-inset-right);
-}
+Handled by `store-releases/android/build-android.ps1` and `store-releases/ios/build-ios.sh` plus
+`.github/workflows` release jobs (see `skill-ci-cd-patterns.md`). Signing material lives only in
+GitHub Secrets, never in the repo:
 
-/* For sticky headers: */
-.page-header {
-  padding-top: max(12px, env(safe-area-inset-top));
-}
-
-/* For bottom navigation: */
-.bottom-nav {
-  padding-bottom: max(8px, env(safe-area-inset-bottom));
-}
-```
-
-```typescript
-// Set the viewport meta in index.html:
-// <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-```
+- Android: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`
+- iOS: export options / provisioning handled per `store-releases/ios/ExportOptions.plist.template`
 
 ---
 
-## Network status detection (Capacitor)
+## Checklist before shipping a Capacitor change
 
-```typescript
-// frontend/src/hooks/useCapacitorNetwork.ts
-import { Network } from '@capacitor/network';
-import { Capacitor } from '@capacitor/core';
-import { useState, useEffect } from 'react';
-
-export function useNetworkStatus() {
-  const [online, setOnline] = useState(true);
-
-  useEffect(() => {
-    if (!Capacitor.isNativePlatform()) return;
-
-    Network.getStatus().then(s => setOnline(s.connected));
-
-    const listener = Network.addListener('networkStatusChange', (s) => {
-      setOnline(s.connected);
-    });
-
-    return () => { listener.then(l => l.remove()); };
-  }, []);
-
-  return online;
-}
-```
-
----
-
-## Build pipeline (GitHub Actions)
-
-```yaml
-# .github/workflows/android-build.yml (excerpt)
-- name: Build Android APK
-  run: |
-    npm run build
-    npx cap sync android
-    cd android
-    ./gradlew assembleRelease \
-      -Pandroid.injected.signing.store.file=${{ secrets.KEYSTORE_PATH }} \
-      -Pandroid.injected.signing.store.password=${{ secrets.KEYSTORE_PASSWORD }} \
-      -Pandroid.injected.signing.key.alias=${{ secrets.KEY_ALIAS }} \
-      -Pandroid.injected.signing.key.password=${{ secrets.KEY_PASSWORD }}
-```
-
----
-
-## Checklist
-
-- [ ] `capacitor.config.ts` `appId` matches `applicationId` in `android/app/build.gradle`
-- [ ] `npx cap sync` run after every `npm run build` — never skip
-- [ ] FCM token saved to backend with `userId` — sent to the right device per user
-- [ ] Push notification tap navigates to the correct in-app route via `notification.data.route`
-- [ ] Camera result converted to `File` object before uploading (same upload flow as web)
-- [ ] Deep link intent filters added for both HTTPS and custom scheme
-- [ ] `viewport-fit=cover` set in index.html for notch support
-- [ ] `env(safe-area-inset-*)` applied to sticky headers and bottom navigation
-- [ ] Keystore password in GitHub Secrets — NEVER in source code or repo
-- [ ] APK/AAB not committed to git — CI uploads directly to EC2 or Play Console
+- [ ] `Capacitor.isNativePlatform()` guards every `@capacitor/*` call (web/PWA build still works)
+- [ ] `appId`/`appName` remain `com.aniston.vms` / `Aniston VMS` — never regress to a boilerplate id
+- [ ] Push token registration persists `platform` so `apps/api` can pick FCM vs APNs vs Web Push
+- [ ] Evidence photos upload with a task/organization scope — never anonymous uploads
+- [ ] Safe-area insets (`env(safe-area-inset-*)`) respected on notch/gesture-bar devices
+- [ ] `npx cap sync` re-run after any native plugin or config change before building

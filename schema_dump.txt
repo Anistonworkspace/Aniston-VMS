@@ -1,0 +1,199 @@
+=== User ===
+160:model User {
+161-  id           String    @id @default(uuid())
+162-  email        String    @unique
+163-  passwordHash String    @map("password_hash")
+164-  name         String
+165-  phone        String
+166-  role         Role
+167-  mfaSecret    String?   @map("mfa_secret")
+168-  mfaEnabled   Boolean   @default(false) @map("mfa_enabled")
+169-  isActive     Boolean   @default(true) @map("is_active")
+170-  lastLoginAt  DateTime? @map("last_login_at")
+171-  createdAt    DateTime  @default(now()) @map("created_at")
+172-  updatedAt    DateTime  @updatedAt @map("updated_at")
+173-
+174-  accessScopes               UserAccessScope[]
+175-  refreshTokens              RefreshToken[]
+176-  auditLogs                  AuditLog[]
+177-  approvedReferenceImages    ReferenceImage[]
+178-  assignedIncidents          Incident[]          @relation("IncidentAssignedTo")
+179-  approvedMaintenanceWindows MaintenanceWindow[]
+180-  assignedMaintenanceTasks   MaintenanceTask[]   @relation("MaintenanceTaskAssignedTo")
+181-  streamSessions             StreamSession[]
+182-  clipExports                ClipExport[]
+183-  savedLayouts               SavedLayout[]
+184-
+185-  @@map("users")
+186-}
+187-
+188-model UserAccessScope {
+189-  id        String    @id @default(uuid())
+190-  userId    String    @map("user_id")
+=== UserAccessScope ===
+188:model UserAccessScope {
+189-  id        String    @id @default(uuid())
+190-  userId    String    @map("user_id")
+191-  scopeType ScopeType @map("scope_type")
+192-  scopeId   String?   @map("scope_id") // null when ALL
+193-  createdAt DateTime  @default(now()) @map("created_at")
+194-  updatedAt DateTime  @updatedAt @map("updated_at")
+195-
+196-  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+197-
+198-  @@index([userId])
+=== EscalationPolicy ===
+589:model EscalationPolicy {
+590-  id        String   @id @default(uuid())
+591-  name      String
+592-  zoneId    String?  @map("zone_id") // null = default policy
+593-  createdAt DateTime @default(now()) @map("created_at")
+594-  updatedAt DateTime @updatedAt @map("updated_at")
+595-
+596-  zone       Zone?            @relation(fields: [zoneId], references: [id])
+597-  steps      EscalationStep[]
+598-  alertRules AlertRule[]
+599-
+600-  @@map("escalation_policies")
+601-}
+602-
+603-model EscalationStep {
+604-  id             String    @id @default(uuid())
+605-  policyId       String    @map("policy_id")
+606-  afterMinutes   Int       @map("after_minutes")
+607-  recipientLevel String    @map("recipient_level")
+608-  channels       Channel[]
+609-  createdAt      DateTime  @default(now()) @map("created_at")
+=== EscalationStep ===
+603:model EscalationStep {
+604-  id             String    @id @default(uuid())
+605-  policyId       String    @map("policy_id")
+606-  afterMinutes   Int       @map("after_minutes")
+607-  recipientLevel String    @map("recipient_level")
+608-  channels       Channel[]
+609-  createdAt      DateTime  @default(now()) @map("created_at")
+610-  updatedAt      DateTime  @updatedAt @map("updated_at")
+611-
+612-  policy EscalationPolicy @relation(fields: [policyId], references: [id])
+613-
+614-  @@map("escalation_steps")
+615-}
+616-
+617-model ZoneAlertRecipient {
+618-  id              String   @id @default(uuid())
+=== ZoneAlertRecipient ===
+617:model ZoneAlertRecipient {
+618-  id              String   @id @default(uuid())
+619-  zoneId          String   @map("zone_id")
+620-  severity        Severity
+621-  channel         Channel
+622-  recipient       String
+623-  escalationLevel Int      @map("escalation_level")
+624-  createdAt       DateTime @default(now()) @map("created_at")
+625-  updatedAt       DateTime @updatedAt @map("updated_at")
+626-
+627-  zone Zone @relation(fields: [zoneId], references: [id])
+628-
+629-  @@map("zone_alert_recipients")
+630-}
+631-
+632-model Notification {
+=== Notification ===
+632:model Notification {
+633-  id                String             @id @default(uuid())
+634-  incidentId        String             @map("incident_id")
+635-  channel           Channel
+636-  recipient         String
+637-  templateName      String             @map("template_name")
+638-  providerMessageId String?            @map("provider_message_id")
+639-  status            NotificationStatus
+640-  attemptCount      Int                @default(0) @map("attempt_count")
+641-  sentAt            DateTime?          @map("sent_at")
+642-  deliveredAt       DateTime?          @map("delivered_at")
+643-  readAt            DateTime?          @map("read_at")
+644-  failedAt          DateTime?          @map("failed_at")
+645-  failureReason     String?            @map("failure_reason")
+646-  createdAt         DateTime           @default(now()) @map("created_at")
+647-  updatedAt         DateTime           @updatedAt @map("updated_at")
+648-
+649-  incident Incident @relation(fields: [incidentId], references: [id])
+650-
+651-  @@index([incidentId])
+652-  @@map("notifications")
+=== AuditLog ===
+216:model AuditLog {
+217-  id         String   @id @default(uuid())
+218-  userId     String?  @map("user_id")
+219-  action     String
+220-  entityType String   @map("entity_type")
+221-  entityId   String   @map("entity_id")
+222-  oldValue   Json?    @map("old_value")
+223-  newValue   Json?    @map("new_value")
+224-  ipAddress  String   @map("ip_address")
+225-  createdAt  DateTime @default(now()) @map("created_at") // append-only: no updated_at
+226-
+227-  user User? @relation(fields: [userId], references: [id], onDelete: Restrict)
+228-
+229-  @@index([entityType, entityId])
+230-  @@index([createdAt])
+231-  @@map("audit_logs")
+=== ScopeType ===
+31:enum ScopeType {
+32-  ALL
+33-  REGION
+34-  ZONE
+35-  SITE
+36-}
+37-
+38-enum CameraStatus {
+39-  HEALTHY
+40-  WARNING
+41-  CRITICAL
+=== Channel ===
+84:enum Channel {
+85-  EMAIL
+86-  WHATSAPP
+87-}
+88-
+89-enum NotificationStatus {
+90-  QUEUED
+91-  ACCEPTED
+92-  SENT
+93-  DELIVERED
+94-  READ
+=== NotificationStatus ===
+89:enum NotificationStatus {
+90-  QUEUED
+91-  ACCEPTED
+92-  SENT
+93-  DELIVERED
+94-  READ
+95-  BOUNCED
+96-  FAILED
+97-}
+98-
+99-enum StreamKind {
+=== Severity ===
+78:enum Severity {
+79-  INFO
+80-  WARNING
+81-  CRITICAL
+82-}
+83-
+84-enum Channel {
+85-  EMAIL
+86-  WHATSAPP
+87-}
+88-
+=== Role ===
+22:enum Role {
+23-  SUPER_ADMIN
+24-  PROJECT_ADMIN
+25-  OPERATOR
+26-  ENGINEER
+27-  CLIENT_VIEWER
+28-  AUDITOR
+29-}
+30-
+31-enum ScopeType {
+32-  ALL

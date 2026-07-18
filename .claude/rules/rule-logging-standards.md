@@ -1,19 +1,21 @@
 ---
-# Logging Standards — Binding for ALL backend code
+# Logging Standards — Binding for ALL backend code (apps/api, apps/workers)
+Canon: memory/alignment-dictionary.md, docs/02-TRD.md.
 
 ## The golden rule
 
 **ZERO `console.log` in production code.** No exceptions.
-Use `logger.info/warn/error` from `backend/src/lib/logger.ts` exclusively.
+Use the injected NestJS `LoggerService` (`apps/api/src/common/logger`) — or, in workers, the shared
+`logger` from `packages/shared` — exclusively.
 
 ## Log levels — when to use each
 
 | Level | When to use | Example |
 |-------|------------|---------|
-| `logger.error` | Unhandled exceptions, failed transactions, data loss risk | DB connection lost, payment failed |
-| `logger.warn` | Recoverable issues, degraded operation, expected but notable failures | Redis cache miss, rate limit near threshold, deprecated usage |
-| `logger.info` | Normal significant events | User login, org created, job completed |
-| `logger.debug` | Developer diagnostics — DISABLED in production | Query timing, intermediate values |
+| `logger.error` | Unhandled exceptions, failed transactions, data loss risk | DB connection lost, health-check ingestion batch failed |
+| `logger.warn` | Recoverable issues, degraded operation, expected but notable failures | Redis cache miss, a camera probe timed out once, deprecated route hit |
+| `logger.info` | Normal significant events | User login, incident opened, escalation sent, BullMQ job completed |
+| `logger.debug` | Developer diagnostics — DISABLED in production | Probe timing, intermediate diagnosis scoring |
 
 ## Required fields on every log call
 
@@ -21,46 +23,49 @@ Every log must include structured metadata (not just a string message):
 
 ```typescript
 // ❌ WRONG — unstructured, unsearchable
-logger.info('Item created');
+logger.info('Incident created');
 logger.error('Something went wrong: ' + err.message);
 
 // ✅ CORRECT — structured JSON, includes requestId for correlation
-logger.info('Item created', {
-  entityId:       item.id,
+logger.info('Incident created', {
+  incidentNumber: incident.incidentNumber,  // e.g. "ANI-CAM-2026-000145"
+  cameraId:       camera.id,
+  cameraCode:     camera.cameraCode,        // e.g. "CAM-042"
   actorId:        actor.id,
   organizationId: actor.organizationId,
 });
 
-logger.error('Failed to process report', {
+logger.error('Failed to process health-check batch', {
   error:          err.message,
   stack:          err.stack,     // only on error level
-  organizationId: actor.organizationId,
-  reportPeriod:   period,
+  organizationId: batch.organizationId,
+  checkType:      batch.checkType,
 });
 ```
 
 ## requestId — mandatory on all request-scoped logs
 
 Every log emitted during an HTTP request MUST include the `requestId` from `AsyncLocalStorage`.
-The `log()` utility in `backend/src/middleware/requestId.ts` injects it automatically.
-Use `log()` (not `logger.info()` directly) inside request handlers.
+A `RequestIdMiddleware` (`apps/api/src/common/middleware/request-id.middleware.ts`) sets it up per request;
+use the `log()` helper (not the raw logger) inside request handlers so it's auto-injected.
 
 ```typescript
 // Use the helper that auto-injects requestId:
-import { log } from '../../middleware/requestId.js';
+import { log } from '../../common/middleware/request-id.middleware';
 
 // ❌ Missing requestId — cannot correlate logs to a request
-logger.info('Item updated', { itemId: id });
+logger.info('Camera updated', { cameraId: id });
 
 // ✅ requestId auto-injected by the log() helper
-log('info', 'Item updated', { itemId: id, actorId: actor.id });
+log('info', 'Camera updated', { cameraId: id, actorId: actor.id });
 ```
 
 ## What NEVER to log
 
 - Passwords, password hashes
-- JWT tokens or refresh tokens
-- Decrypted PII or secrets (any `secretEncrypted` field value)
+- JWT access/refresh tokens
+- Decrypted camera/SIM credentials or secrets (any `*Encrypted` field's decrypted value — `rtspPasswordEncrypted`,
+  `apiKeyEncrypted`, `simPinEncrypted`)
 - Full request/response bodies (may contain secrets)
 - Stack traces in info/warn level — only on error level
 - User-agent strings beyond first 100 chars
@@ -68,30 +73,31 @@ log('info', 'Item updated', { itemId: id, actorId: actor.id });
 ## Error logging — always include stack on server errors
 
 ```typescript
-// In global error handler:
+// In the global AllExceptionsFilter:
 if (statusCode >= 500) {
   log('error', err.message, {
-    stack:      err.stack,
-    path:       req.path,
-    method:     req.method,
-    userId:     req.user?.id,
-    orgId:      req.user?.organizationId,
+    stack:  err.stack,
+    path:   req.path,
+    method: req.method,
+    userId: req.user?.id,
+    orgId:  req.user?.organizationId,
   });
 }
 
 // For caught errors in services:
 try {
-  await externalService.call();
+  await mediaMtxClient.reload(camera.id);
 } catch (err: any) {
-  logger.warn('External service call failed', {
-    service: 'stripe',
-    error:   err.message,
-    // No stack — this is expected/recoverable
+  logger.warn('MediaMTX reload failed', {
+    service:  'media',
+    cameraId: camera.id,
+    error:    err.message,
+    // No stack — this is expected/recoverable, will retry via BullMQ
   });
 }
 ```
 
-## BullMQ worker logs — include jobId
+## BullMQ worker logs (apps/workers) — include jobId
 
 ```typescript
 worker.on('completed', (job) => {
@@ -102,23 +108,28 @@ worker.on('failed', (job, err) => {
 });
 ```
 
-## Log rotation (PM2)
+## Log rotation (Docker `json-file` driver)
 
-```bash
-pm2 install pm2-logrotate
-pm2 set pm2-logrotate:max_size 50M
-pm2 set pm2-logrotate:retain 7
-pm2 set pm2-logrotate:compress true
-pm2 set pm2-logrotate:dateFormat YYYY-MM-DD_HH-mm-ss
+Apps log structured JSON to **stdout** — no file transports, no in-app rotation. The container
+runtime owns rotation via Docker's `json-file` log driver; shipped logs land in Loki/CloudWatch
+(see `skill-monitoring-patterns.md`).
+
+```yaml
+# docker-compose.fullstack.yml — per service
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "7"
 ```
 
 ## Checklist
 
-- [ ] Zero `console.log/warn/error` in any backend file — ESLint rule `no-console` enabled
+- [ ] Zero `console.log/warn/error` in any `apps/api` or `apps/workers` file — ESLint rule `no-console` enabled
 - [ ] All logs use structured JSON with at minimum: `message`, `level`, `timestamp`
-- [ ] Request-scoped logs use `log()` helper (not `logger.info()`) — auto-includes `requestId`
+- [ ] Request-scoped logs use `log()` helper (not the raw logger) — auto-includes `requestId`
 - [ ] Error logs include `stack` field — info/warn logs do NOT
-- [ ] PII never logged — decrypted secrets and passwords always excluded
+- [ ] Camera/SIM credentials and other PII never logged — decrypted secrets and passwords always excluded
 - [ ] BullMQ worker logs include `jobId` and `queue` fields
 - [ ] `LOG_LEVEL=debug` only in development — `LOG_LEVEL=info` in production
-- [ ] PM2 log rotation configured: 50MB max, 7-day retention, compressed
+- [ ] Docker `json-file` log rotation configured: `max-size` 50m, `max-file` 7 (stdout only, no in-app rotation)

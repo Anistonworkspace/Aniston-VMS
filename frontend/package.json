@@ -1,5 +1,5 @@
 {
-  "name": "@boilerplate/frontend",
+  "name": "@aniston-vms/frontend",
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -19,7 +19,7 @@
     "cap:build:ios": "npm run build && npx cap sync ios"
   },
   "dependencies": {
-    "@boilerplate/shared": "*",
+    "@aniston-vms/shared": "*",
     "@capacitor/core": "^6.2.0",
     "@capacitor/geolocation": "^6.1.1",
     "@hookform/resolvers": "^4.1.3",
@@ -38,6 +38,7 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "framer-motion": "^12.6.3",
+    "hls.js": "^1.6.16",
     "lucide-react": "^0.482.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

@@ -1,0 +1,58 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# MediaMTX config for the Aniston VMS simulator.
+#
+# The 6 ffmpeg "cam-00N" containers in docker-compose.sim.yml each publish an
+# RTSP stream to this server at rtsp://mediamtx:8554/cam-00N. MediaMTX then
+# re-exposes every published path over RTSP / HLS / WebRTC so the backend
+# (health checkers, snapshot capture, playback adapters) and the frontend
+# player can all consume the same simulated cameras without touching real
+# hardware. Backend env vars that should point at this server:
+#   MEDIAMTX_API_URL=http://mediamtx:9997
+#   MEDIAMTX_RTSP_URL=rtsp://mediamtx:8554
+#   MEDIAMTX_HLS_URL=http://mediamtx:8888
+#   MEDIAMTX_WEBRTC_URL=http://mediamtx:8889
+# ─────────────────────────────────────────────────────────────────────────────
+
+logLevel: info
+logDestinations: [stdout]
+
+# Control/introspection API used by health checks (ROUTER_TCP/RTSP_PORT probes
+# can hit this instead of a real router) and by ops to see active paths.
+api: yes
+apiAddress: :9997
+
+rtspAddress: :8554
+rtspTransports: [tcp, udp]
+rtspAuthMethods: [basic]
+
+rtmp: no
+srt: no
+
+hls: yes
+hlsAddress: :8888
+hlsAlwaysRemux: yes
+hlsVariant: mpegts
+hlsSegmentCount: 4
+hlsSegmentDuration: 1s
+hlsAllowOrigin: '*'
+
+webrtc: yes
+webrtcAddress: :8889
+webrtcAllowOrigin: '*'
+webrtcAdditionalHosts: [localhost, 127.0.0.1, mediamtx]
+
+# Each simulated camera publishes here; nothing special is required per-path
+# (MediaMTX creates paths on demand for any publisher), but declaring them
+# keeps `mediamtx.yml` self-documenting and lets us pin per-camera options
+# later (e.g. per-camera auth) without touching docker-compose.sim.yml.
+paths:
+  cam-001: {}
+  cam-002: {}
+  cam-003: {}
+  cam-004: {}
+  cam-005: {}
+  cam-006: {}
+
+  # Wildcard fallback so ad-hoc test publishers (cam-007, load-test-*, etc.)
+  # still work without editing this file.
+  all_others: {}

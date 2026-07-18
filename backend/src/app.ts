@@ -10,6 +10,23 @@ import { requestIdContext } from './middleware/requestId.js';
 import { requestLogger } from './middleware/requestLogger.js';
 import { prisma } from './lib/prisma.js';
 import { redis } from './lib/redis.js';
+import { authRouter } from './modules/auth/auth.router.js';
+import { healthRouter } from './modules/health/health.router.js';
+import { snapshotFileRouter, snapshotRouter } from './modules/snapshots/snapshot.router.js';
+import { incidentRouter } from './modules/incidents/incident.router.js';
+import { filesRouter } from './modules/files/files.router.js';
+import { hierarchyRouter } from './modules/hierarchy/hierarchy.router.js';
+import { cameraRouter } from './modules/cameras/camera.router.js';
+import { clipRouter } from './modules/clips/clip.router.js';
+import { playbackRouter } from './modules/playback/playback.router.js';
+import { layoutRouter } from './modules/layouts/layout.router.js';
+import { maintenanceRouter } from './modules/maintenance/maintenance.router.js';
+import { reportRouter } from './modules/reports/reports.router.js';
+import { auditLogRouter } from './modules/admin/audit-log.router.js';
+import { escalationRouter } from './modules/admin/escalation.router.js';
+import { notificationsRouter } from './modules/admin/notifications.router.js';
+import { usersRouter } from './modules/admin/users.router.js';
+import { metricsRouter, metricsMiddleware } from './lib/metrics.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Generic skeleton app. Ships the cross-cutting middleware stack and a health
@@ -29,6 +46,7 @@ export function createApp(): Express {
   app.use(cookieParser());
   app.use(requestIdContext); // sets req.id + AsyncLocalStorage scope so log() injects requestId
   app.use(requestLogger);
+  app.use(metricsMiddleware);
   app.use(generalLimiter);
 
   app.get('/api/health', async (_req, res) => {
@@ -50,7 +68,26 @@ export function createApp(): Express {
   });
 
   // ── Register feature routers here ──────────────────────────────────────────
-  // e.g. app.use('/api/items', itemRouter);  ← build with /new-module items
+  app.use('/api/auth', authRouter);
+  // Public (no requireAuth) routes MUST come before routers that apply a
+  // router-level requireAuth (they run for every /api/* request they see).
+  app.use('/api', snapshotFileRouter);
+  app.use('/api', filesRouter);
+  app.use('/api', metricsRouter);
+  app.use('/api', healthRouter);
+  app.use('/api', snapshotRouter);
+  app.use('/api', incidentRouter);
+  app.use('/api', hierarchyRouter);
+  app.use('/api/cameras', cameraRouter);
+  app.use('/api', clipRouter);
+  app.use('/api', playbackRouter);
+  app.use('/api', layoutRouter);
+  app.use('/api', maintenanceRouter);
+  app.use('/api', reportRouter);
+  app.use('/api', auditLogRouter);
+  app.use('/api', escalationRouter);
+  app.use('/api', notificationsRouter);
+  app.use('/api', usersRouter);
   // ───────────────────────────────────────────────────────────────────────────
 
   app.use((req, _res, next) =>

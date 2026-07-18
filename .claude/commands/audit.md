@@ -14,9 +14,20 @@ Launch these agents in parallel:
 5. agent-performance — N+1 queries, missing indexes, unpaginated endpoints, bundle size
 6. agent-observability — structured logs, audit trails, health checks, job failures
 7. agent-devops — CI/CD, Docker, deploy scripts, rollback plans
-8. agent-ui-ux — mobile layout, PWA, accessibility, glassmorphism consistency
+8. agent-vms-uiux — mobile layout, PWA, accessibility, glassmorphism consistency
 9. agent-testing — coverage gaps, missing RBAC tests, missing E2E tests
 10. agent-security — OWASP Top 10, JWT, encryption, secrets, file uploads, CORS
+
+Give special attention (across whichever agents touch them) to the three highest-risk audit surfaces for a
+fleet-monitoring platform:
+- **Credential access** — every read/decrypt of a camera/router/SIM credential (`rtspUsernameEncrypted`,
+  `rtspPasswordEncrypted`, `mainRtspUrlEncrypted`, `subRtspUrlEncrypted`, SIM PINs) is scoped, encrypted at
+  rest with AES-256-GCM, and never returned in an API response DTO
+- **Stream access** — MediaMTX WebRTC/HLS stream URLs and recording/snapshot clip URLs are signed,
+  short-TTL, and zone-scoped (a `CLIENT_VIEWER` cannot reach a stream outside their `allowedZoneIds`)
+- **Incident access** — every Incident create/acknowledge/escalate/resolve/close/reopen has a matching
+  `AuditLog` row (`entityId`, `actorId`, `organizationId`) and respects the self-approval check
+  (`approverId !== requesterId`)
 
 After all 10 agents complete:
 - Aggregate all findings into a single report

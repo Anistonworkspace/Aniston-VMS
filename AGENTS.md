@@ -6,9 +6,9 @@ Read by all agentic AI tools (Claude Code, OpenAI Codex, GitHub Copilot Workspac
 
 ## Identity
 
-**Project:** Boilerplate App
+**Project:** Aniston VMS — CCTV monitoring platform for ~125 cameras across Delhi zones (5-stage camera health monitoring, RTSP/ONVIF probing, incident management with escalation, live view, snapshots + recordings, image-analysis, WhatsApp/email alerts).
 **Org:** Aniston Technologies LLP
-**Stack:** React 18 + Vite + TypeScript + Tailwind + RTK Query (frontend) | Node + Express + Prisma + PostgreSQL + Redis + BullMQ + Socket.io (backend) | Capacitor (mobile) | Electron (desktop)
+**Stack:** React 18 + Vite + TypeScript + Tailwind + RTK Query (frontend) | NestJS + Prisma + PostgreSQL + Redis + BullMQ workers + Socket.IO (apps/api + apps/workers) | MediaMTX (services/media) | FastAPI + OpenCV (services/image-analysis) | Capacitor (mobile) | Electron (desktop). Note: the current on-disk `backend/` is an Express scaffold being migrated to NestJS.
 **Monorepo:** npm workspaces (`frontend/`, `backend/`, `shared/`)
 
 ---
@@ -116,7 +116,7 @@ Prefixed with `agent-` for easy identification:
 | `agent-refactor.md` | Removes duplication without breaking behavior |
 | `agent-security.md` | Full security audit (OWASP Top 10) |
 | `agent-test-writer.md` | Writes actual Vitest + Playwright test files |
-| `agent-ui-ux.md` | Audits mobile layout, PWA, accessibility |
+| `agent-vms-uiux.md` | Audits mobile layout, PWA, accessibility |
 
 ---
 

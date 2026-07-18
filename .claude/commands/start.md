@@ -5,6 +5,10 @@ description: Load full project context at the start of any new chat or after a c
 
 Run this as the very first command in any new chat session. Never skip it.
 
+Aniston VMS is a multi-tenant CCTV/camera fleet health-monitoring platform — cameras/routers/SIMs are
+health-probed continuously, degraded/offline conditions open Incidents, unacknowledged Incidents escalate
+with WhatsApp/email notifications, and operators watch it all live on a zone-scoped live wall.
+
 ## What to do (in this exact order)
 
 ### 1. Check for compaction recovery
@@ -37,7 +41,7 @@ Output exactly this format:
 ```
 Context loaded.
 - Project: [name] — [one-line description]
-- Built: [count] modules ([list names])
+- Built: [count] modules ([list names, e.g. camera onboarding, live wall, incidents, escalation, audit log])
 - Pending: [count] items
 - Open plans: [count] ([titles])
 - Active locks: [count] ([files if any])

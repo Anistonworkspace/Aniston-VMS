@@ -8,7 +8,7 @@ This file does NOT affect runtime behavior. Keep it in sync with on-prompt.sh ma
 
 | Trigger keywords | Primary agent | Skills to load |
 |-----------------|---------------|----------------|
-| ui, component, page, screen, design, layout, style, color, button, form, modal, sidebar, header, nav, card, table, icon, theme, dark mode, responsive, mobile, animation, tailwind | `agent-ui-ux` → `agent-frontend-wiring` | `skill-ui-ux-checklist.md`, `skill-rtk-query-patterns.md`, `skill-form-patterns.md`, `skill-table-patterns.md`, `skill-modal-patterns.md` |
+| ui, component, page, screen, design, layout, style, color, button, form, modal, sidebar, header, nav, card, table, icon, theme, dark mode, responsive, mobile, animation, tailwind | `agent-vms-uiux` → `agent-frontend-wiring` | `skill-ui-ux-checklist.md`, `skill-rtk-query-patterns.md`, `skill-form-patterns.md`, `skill-table-patterns.md`, `skill-modal-patterns.md` |
 | module, feature, crud, build, scaffold, new, create a, add a, implement | `agent-planner` → `agent-code-review` | `skill-mvc-patterns.md`, `skill-prisma-patterns.md`, `skill-audit-log-patterns.md` |
 | bug, error, crash, fix, broken, fails, not working, exception, undefined, null, TypeError, 500, 404 | `agent-debugger` → `agent-logic-analyzer` | `skill-error-handling-patterns.md` |
 | test, spec, coverage, playwright, vitest, unit test, e2e, integration test | `agent-testing` → `agent-test-writer` | `skill-testing-patterns.md` |
@@ -22,11 +22,11 @@ This file does NOT affect runtime behavior. Keep it in sync with on-prompt.sh ma
 | /start, /done, memory, session, context, handoff | `agent-memory` | (none) |
 | socket, realtime, websocket, notification, push, bell | `agent-frontend-wiring` | `skill-socket-patterns.md`, `skill-notification-patterns.md` |
 | upload, file, image, photo, csv, import, export, pdf, excel | `agent-planner` | `skill-file-upload-patterns.md`, `skill-report-export-patterns.md`, `skill-bulk-operations-patterns.md` |
-| pwa, offline, service worker, install prompt, workbox, capacitor, android, ios, mobile app | `agent-ui-ux` | `skill-pwa-patterns.md`, `skill-capacitor-patterns.md` |
+| pwa, offline, service worker, install prompt, workbox, capacitor, android, ios, mobile app | `agent-vms-uiux` | `skill-pwa-patterns.md`, `skill-capacitor-patterns.md` |
 | electron, desktop, tray, windows app, ipc, nsis, installer | `agent-electron` | `skill-electron-patterns.md` |
-| chart, graph, dashboard, kpi, stats, analytics | `agent-ui-ux` | `skill-chart-patterns.md` |
+| chart, graph, dashboard, kpi, stats, analytics | `agent-vms-uiux` | `skill-chart-patterns.md` |
 | webhook, integration, hmac, outgoing, incoming | `agent-api-security` | `skill-webhook-patterns.md` |
-| i18n, locale, language, translation, hindi, arabic, rtl | `agent-ui-ux` | `skill-i18n-patterns.md` |
+| i18n, locale, language, translation, hindi, arabic, rtl | `agent-vms-uiux` | `skill-i18n-patterns.md` |
 | multi-tenant, org, organization, subdomain, plan, subscription | `agent-planner` | `skill-multitenancy-patterns.md` |
 | bulk, batch, csv import, mass update, multiple select | `agent-planner` | `skill-bulk-operations-patterns.md` |
 | rate limit, throttle, 429, brute force, too many requests | `agent-api-security` | `skill-rate-limiting-patterns.md` |
@@ -35,7 +35,7 @@ This file does NOT affect runtime behavior. Keep it in sync with on-prompt.sh ma
 | domain, aggregate, value object, bounded context, ddd, invariant, anti-corruption | `agent-logic-creator` | `skill-domain-modeling-patterns.md`, `skill-business-rules-patterns.md` |
 | business rule, specification, policy, rule table, eligibility, guard, precondition | `agent-logic-creator` | `skill-business-rules-patterns.md`, `skill-state-machine-patterns.md` |
 | saga, orchestration, outbox, process manager, compensation, choreography, idempotency, durable | `agent-logic-creator` → `agent-logic-analyzer` | `skill-workflow-orchestration-patterns.md`, `skill-state-machine-patterns.md` |
-| keyboard, shortcut, hotkey, command palette, ctrl+k, focus trap, a11y, tab order, escape key | `agent-ui-ux` | `skill-keyboard-shortcuts-patterns.md`, `skill-ui-ux-checklist.md` |
+| keyboard, shortcut, hotkey, command palette, ctrl+k, focus trap, a11y, tab order, escape key | `agent-vms-uiux` | `skill-keyboard-shortcuts-patterns.md`, `skill-ui-ux-checklist.md` |
 | result type, circuit breaker, retry, backoff, dead-letter, jitter, resilience | `agent-logic-creator` | `skill-error-handling-patterns.md`, `skill-background-jobs-patterns.md` |
 
 ## Dispatch instruction template

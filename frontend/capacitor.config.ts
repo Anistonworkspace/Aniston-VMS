@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.example.boilerplate',
-  appName: 'Boilerplate App',
+  appId: 'com.aniston.vms',
+  appName: 'Aniston VMS',
   webDir: 'dist',
   bundledWebRuntime: false,
   server: {

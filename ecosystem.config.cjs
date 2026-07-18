@@ -1,7 +1,7 @@
 module.exports = {
   apps: [
     {
-      name: 'boilerplate-backend',
+      name: 'aniston-vms-backend',
       cwd: './backend',
       script: 'dist/server.js',
       instances: 1,

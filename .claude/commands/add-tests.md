@@ -11,41 +11,42 @@ Invokes `agent-test-writer` to write complete Vitest unit/integration tests and 
 ```
 
 Examples:
-- `/add-tests backend/src/modules/item/item.service.ts`
-- `/add-tests frontend/src/features/dashboard/DashboardPage.tsx`
+- `/add-tests apps/api/src/modules/camera/camera.service.ts`
+- `/add-tests apps/web/src/features/live-wall/LiveWallPage.tsx`
 - `/add-tests auth module`
-- `/add-tests e2e item approval flow`
+- `/add-tests e2e incident escalation flow`
 
 ---
 
 ## What this does
 
 ### For a backend service file
-1. Reads the service file to understand all public methods
+1. Reads the service file (NestJS `@Injectable()` provider) to understand all public methods
 2. Identifies the Prisma models, external calls, and error paths
-3. Writes a `__tests__/<name>.service.test.ts` file with:
-   - Mocks for Prisma, bcrypt, JWT, Redis, BullMQ, nodemailer
+3. Writes a `<name>.service.spec.ts` file with:
+   - Mocks for Prisma, bcrypt, JWT, Redis, BullMQ, nodemailer/WhatsApp client
    - Happy path test for every public method
-   - Error path: resource not found (404), wrong org (403), wrong status (400)
+   - Error path: resource not found (404), wrong org/zone-scope (403), invalid `CameraStatus`/`IncidentStatus` transition (400)
    - Transaction rollback test (if `$transaction` is used)
-   - Self-approval check test (if approval logic exists)
-4. Verifies coverage meets the 80% threshold in `vitest.config.ts`
+   - Self-action guard test (e.g. an operator can't acknowledge/resolve an Incident outside their zone scope, if such a guard exists)
+   - Encryption round-trip test for any `*Encrypted` field the service touches (`rtspPasswordEncrypted`, `apiKeyEncrypted`, `simPinEncrypted`)
+4. Verifies coverage meets the 80% threshold in `apps/api/vitest.config.ts`
 
 ### For a frontend component or page
 1. Reads the component to understand RTK Query hooks, user interactions, and conditional renders
 2. Writes a `__tests__/<Name>.test.tsx` file with:
    - Renders without crashing
-   - Loading skeleton shown while fetching
+   - Loading skeleton shown while fetching (e.g. live-wall tiles while a stream connects)
    - Error state renders correctly
    - Happy path: data renders correctly
    - User interaction: button clicks, form submits
-   - Role-based UI: admin-only items hidden from MEMBER role
+   - Role-based UI: admin-only controls (e.g. edit camera credentials) hidden from `CLIENT_VIEWER`
 3. Uses `@testing-library/react` + `vi.mock()` of the RTK Query API slice. Example:
    ```typescript
    // mock the api slice so RTK Query hooks return what the test wants
-   vi.mock('../itemApi', () => ({
-     useListItemsQuery: () => ({ data: { data: [itemFixture], meta: { total: 1, page: 1, limit: 20, totalPages: 1 } }, isLoading: false, isError: false }),
-     useCreateItemMutation: () => [vi.fn().mockResolvedValue({ unwrap: () => Promise.resolve(itemFixture) }), { isLoading: false }],
+   vi.mock('../cameraApi', () => ({
+     useListCamerasQuery: () => ({ data: { data: [cameraFixture], meta: { total: 1, page: 1, limit: 20, totalPages: 1 } }, isLoading: false, isError: false }),
+     useCreateCameraMutation: () => [vi.fn().mockResolvedValue({ unwrap: () => Promise.resolve(cameraFixture) }), { isLoading: false }],
    }));
    ```
    This avoids the `msw` dependency entirely and matches the existing codebase pattern.
@@ -54,7 +55,7 @@ Examples:
 1. Writes a `e2e/<feature>.spec.ts` file covering:
    - Full happy path workflow
    - Auth guard: unauthenticated redirect
-   - Role-based access: MEMBER vs ADMIN vs SUPER_ADMIN
+   - Role-based access: `CLIENT_VIEWER` vs `PROJECT_ADMIN` vs `SUPER_ADMIN`
    - Form validation errors shown
    - Success notification shown after mutation
 
