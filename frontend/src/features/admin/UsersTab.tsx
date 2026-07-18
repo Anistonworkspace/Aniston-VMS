@@ -280,12 +280,7 @@ function ScopesDrawer({
   };
 
   return (
-    <Drawer
-      open
-      onClose={onClose}
-      title={`Access scopes — ${user.name}`}
-      widthClassName="sm:max-w-xl"
-    >
+    <Drawer open onClose={onClose} title={`Access scopes — ${user.name}`}>
       <div className="space-y-5">
         <p className="text-sm text-gray-500">
           Scopes restrict which regions, zones and sites this account can see. An{' '}

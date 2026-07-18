@@ -26,9 +26,9 @@ export interface DrawerProps {
   /** Header content (left of the close button). */
   title?: React.ReactNode;
   /**
-   * Extra classes on the panel, e.g. to widen it (`sm:max-w-2xl`). Because the
+   * Extra classes on the panel, e.g. to widen it (`sm:max-w-4xl`). Because the
    * class list is merged with `tailwind-merge`, a `sm:max-w-*` override here
-   * wins over the default `sm:max-w-xl`.
+   * wins over the default `sm:max-w-3xl`.
    */
   widthClassName?: string;
   children?: React.ReactNode;
@@ -87,7 +87,7 @@ export function Drawer({
             className={cn(
               // Bottom-sheet on mobile → centered card on >=sm.
               'relative flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-3xl bg-canvas shadow-2xl',
-              'sm:max-h-[88vh] sm:max-w-xl sm:rounded-2xl',
+              'sm:max-h-[88vh] sm:max-w-3xl sm:rounded-2xl',
               widthClassName
             )}
           >
@@ -106,7 +106,8 @@ export function Drawer({
                 <X size={18} strokeWidth={1.5} />
               </button>
             </header>
-            <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
+            {/* Scroll area: scrollbar hidden (`.no-scrollbar`) but content stays scrollable. */}
+            <div className="no-scrollbar flex-1 overflow-y-auto px-6 py-5">{children}</div>
           </motion.div>
         </div>
       )}

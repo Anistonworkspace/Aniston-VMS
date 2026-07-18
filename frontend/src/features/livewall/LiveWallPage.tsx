@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FetchBaseQueryError } from '@reduxjs/toolkit/query/react';
 import { Bookmark, Save, Trash2, VideoOff, X } from 'lucide-react';
 import { Button, Input, ToastContainer } from '@/components/ui';
 import { useToast } from '@/hooks/useToast';
 import { useListCamerasQuery } from '@/features/cameras/cameras.api';
+import { CameraStatusBadge } from '@/features/cameras/CameraStatusBadge';
 import { getApiErrorMessage } from '@/lib/apiError';
 import { cn } from '@/lib/utils';
 import { LiveTile } from './LiveTile';
@@ -25,11 +26,27 @@ import type { LayoutKind } from './livewall.types';
 const selectClass =
   'h-9 rounded-lg border border-gray-200 bg-white/70 px-3 text-sm text-gray-900 backdrop-blur-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500';
 
-function readStoredWall(): { kind: LayoutKind; cameraIds: string[] } | null {
+/** Wall view: `focus` = one big player + side list (YouTube-style), `grid` = classic tiles. */
+type WallView = 'focus' | 'grid';
+
+/** Focus view fits one big player + up to 5 side tiles (same cap as the 3×2 grid). */
+const FOCUS_MAX_CAMERAS = LAYOUT_MAX_CAMERAS.L3x2;
+
+function readStoredWall(): {
+  kind: LayoutKind;
+  cameraIds: string[];
+  view: WallView;
+  focusedId: string | null;
+} | null {
   try {
     const raw = localStorage.getItem(WALL_STORAGE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as { kind?: unknown; cameraIds?: unknown };
+    const parsed = JSON.parse(raw) as {
+      kind?: unknown;
+      cameraIds?: unknown;
+      view?: unknown;
+      focusedId?: unknown;
+    };
     if (
       typeof parsed.kind === 'string' &&
       (ALL_KINDS as readonly string[]).includes(parsed.kind) &&
@@ -37,7 +54,14 @@ function readStoredWall(): { kind: LayoutKind; cameraIds: string[] } | null {
       parsed.cameraIds.every((id): id is string => typeof id === 'string')
     ) {
       const kind = parsed.kind as LayoutKind;
-      return { kind, cameraIds: parsed.cameraIds.slice(0, LAYOUT_MAX_CAMERAS[kind]) };
+      const view: WallView = parsed.view === 'grid' ? 'grid' : 'focus';
+      const max = view === 'focus' ? FOCUS_MAX_CAMERAS : LAYOUT_MAX_CAMERAS[kind];
+      return {
+        kind,
+        cameraIds: parsed.cameraIds.slice(0, max),
+        view,
+        focusedId: typeof parsed.focusedId === 'string' ? parsed.focusedId : null,
+      };
     }
   } catch {
     // Corrupted storage — fall through to defaults.
@@ -50,6 +74,10 @@ export function LiveWallPage(): JSX.Element {
 
   const [kind, setKind] = useState<LayoutKind>(() => readStoredWall()?.kind ?? 'L2x2');
   const [cameraIds, setCameraIds] = useState<string[]>(() => readStoredWall()?.cameraIds ?? []);
+  const [view, setView] = useState<WallView>(() => readStoredWall()?.view ?? 'focus');
+  const [focusedId, setFocusedId] = useState<string | null>(
+    () => readStoredWall()?.focusedId ?? null
+  );
   const [loadedLayoutId, setLoadedLayoutId] = useState<string | null>(null);
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveName, setSaveName] = useState('');
@@ -63,10 +91,10 @@ export function LiveWallPage(): JSX.Element {
   const [deleteLayout, { isLoading: deleting }] = useDeleteSavedLayoutMutation();
 
   useEffect(() => {
-    localStorage.setItem(WALL_STORAGE_KEY, JSON.stringify({ kind, cameraIds }));
-  }, [kind, cameraIds]);
+    localStorage.setItem(WALL_STORAGE_KEY, JSON.stringify({ kind, cameraIds, view, focusedId }));
+  }, [kind, cameraIds, view, focusedId]);
 
-  const capacity = LAYOUT_MAX_CAMERAS[kind];
+  const capacity = view === 'focus' ? FOCUS_MAX_CAMERAS : LAYOUT_MAX_CAMERAS[kind];
   const cameraById = useMemo(
     () => new Map((cameras?.items ?? []).map((camera) => [camera.id, camera])),
     [cameras]
@@ -77,7 +105,25 @@ export function LiveWallPage(): JSX.Element {
   );
   const loadedLayout = layouts?.find((layout) => layout.id === loadedLayoutId) ?? null;
 
+  // Demo-friendly default: an empty wall auto-fills with the first cameras in
+  // scope once they load (at most once per mount, so Clear stays respected).
+  const autoFilledRef = useRef(false);
+  useEffect(() => {
+    if (autoFilledRef.current) return;
+    const items = cameras?.items ?? [];
+    if (items.length === 0) return;
+    autoFilledRef.current = true;
+    setCameraIds((ids) => (ids.length > 0 ? ids : items.slice(0, capacity).map((c) => c.id)));
+  }, [cameras, capacity]);
+
+  // Focus view: the focused camera plays big; fall back to the first tile when
+  // the focused one was removed (or never chosen).
+  const mainId = focusedId && cameraIds.includes(focusedId) ? focusedId : (cameraIds[0] ?? null);
+  const mainCamera = mainId ? cameraById.get(mainId) : undefined;
+  const sideIds = cameraIds.filter((id) => id !== mainId);
+
   function changeKind(next: LayoutKind): void {
+    setView('grid');
     setKind(next);
     setCameraIds((ids) => ids.slice(0, LAYOUT_MAX_CAMERAS[next]));
   }
@@ -146,7 +192,8 @@ export function LiveWallPage(): JSX.Element {
         <div>
           <h1 className="font-heading text-2xl font-semibold text-ink">Live Wall</h1>
           <p className="mt-1 text-sm text-gray-500">
-            {cameraIds.length} of {capacity} tiles · low-latency sub-streams · layouts are personal
+            {cameraIds.length} of {capacity} cameras ·{' '}
+            {view === 'focus' ? 'big player + side list' : 'tile grid'} · low-latency sub-streams
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -154,17 +201,30 @@ export function LiveWallPage(): JSX.Element {
           <div
             className="flex rounded-control bg-charcoal/5 p-0.5"
             role="group"
-            aria-label="Grid size"
+            aria-label="Wall layout"
           >
+            <button
+              type="button"
+              onClick={() => setView('focus')}
+              aria-pressed={view === 'focus'}
+              className={cn(
+                'rounded-[10px] px-3 py-1.5 text-xs font-medium transition-colors',
+                view === 'focus' ? 'bg-card text-ink shadow-soft' : 'text-gray-500 hover:text-ink'
+              )}
+            >
+              Focus
+            </button>
             {ALL_KINDS.map((entry) => (
               <button
                 key={entry}
                 type="button"
                 onClick={() => changeKind(entry)}
-                aria-pressed={kind === entry}
+                aria-pressed={view === 'grid' && kind === entry}
                 className={cn(
                   'rounded-[10px] px-3 py-1.5 text-xs font-medium tabular-nums transition-colors',
-                  kind === entry ? 'bg-card text-ink shadow-soft' : 'text-gray-500 hover:text-ink'
+                  view === 'grid' && kind === entry
+                    ? 'bg-card text-ink shadow-soft'
+                    : 'text-gray-500 hover:text-ink'
                 )}
               >
                 {KIND_LABEL[entry]}
@@ -279,6 +339,105 @@ export function LiveWallPage(): JSX.Element {
             The wall is empty — add cameras with the picker above, or load one of your saved
             layouts.
           </p>
+        </div>
+      ) : view === 'focus' ? (
+        <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+          {/* Main player (theater view) */}
+          <div className="min-w-0">
+            {mainCamera ? (
+              <LiveTile
+                key={mainCamera.id}
+                camera={mainCamera}
+                onRemove={() => removeCamera(mainCamera.id)}
+              />
+            ) : (
+              <div className="grid aspect-video place-items-center rounded-tile bg-charcoal/10">
+                <p className="text-xs text-gray-400">
+                  {camerasLoading ? 'Loading…' : 'Camera unavailable'}
+                </p>
+              </div>
+            )}
+            {mainCamera && (
+              <div className="mt-3 flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <h2 className="truncate font-heading text-lg font-semibold text-ink">
+                    {mainCamera.name}
+                  </h2>
+                  <p className="mt-0.5 text-xs text-gray-500">
+                    <span className="tabular-nums">{mainCamera.cameraCode}</span>
+                    {mainCamera.site?.name ? ` · ${mainCamera.site.name}` : ''} · Health{' '}
+                    <span className="tabular-nums">{mainCamera.healthScore}</span>/100
+                  </p>
+                </div>
+                <CameraStatusBadge status={mainCamera.status} />
+              </div>
+            )}
+          </div>
+
+          {/* Side list — click a tile (or its details) to play it in the main player. */}
+          <aside className="flex min-w-0 flex-col gap-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+              More cameras · {sideIds.length}
+            </p>
+            {sideIds.length === 0 && (
+              <p className="text-xs text-gray-400">
+                Add cameras with the picker above to build the side list.
+              </p>
+            )}
+            {sideIds.map((id) => {
+              const camera = cameraById.get(id);
+              if (!camera) {
+                return (
+                  <div
+                    key={id}
+                    className="flex items-center justify-between gap-2 rounded-tile bg-charcoal/5 px-3 py-2"
+                  >
+                    <p className="text-xs text-gray-400">
+                      {camerasLoading ? 'Loading…' : 'Camera unavailable'}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => removeCamera(id)}
+                      aria-label="Remove unavailable camera"
+                      className="rounded-full bg-black/10 p-1 text-gray-400 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                );
+              }
+              return (
+                <div key={id} className="group flex items-start gap-3">
+                  <div className="relative w-44 shrink-0">
+                    <LiveTile camera={camera} onRemove={() => removeCamera(id)} />
+                    <button
+                      type="button"
+                      onClick={() => setFocusedId(id)}
+                      aria-label={`Play ${camera.name} in the main player`}
+                      className="absolute inset-0 z-10 rounded-tile transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setFocusedId(id)}
+                    className="min-w-0 flex-1 pt-0.5 text-left focus-visible:outline-none"
+                  >
+                    <p className="truncate text-sm font-medium text-ink transition-colors group-hover:text-indigo-600">
+                      {camera.name}
+                    </p>
+                    <p className="mt-0.5 truncate text-xs text-gray-500">
+                      <span className="tabular-nums">{camera.cameraCode}</span>
+                      {camera.site?.name ? ` · ${camera.site.name}` : ''}
+                    </p>
+                    <p className="mt-1 text-[11px] text-gray-500">
+                      Health <span className="tabular-nums">{camera.healthScore}</span>/100
+                    </p>
+                    <CameraStatusBadge status={camera.status} className="mt-1.5" />
+                  </button>
+                </div>
+              );
+            })}
+          </aside>
         </div>
       ) : (
         <div className={cn('grid gap-3', KIND_GRID_CLASS[kind])}>

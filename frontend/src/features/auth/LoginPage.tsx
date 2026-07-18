@@ -101,17 +101,17 @@ export function LoginPage(): JSX.Element {
   }
 
   const fieldBase =
-    'peer w-full border-0 border-b bg-transparent px-0 py-2 text-sm text-[#2f2b3a] outline-none transition-colors placeholder:text-[#a9a591] focus:border-[#6c6890]';
+    'peer w-full rounded-xl border bg-white/70 px-3.5 py-2.5 text-sm text-[#2f2b3a] outline-none transition-colors placeholder:text-[#a9a591] focus:border-[#6c6890] focus:ring-2 focus:ring-[#6c6890]/15';
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#dcd8e6] p-4 sm:p-6">
+    <div className="min-h-screen w-full bg-[#efe8cf]">
       <motion.div
         initial={reduceMotion ? false : 'hidden'}
         animate="visible"
         variants={pageTransition}
-        className="relative w-full max-w-4xl overflow-hidden rounded-3xl bg-[#efe8cf] shadow-2xl"
+        className="relative w-full overflow-hidden bg-[#efe8cf]"
       >
-        <div className="relative flex min-h-[560px] flex-col md:flex-row">
+        <div className="relative flex min-h-screen flex-col md:flex-row">
           {/* ── Form panel (cream) ─────────────────────────────── */}
           <div className="relative z-10 flex w-full flex-col justify-center px-7 py-10 sm:px-12 md:w-[52%]">
             {/* Compact brand (mobile only) */}
@@ -124,7 +124,7 @@ export function LoginPage(): JSX.Element {
               </span>
             </div>
 
-            <div className="mx-auto w-full max-w-xs">
+            <div className="mx-auto w-full max-w-sm">
               <h1 className="text-center font-heading text-2xl font-semibold text-[#2f2b3a]">
                 Sign in
               </h1>
@@ -169,7 +169,7 @@ export function LoginPage(): JSX.Element {
                       placeholder="••••••••"
                       className={cn(
                         fieldBase,
-                        'pr-8',
+                        'pr-10',
                         errors.password ? 'border-[#c0563d]' : 'border-[#c7c0a6]'
                       )}
                       {...register('password')}
@@ -178,7 +178,7 @@ export function LoginPage(): JSX.Element {
                       type="button"
                       tabIndex={-1}
                       onClick={() => setShowPassword((v) => !v)}
-                      className="absolute right-0 top-1.5 text-[#a9a591] transition-colors hover:text-[#6c6890]"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#a9a591] transition-colors hover:text-[#6c6890]"
                       aria-label={showPassword ? 'Hide password' : 'Show password'}
                     >
                       {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -197,7 +197,7 @@ export function LoginPage(): JSX.Element {
                     <div className="relative">
                       <KeyRound
                         size={16}
-                        className="pointer-events-none absolute left-0 top-2.5 text-[#a9a591]"
+                        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#a9a591]"
                       />
                       <input
                         id="login-mfa"
@@ -209,7 +209,7 @@ export function LoginPage(): JSX.Element {
                         autoFocus
                         className={cn(
                           fieldBase,
-                          'pl-6',
+                          'pl-10',
                           errors.mfaCode ? 'border-[#c0563d]' : 'border-[#c7c0a6]'
                         )}
                         {...register('mfaCode')}

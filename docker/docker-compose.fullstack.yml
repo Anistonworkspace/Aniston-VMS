@@ -51,6 +51,9 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-devpassword123}@postgres:5432/${POSTGRES_DB:-aniston_vms}
       REDIS_URL: redis://redis:6379
       NODE_ENV: production
+      # Demo/dev stack only: headroom for Playwright E2E runs (one UI login per
+      # worker + auth specs). Production default stays 50 (backend/src/config/env.ts).
+      AUTH_RATE_LIMIT_MAX_REQUESTS: 200
     depends_on:
       postgres:
         condition: service_healthy
