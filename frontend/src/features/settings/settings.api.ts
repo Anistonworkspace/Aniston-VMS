@@ -2,6 +2,9 @@ import { api } from '@/app/api';
 import { unwrapEnvelope } from '@/lib/apiError';
 import type { ApiEnvelope } from '@/lib/apiError';
 import type {
+  BackupModel,
+  CapacityOverview,
+  CreateBackupInput,
   CreateRegionInput,
   CreateRouterInput,
   CreateSiteInput,
@@ -16,10 +19,15 @@ import type {
   RouterListQuery,
   Site,
   SiteListQuery,
+  StoragePolicyModel,
+  SystemSettings,
   UpdateRegionInput,
   UpdateRouterInput,
   UpdateSiteInput,
+  UpdateSystemSettingsInput,
+  UpdateSystemSettingsResult,
   UpdateZoneInput,
+  UpsertStoragePolicyInput,
   Zone,
   ZoneListQuery,
 } from './settings.types';
@@ -40,7 +48,19 @@ function toQueryString(params?: Record<string, string | number | undefined>): st
 }
 
 export const settingsApi = api
-  .enhanceEndpoints({ addTagTypes: ['AuthUser', 'Region', 'Zone', 'Site', 'Router'] })
+  .enhanceEndpoints({
+    addTagTypes: [
+      'AuthUser',
+      'Region',
+      'Zone',
+      'Site',
+      'Router',
+      'SystemSettings',
+      'StoragePolicy',
+      'Capacity',
+      'Backup',
+    ],
+  })
   .injectEndpoints({
     endpoints: (builder) => ({
       // ── Regions ──────────────────────────────────────────────────────
@@ -206,6 +226,50 @@ export const settingsApi = api
         transformResponse: unwrapEnvelope<MfaStatusResult>,
         invalidatesTags: [{ type: 'AuthUser', id: 'ME' }],
       }),
+
+      // ── CR-10 Settings admin API (settings.router.ts, mounted at /api;
+      // SUPER_ADMIN + PROJECT_ADMIN only — every route below is real). ──
+      getSystemSettings: builder.query<SystemSettings, void>({
+        query: () => '/settings/system',
+        transformResponse: unwrapEnvelope<SystemSettings>,
+        providesTags: [{ type: 'SystemSettings', id: 'ALL' }],
+      }),
+      updateSystemSettings: builder.mutation<UpdateSystemSettingsResult, UpdateSystemSettingsInput>(
+        {
+          query: (body) => ({ url: '/settings/system', method: 'PUT', body }),
+          transformResponse: unwrapEnvelope<UpdateSystemSettingsResult>,
+          // Retention/caps feed the capacity estimates, so refresh both.
+          invalidatesTags: [
+            { type: 'SystemSettings', id: 'ALL' },
+            { type: 'Capacity', id: 'ALL' },
+          ],
+        }
+      ),
+      listStoragePolicies: builder.query<StoragePolicyModel[], void>({
+        query: () => '/settings/storage-policies',
+        transformResponse: unwrapEnvelope<StoragePolicyModel[]>,
+        providesTags: [{ type: 'StoragePolicy', id: 'LIST' }],
+      }),
+      upsertStoragePolicy: builder.mutation<StoragePolicyModel, UpsertStoragePolicyInput>({
+        query: (body) => ({ url: '/settings/storage-policies', method: 'PUT', body }),
+        transformResponse: unwrapEnvelope<StoragePolicyModel>,
+        invalidatesTags: [{ type: 'StoragePolicy', id: 'LIST' }],
+      }),
+      getCapacityOverview: builder.query<CapacityOverview, void>({
+        query: () => '/settings/capacity',
+        transformResponse: unwrapEnvelope<CapacityOverview>,
+        providesTags: [{ type: 'Capacity', id: 'ALL' }],
+      }),
+      listBackups: builder.query<BackupModel[], void>({
+        query: () => '/settings/backups',
+        transformResponse: unwrapEnvelope<BackupModel[]>,
+        providesTags: [{ type: 'Backup', id: 'LIST' }],
+      }),
+      createBackup: builder.mutation<BackupModel, CreateBackupInput>({
+        query: (body) => ({ url: '/settings/backups', method: 'POST', body }),
+        transformResponse: unwrapEnvelope<BackupModel>,
+        invalidatesTags: [{ type: 'Backup', id: 'LIST' }],
+      }),
     }),
   });
 
@@ -229,4 +293,11 @@ export const {
   useSetupMfaMutation,
   useVerifyMfaMutation,
   useDisableMfaMutation,
+  useGetSystemSettingsQuery,
+  useUpdateSystemSettingsMutation,
+  useListStoragePoliciesQuery,
+  useUpsertStoragePolicyMutation,
+  useGetCapacityOverviewQuery,
+  useListBackupsQuery,
+  useCreateBackupMutation,
 } = settingsApi;

@@ -1,18 +1,30 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Palette, Shield, User as UserIcon, Waypoints } from 'lucide-react';
+import { Gauge, HardDrive, Palette, Shield, User as UserIcon, Waypoints } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { pageChild, pageTransition } from '@/lib/animations';
 import { ToastContainer } from '@/components/ui';
 import { useToast } from '@/hooks/useToast';
+import { useGetCurrentUserQuery } from '@/features/auth/auth.api';
 import { ProfilePanel } from './ProfilePanel';
 import { SecurityPanel } from './SecurityPanel';
 import { AppearancePanel } from './AppearancePanel';
 import { HierarchyPanel } from './HierarchyPanel';
+import { SystemCapacityPanel } from './SystemCapacityPanel';
+import { StorageBackupPanel } from './StorageBackupPanel';
+import { canManageHierarchy } from './settings.types';
 
-type TabId = 'profile' | 'security' | 'appearance' | 'hierarchy';
+type TabId = 'profile' | 'security' | 'appearance' | 'hierarchy' | 'system' | 'storage';
 
-const TABS: Array<{ id: TabId; label: string; icon: typeof UserIcon; description: string }> = [
+const TABS: Array<{
+  id: TabId;
+  label: string;
+  icon: typeof UserIcon;
+  description: string;
+  /** Hidden unless SUPER_ADMIN/PROJECT_ADMIN — mirrors the backend
+   *  requireRole gate on every /settings/* route (settings.router.ts). */
+  adminOnly?: boolean;
+}> = [
   {
     id: 'profile',
     label: 'Profile',
@@ -37,11 +49,29 @@ const TABS: Array<{ id: TabId; label: string; icon: typeof UserIcon; description
     icon: Waypoints,
     description: 'Regions, zones, sites and routers',
   },
+  {
+    id: 'system',
+    label: 'System',
+    icon: Gauge,
+    description: 'Retention, quality, live-stream caps and capacity estimates',
+    adminOnly: true,
+  },
+  {
+    id: 'storage',
+    label: 'Storage & Backups',
+    icon: HardDrive,
+    description: 'Zone/site storage policies and snapshot backups',
+    adminOnly: true,
+  },
 ];
 
 export function SettingsPage() {
   const [activeTab, setActiveTab] = useState<TabId>('profile');
   const toast = useToast();
+  const { data: user } = useGetCurrentUserQuery();
+  // Same roles the backend enforces on /settings/* (settings.router.ts).
+  const isAdmin = canManageHierarchy(user?.role);
+  const visibleTabs = TABS.filter((tab) => !tab.adminOnly || isAdmin);
 
   return (
     <motion.div
@@ -63,7 +93,7 @@ export function SettingsPage() {
         role="tablist"
         aria-label="Settings sections"
       >
-        {TABS.map((tab) => {
+        {visibleTabs.map((tab) => {
           const Icon = tab.icon;
           const active = tab.id === activeTab;
           return (
@@ -94,7 +124,7 @@ export function SettingsPage() {
       </motion.div>
 
       <motion.div variants={pageChild} className="text-xs uppercase tracking-wide text-gray-400">
-        {TABS.find((t) => t.id === activeTab)?.description}
+        {visibleTabs.find((t) => t.id === activeTab)?.description}
       </motion.div>
 
       <motion.div key={activeTab} variants={pageChild} initial="hidden" animate="visible">
@@ -102,6 +132,8 @@ export function SettingsPage() {
         {activeTab === 'security' && <SecurityPanel toast={toast} />}
         {activeTab === 'appearance' && <AppearancePanel toast={toast} />}
         {activeTab === 'hierarchy' && <HierarchyPanel toast={toast} />}
+        {activeTab === 'system' && isAdmin && <SystemCapacityPanel toast={toast} />}
+        {activeTab === 'storage' && isAdmin && <StorageBackupPanel toast={toast} />}
       </motion.div>
 
       <ToastContainer toasts={toast.toasts} onDismiss={toast.dismiss} />

@@ -73,6 +73,19 @@ export default {
           DEFAULT: 'var(--sand)',
           deep: 'var(--sand-deep)',
         },
+        // Sign-in (unauthenticated) light-blue topology (see globals.css :root)
+        'auth-bg': 'var(--auth-bg)',
+        'auth-surface': 'var(--auth-surface)',
+        'auth-panel': 'var(--auth-panel)',
+        'auth-field': 'var(--auth-field)',
+        'auth-border': 'var(--auth-field-border)',
+        'auth-ink': 'var(--auth-ink)',
+        'auth-muted': 'var(--auth-muted)',
+        'auth-accent': {
+          DEFAULT: 'var(--auth-accent)',
+          hover: 'var(--auth-accent-hover)',
+        },
+        'auth-link': 'var(--auth-link)',
         charcoal: 'var(--charcoal)',
         state: {
           healthy: { DEFAULT: 'var(--status-healthy)', soft: 'var(--status-healthy-soft)' },

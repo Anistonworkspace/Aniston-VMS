@@ -8,8 +8,8 @@ Aniston VMS (Aniston Video Management System) — a production CCTV monitoring p
 
 | Path | What it is |
 |---|---|
-| `frontend/` | `@aniston-vms/frontend` — React 18 + Vite + TypeScript + Tailwind, PWA (vite-plugin-pwa), TanStack Query, feature folders under `src/features/` |
-| `backend/` | `@aniston-vms/backend` — current scaffold (migrating to NestJS): Express + TypeScript (ESM), Prisma, BullMQ + ioredis, Socket.IO, zod validation, winston logging, swagger docs |
+| `frontend/` | `@aniston-vms/frontend` — React 18 + Vite + TypeScript + Tailwind, PWA (vite-plugin-pwa), Redux Toolkit + RTK Query, feature folders under `src/features/` |
+| `backend/` | `@aniston-vms/backend` — official as-built stack (v1.5): Express + TypeScript (ESM), Prisma, BullMQ + ioredis, Socket.IO, zod validation, winston logging, swagger docs |
 | `shared/` | `@aniston-vms/shared` — shared TS types/enums/permissions (consumed from source, no build required) |
 | `prisma/` | Single schema of record: `prisma/schema.prisma`, migrations, `seed.ts` |
 | `docker/` | `docker-compose.dev.yml` (postgres+redis only) and `docker-compose.fullstack.yml` (all 4 services) |
@@ -18,7 +18,7 @@ Aniston VMS (Aniston Video Management System) — a production CCTV monitoring p
 | `.claude/` | Hooks (command guard, doctor), rules, skills, agents |
 | `memory/` | Session/project state — update via `/done` after commits |
 
-**Stack source of truth (decided):** the plan docs are canonical — the target architecture is **NestJS (`apps/api`) + pnpm multi-service** (`apps/workers` BullMQ, `services/media` MediaMTX, `services/image-analysis` FastAPI+OpenCV, `packages/shared`), per `docs/02-TRD.md` + `docs/06-implementation-plan.md` + `docs/tech-stack-targets.md`. ⚠️ The current on-disk `backend/` is an **Express + Prisma + BullMQ scaffold being migrated to NestJS** — treat it as legacy to be ported, and align all new backend work (and the agents/skills/rules) to the NestJS target, not the Express scaffold.
+**Stack source of truth (decided, v1.5):** the **as-built stack is official** — **Express + TypeScript (ESM) + Prisma + BullMQ** (`backend/`, npm workspaces) with **MediaMTX** as the media plane and **Redux Toolkit + RTK Query** on the frontend, per `docs/02-TRD.md` (v2.0) + `docs/06-implementation-plan.md` (v2.0) + `docs/tech-stack-targets.md`. There is **no NestJS/pnpm/FastAPI migration**; image analysis stays JS/TS in-worker for v1.5 (Python/OpenCV deferred to the Phase-2 waterlogging roadmap). Align all new backend work (and the agents/skills/rules) to the Express as-built patterns in `backend/src/modules/*`.
 
 ## Commands
 

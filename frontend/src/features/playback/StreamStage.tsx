@@ -35,7 +35,7 @@ const KIND_LABEL: Record<StreamKind, string> = {
  * given camera + kind, and renders the resulting feed. Real media playback
  * depends on a reachable MediaMTX/ffmpeg stack (env.PLAYBACK_SIM_MODE=false);
  * when the backend reports simMode: true there is nothing real to attach a
- * <video> element to, so we render an explicit "simulated" placeholder
+ * <video> element to, so we render an explicit simulated-stream view
  * instead of a broken player.
  */
 export function StreamStage({ camera, kind, playbackRange }: StreamStageProps) {
@@ -152,7 +152,7 @@ export function StreamStage({ camera, kind, playbackRange }: StreamStageProps) {
           </div>
         ) : (
           // Native HLS playback (Safari); other browsers will fall back to the
-          // simulated placeholder via onError since no hls.js is bundled here.
+          // simulated-stream view via onError since no hls.js is bundled here.
           <video
             key={session.id}
             className="h-full w-full object-contain"

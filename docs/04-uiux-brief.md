@@ -1,11 +1,12 @@
 # Aniston VMS — UI/UX Brief
 
-**Doc version: v2.0 · 17 July 2026 · Built for plan v1.4**
+**Doc version: v3.0 · 18 July 2026 · Built for plan v1.5**
 
 | Doc changelog | |
 |---|---|
 | v1.0 | Dark ops-center theme |
 | v2.0 | **Full redesign to the light "soft SaaS" reference** (`docs/actual-design.png`): slate sidebar, cream canvas, white rounded cards, sage/indigo/coral/sand accents, Poppins + Inter |
+| v3.0 | **Plan v1.4 → v1.5 change order** (CR-1…CR-12): sidebar user block → bottom + Add-camera card retired; dashboard KPI row; Live Wall v2 (sticky focus header, snapshot-interval mode, filmstrip, independent scroll); MapLibre map + health pins/popover; incidents **list view** (Kanban = secondary); admin-gated **Settings** sections (Access / Storage & Backup / Capacity / Cameras); snapshot authenticity-stamp spec; clips + Zone→Site→Camera→date snapshot browser (CR-8/9/10 + §14). Base reconciled to the as-built **edge-to-edge** layout (§3). |
 
 ---
 
@@ -44,13 +45,13 @@ The app is **full-viewport, edge-to-edge** — no outer rounded frame or floatin
 
 Top → bottom, mirroring the reference:
 1. **Logo:** small mark + wordmark **"Aniston VMS"** in white.
-2. **User block (centered):** circular avatar with a 2 px status ring (sage when platform healthy), name, small role chip ("Zone Engineer").
+2. **User block:** circular avatar with a 2 px status ring (sage when platform healthy), name, small role chip ("Zone Engineer"). *(v1.5: this block **relocates to the sidebar bottom** and absorbs the old topbar profile/logout — §14.1.)*
 3. **Nav (icon + label, white text, active = white 10% pill):** Dashboard · Live Wall · Cameras · **Incidents** (coral count pill when >0) · **Zones ⌄** — expandable, sub-items are the user's scoped zones each with a **colored health dot** (sage/amber/coral), exactly like Marketing/Design/Webflow in the reference · Analytics · Clips · Reports · Admin (role-gated) · Settings.
-4. **Bottom card:** dashed-border rounded card like the reference's "Add files" — **"Add camera"** with a white circular **+** button (admins; opens registration). Non-admins instead see a **platform-health chip**: "Platform Healthy · heartbeat 20 s".
+4. **Bottom card:** dashed-border rounded card like the reference's "Add files" — **"Add camera"** with a white circular **+** button (admins; opens registration). Non-admins instead see a **platform-health chip**: "Platform Healthy · heartbeat 20 s". *(v1.5: the dashed Add-camera card is **retired** — registration moves to the one shared Add-camera modal; the sidebar bottom now hosts the relocated user block (§14.1). Non-admins keep the platform-health chip.)*
 
 ## 5. Topbar (content area)
 
-Left: **page title** (Poppins) + a **coral pill** beside it showing the live critical count ("Overview `● 3 Critical`") — the reference's red "185 GB" pill. Center: rounded **search** input with icon ("Search cameras, sites, incidents…"). Right: bell icon-button (unread dot), profile/logout icon-button, and **one sage primary CTA button** per page (reference's "Upgrade Plan" slot): Dashboard → "Open Live Wall" · Cameras → "+ Add Camera" (admin) · Incidents → "Export" · Reports → "New Report".
+Left: **page title** (Poppins) + a **coral pill** beside it showing the live critical count ("Overview `● 3 Critical`") — the reference's red "185 GB" pill. Center: rounded **search** input with icon ("Search cameras, sites, incidents…"). Right: bell icon-button (unread dot), profile/logout icon-button, and **one sage primary CTA button** per page (reference's "Upgrade Plan" slot): Dashboard → "Open Live Wall" · Cameras → "+ Add Camera" (admin) · Incidents → "Export" · Reports → "New Report". *(v1.5: the topbar is **trimmed** to the notification bell + the page primary CTA; profile/logout moves to the sidebar bottom, and the Live/Snapshots toggle + zone filter live in the Live Wall focus header — §14.1, §14.3.)*
 
 ## 6. Page hero pattern
 
@@ -105,3 +106,52 @@ Loading skeletons, guided empty states, retry-able errors on every list. Confirm
 ## 13. Style do / don't (keep Claude Code on-reference)
 
 **Do:** cream surface + white cards everywhere; pastel fills only on accent cards (ZoneCards, chips); soft shadows; big radii; generous whitespace; Poppins only for display text; colored dots for status. **Don't:** default shadcn slate/dark palette; gradients (except photo-card overlays); harsh borders or 1 px gray boxes everywhere; dense tables without card wrapping; more than one sage primary button per view; dark backgrounds outside sidebar + video surfaces.
+
+## 14. v1.5 change order (plan v1.4 → v1.5)
+
+These layouts extend the system above and reuse its tokens, hero pattern, and card language — nothing here restates the design system. Base was reconciled to the as-built **edge-to-edge** frame (§3). **Admin-only surfaces are invisible (removed from the tree), not disabled**, for non-admins.
+
+### 14.1 Sidebar user block → bottom & topbar trim (CR-1)
+
+- The **user block** (avatar + status ring + name + role chip) leaves the sidebar top and **pins to the sidebar bottom**, in the slot the dashed "Add camera" card used to occupy. It absorbs the old topbar **profile/logout** (click → menu: Profile · Password · Sessions · Sign out).
+- The dashed **"Add camera" card is retired**; camera registration now opens the single shared **Add-camera modal** (topbar CTA on Cameras, and Settings → Cameras). Non-admins keep the **platform-health chip** in the bottom slot above the user block.
+- **Topbar** keeps the left **page title + coral critical pill**; its right cluster is **trimmed to the notification bell + the one page primary CTA**. Global search stays. The **Live/Snapshots toggle** and **zone filter** that used to sit up here move into the Live Wall focus header (§14.3).
+
+### 14.2 Dashboard KPI row (CR-2)
+
+- A **KPI row** sits directly under the dashboard hero, above the signature grid: tiles for **total cameras**, **online / offline**, **open incidents by severity**, and **MTTA today**. Tiles reuse `DonutCard` / `PlatformHealthTile` styling; each links to its filtered view.
+
+### 14.3 Live Wall v2 (CR-4) + health map (CR-6)
+
+- **Sticky focus header** (does not scroll with the grid): holds the **Live / Snapshots mode toggle**, the **zone filter**, grid-density control, and the selected-camera label. The `LiveWallGrid` below scrolls **independently** beneath it.
+- **Snapshot-interval mode:** instead of N live RTSP streams, the wall shows periodic **stamped snapshots** on a chosen interval (e.g. 10 / 30 / 60 s) — the load-safe default for watching many of the ~125 cameras at once.
+- **Filmstrip:** one enlarged `PlayerShell` focus tile with a horizontal filmstrip of the remaining tiles; click promotes a tile to focus.
+- **Health map (CR-6):** a **MapLibre** map view of Delhi zones/sites with **camera health pins**; hovering/clicking a pin opens a **popover** (name, status, last-seen, open live/snapshot).
+
+### 14.4 Cameras page (CR-11)
+
+- Camera **list/grid** of `CameraCard`s with health dot, zone/site, bitrate/FPS, filters by **zone / site / status**, and search. Admin row/CTA opens the shared **Add/Edit-camera form** (same component as Settings → Cameras).
+- **Add-camera modal (CR-6):** now that the sidebar "Add camera" card is retired (CR-1), a camera is registered via an **Add-camera modal launched from the Cameras page** (admin CTA) with **RTSP URL**, **lat/long**, and **site assignment** fields (CR-6 / CR-11).
+
+### 14.5 Incidents — list view + incident detail (CR-7)
+
+- **List view is the default:** table of incidents (severity, camera, zone, status, age, assignee) with filters and saved views. The **Board (Kanban) view stays as the secondary toggle** (`IncidentKanban`).
+- **Incident detail:** `DiagnosisBanner` up top, then `EscalationTimeline`, evidence via `EvidencePhotoCard`, and actions — **acknowledge · escalate · close** (closure uses a consequence-stating confirmation).
+
+### 14.6 Zone page (CR-8)
+
+- Route **`/zones/:id`**: zone **KPIs** (cameras, uptime, open incidents), **site list**, **camera list / map**, **open incidents**, and **uptime** trend — all in the standard card language, scoped to that zone.
+
+### 14.7 Settings — admin-gated sections (CR-10)
+
+Invisible to non-admins; **non-admins see only Profile / Password / Sessions.** Admin-gated sections:
+- **Access** (RBAC): roles, **Region / Zone / Site / Camera scope assignment**, and **LIVE_VIEW grants**.
+- **Storage & Backup:** retention per data class, **"backup before purge"** toggle, manual backup (**date-range + scope → ZIP + signed link**), and backup history.
+- **Capacity:** **max concurrent live streams** global + per site, with a **current-sessions** readout.
+- **Cameras:** the shared **add/edit camera form**.
+
+### 14.8 Clips + Snapshot browser (CR-9) & snapshot authenticity stamp (CR-5)
+
+- **Snapshot browser** organized **Zone → Site → Camera → date** with **stamped previews** (`SnapshotCompare` for A/B).
+- **Clips** table gains **site / zone** columns + filters; disabling clip storage for a site shows a clear **"storage disabled"** message in place of the table for that site.
+- **Snapshot authenticity stamp (CR-5):** every snapshot preview carries a tamper-evident stamp — **camera id + IST timestamp + integrity marker** — rendered as a corner overlay and preserved in exports.

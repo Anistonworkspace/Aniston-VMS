@@ -33,6 +33,11 @@ enum ScopeType {
   REGION
   ZONE
   SITE
+  CAMERA
+}
+
+enum PermissionType {
+  LIVE_VIEW
 }
 
 enum CameraStatus {
@@ -51,6 +56,7 @@ enum Diagnosis {
   CONFIG_ERROR
   STREAM_DEGRADED
   IMAGE_PROBLEM
+  WATERLOGGING // placeholder, unused in v1.5 — Phase-2 waterlogging roadmap
 }
 
 enum CheckType {
@@ -181,6 +187,9 @@ model User {
   streamSessions             StreamSession[]
   clipExports                ClipExport[]
   savedLayouts               SavedLayout[]
+  permissions                UserPermission[]    @relation("UserPermissionUser")
+  grantedPermissions         UserPermission[]    @relation("UserPermissionGrantedBy")
+  backups                    Backup[]
 
   @@map("users")
 }
@@ -343,6 +352,9 @@ model Camera {
   lastHealthyAt         DateTime?       @map("last_healthy_at")
   lastSnapshotAt        DateTime?       @map("last_snapshot_at")
   maintenanceMode       Boolean         @default(false) @map("maintenance_mode")
+  latitude              Float           @default(0) // real Delhi coords set by seed (v1.5)
+  longitude             Float           @default(0)
+  snapshotIntervalMinutes Int           @default(60) @map("snapshot_interval_minutes")
   createdAt             DateTime        @default(now()) @map("created_at")
   updatedAt             DateTime        @updatedAt @map("updated_at")
 
@@ -446,6 +458,10 @@ model Snapshot {
   colorCastScore   Float        @map("color_cast_score")
   analysisResult   Json         @map("analysis_result")
   analysisVersion  String       @map("analysis_version")
+  stamped          Boolean      @default(true)
+  stampText        String?      @map("stamp_text")
+  latitude         Float?
+  longitude        Float?
   createdAt        DateTime     @default(now()) @map("created_at")
   updatedAt        DateTime     @updatedAt @map("updated_at")
 
@@ -753,4 +769,70 @@ model SavedLayout {
 
   @@unique([userId, name])
   @@map("saved_layouts")
+}
+
+enum BackupStatus {
+  QUEUED
+  RUNNING
+  DONE
+  FAILED
+}
+
+model UserPermission {
+  id         String         @id @default(uuid())
+  userId     String         @map("user_id")
+  permission PermissionType
+  grantedBy  String         @map("granted_by")
+  grantedAt  DateTime       @default(now()) @map("granted_at")
+  createdAt  DateTime       @default(now()) @map("created_at")
+  updatedAt  DateTime       @updatedAt @map("updated_at")
+
+  user    User @relation("UserPermissionUser", fields: [userId], references: [id], onDelete: Cascade)
+  granter User @relation("UserPermissionGrantedBy", fields: [grantedBy], references: [id], onDelete: Restrict)
+
+  @@unique([userId, permission])
+  @@map("user_permissions")
+}
+
+model StoragePolicy {
+  id             String    @id @default(uuid())
+  scopeType      ScopeType @map("scope_type") // ZONE | SITE only (app-enforced)
+  scopeId        String    @map("scope_id")
+  storeClips     Boolean   @default(true) @map("store_clips")
+  storeSnapshots Boolean   @default(true) @map("store_snapshots")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@unique([scopeType, scopeId])
+  @@map("storage_policies")
+}
+
+model SystemSetting {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     Json
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // keys: retention_days, compression_quality, max_live_sessions_global, max_live_sessions_per_site
+  @@map("system_settings")
+}
+
+model Backup {
+  id          String       @id @default(uuid())
+  requestedBy String       @map("requested_by")
+  scopeType   ScopeType?   @map("scope_type")
+  scopeId     String?      @map("scope_id")
+  rangeStart  DateTime     @map("range_start")
+  rangeEnd    DateTime     @map("range_end")
+  status      BackupStatus @default(QUEUED)
+  fileKey     String?      @map("file_key")
+  sizeBytes   BigInt?      @map("size_bytes")
+  error       String?
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  requester User @relation(fields: [requestedBy], references: [id], onDelete: Restrict)
+
+  @@map("backups")
 }

@@ -60,6 +60,14 @@ export const INCIDENT_RULES: Record<Diagnosis, IncidentRule> = {
     immediate: false,
     title: 'Image problem',
   },
+  // v1.5 placeholder — the health engine never emits WATERLOGGING yet; the
+  // rule exists so the Diagnosis record stays exhaustive (Phase-2 roadmap).
+  WATERLOGGING: {
+    severity: 'WARNING',
+    scope: 'CAMERA',
+    immediate: false,
+    title: 'Waterlogging detected',
+  },
 };
 
 // Escalation ladder (docs §6.5): minutes since firstDetectedAt → recipient

@@ -98,6 +98,9 @@ export interface IncidentListQuery {
   zoneId?: string;
   cameraId?: string;
   limit?: number;
+  /** lastDetectedAt window — ISO strings; `from` inclusive, `to` exclusive (CR-7). */
+  from?: string;
+  to?: string;
 }
 
 /** POST /incidents/:id/resolve — resolveBodySchema. */

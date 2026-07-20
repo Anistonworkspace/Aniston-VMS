@@ -1,0 +1,15 @@
+# CR-12 — Grafana dashboard provisioning: loads the two VMS dashboards
+# (vms-fleet-health, vms-ops-workers) from /var/lib/grafana/dashboards.
+apiVersion: 1
+
+providers:
+  - name: aniston-vms
+    orgId: 1
+    folder: Aniston VMS
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

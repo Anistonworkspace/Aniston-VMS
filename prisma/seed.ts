@@ -17,6 +17,8 @@ import {
   StreamKind,
   ClipStatus,
   LayoutKind,
+  PermissionType,
+  BackupStatus,
   TaskType,
   TaskSource,
   TaskStatus,
@@ -70,6 +72,9 @@ const B = {
   layout: 24,
   mwindow: 25,
   mtask: 26,
+  permission: 27,
+  setting: 28,
+  backup: 29,
 } as const;
 
 /** Normalized host:port+path hash, mirroring the duplicate-prevention spec. */
@@ -137,6 +142,10 @@ async function wipe(): Promise<void> {
   await prisma.auditLog.deleteMany();
   await prisma.refreshToken.deleteMany();
   await prisma.userAccessScope.deleteMany();
+  await prisma.userPermission.deleteMany();
+  await prisma.backup.deleteMany();
+  await prisma.systemSetting.deleteMany();
+  await prisma.storagePolicy.deleteMany();
   await prisma.user.deleteMany();
 }
 
@@ -275,6 +284,8 @@ async function main(): Promise<void> {
     routerId: string;
     name: string;
     host: string;
+    latitude: number;
+    longitude: number;
     status: CameraStatus;
     healthScore: number;
     diagnosis: Diagnosis | null;
@@ -289,6 +300,8 @@ async function main(): Promise<void> {
       routerId: router1,
       name: 'Rohini Market — Entry Gate',
       host: '10.20.30.11',
+      latitude: 28.7361,
+      longitude: 77.108,
       status: CameraStatus.HEALTHY,
       healthScore: 98,
       diagnosis: null,
@@ -302,6 +315,8 @@ async function main(): Promise<void> {
       routerId: router1,
       name: 'Rohini Market — Parking',
       host: '10.20.30.12',
+      latitude: 28.7352,
+      longitude: 77.1095,
       status: CameraStatus.HEALTHY,
       healthScore: 93,
       diagnosis: null,
@@ -315,6 +330,8 @@ async function main(): Promise<void> {
       routerId: router1,
       name: 'Rohini Market — Rear Lane',
       host: '10.20.30.13',
+      latitude: 28.7349,
+      longitude: 77.1083,
       status: CameraStatus.WARNING,
       healthScore: 71,
       diagnosis: Diagnosis.SIM_SIGNAL_ISSUE,
@@ -327,6 +344,8 @@ async function main(): Promise<void> {
       routerId: router2,
       name: 'Hauz Khas Gate — Main View',
       host: '10.20.40.11',
+      latitude: 28.5541,
+      longitude: 77.1946,
       status: CameraStatus.CRITICAL,
       healthScore: 12,
       diagnosis: Diagnosis.CAMERA_OFFLINE,
@@ -339,6 +358,8 @@ async function main(): Promise<void> {
       routerId: router2,
       name: 'Hauz Khas Gate — Footpath',
       host: '10.20.40.12',
+      latitude: 28.5531,
+      longitude: 77.1937,
       status: CameraStatus.MAINTENANCE,
       healthScore: 55,
       diagnosis: null,
@@ -352,6 +373,8 @@ async function main(): Promise<void> {
       routerId: router2,
       name: 'Hauz Khas Gate — Cycle Stand',
       host: '10.20.40.13',
+      latitude: 28.5528,
+      longitude: 77.1949,
       status: CameraStatus.UNKNOWN,
       healthScore: 0,
       diagnosis: null,
@@ -390,6 +413,8 @@ async function main(): Promise<void> {
         healthScore: c.healthScore,
         diagnosis: c.diagnosis,
         maintenanceMode: c.maintenanceMode ?? false,
+        latitude: c.latitude,
+        longitude: c.longitude,
         lastHealthyAt: c.lastHealthyAt ?? null,
         lastSnapshotAt: c.lastSnapshotAt ?? null,
       },
@@ -463,6 +488,15 @@ async function main(): Promise<void> {
       scopeType: ScopeType.ALL,
       scopeId: null,
     },
+    {
+      n: 7,
+      email: 'camviewer@client.example',
+      name: 'Camera Viewer (Single-Camera Demo)',
+      phone: '+91-9800000007',
+      role: Role.CLIENT_VIEWER,
+      scopeType: ScopeType.CAMERA,
+      scopeId: cam(1),
+    },
   ];
   await prisma.user.createMany({
     data: users.map((u) => ({
@@ -483,6 +517,53 @@ async function main(): Promise<void> {
     })),
   });
   const userEngineer = uid(B.user, 4);
+  const userAdmin = uid(B.user, 1);
+
+  // v1.5: demo LIVE_VIEW grants — admin and one operator have it; the zone
+  // engineer deliberately does not (exercises the permission gate end-to-end).
+  await prisma.userPermission.createMany({
+    data: [
+      {
+        id: uid(B.permission, 1),
+        userId: userAdmin,
+        permission: PermissionType.LIVE_VIEW,
+        grantedBy: userAdmin,
+        grantedAt: hrAgo(72),
+      },
+      {
+        id: uid(B.permission, 2),
+        userId: uid(B.user, 3),
+        permission: PermissionType.LIVE_VIEW,
+        grantedBy: userAdmin,
+        grantedAt: hrAgo(48),
+      },
+    ],
+  });
+
+  // v1.5: default system settings (docs/05 §Retention & jobs documented keys).
+  await prisma.systemSetting.createMany({
+    data: [
+      { id: uid(B.setting, 1), key: 'retention_days', value: 30 },
+      { id: uid(B.setting, 2), key: 'compression_quality', value: 70 },
+      { id: uid(B.setting, 3), key: 'max_live_sessions_global', value: 40 },
+      { id: uid(B.setting, 4), key: 'max_live_sessions_per_site', value: 6 },
+    ],
+  });
+
+  // v1.5: one completed demo backup row.
+  await prisma.backup.create({
+    data: {
+      id: uid(B.backup, 1),
+      requestedBy: userAdmin,
+      scopeType: ScopeType.ZONE,
+      scopeId: zoneRohini,
+      rangeStart: hrAgo(24 * 8),
+      rangeEnd: hrAgo(24),
+      status: BackupStatus.DONE,
+      fileKey: 'backups/demo/zone-rohini-weekly.zip',
+      sizeBytes: BigInt(734_003_200),
+    },
+  });
 
   // -------------------------------------------------------------------------
   // 5. Default escalation policy (CLAUDE.md §6.5 recipient ladder)
@@ -1291,7 +1372,8 @@ async function main(): Promise<void> {
       `4 notifications, ${checks.length} health checks, ${snaps.length} snapshots, ` +
       '6 reference images, 6 SD statuses, 6 segments, 4 SIM usage rows, ' +
       `${qualityRows.length} quality rows, 3 streams, 3 clips, 2 layouts, ` +
-      '2 maintenance windows, 3 tasks. Run `npm run demo:media` to fetch media files.'
+      '2 maintenance windows, 3 tasks, 2 LIVE_VIEW grants, 4 system settings, ' +
+      '1 backup. Run `npm run demo:media` to fetch media files.'
   );
 }
 

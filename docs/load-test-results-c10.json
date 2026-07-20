@@ -1,0 +1,139 @@
+{
+  "baseUrl": "http://127.0.0.1:4000",
+  "startedAt": "2026-07-18T15:58:17.829Z",
+  "durationS": 30,
+  "concurrency": 10,
+  "fleetSize": 6,
+  "totalRequests": 1948,
+  "rps": 64.9,
+  "overall": {
+    "p50": 149.4,
+    "p95": 237.9,
+    "p99": 283.7
+  },
+  "non2xx": 0,
+  "rateLimited429": 0,
+  "transportErrors": 0,
+  "endpoints": [
+    {
+      "endpoint": "dashboard-overview",
+      "count": 366,
+      "p50": 129.6,
+      "p95": 191.6,
+      "p99": 223.3,
+      "max": 258.1,
+      "non2xx": 0,
+      "codes": {
+        "200": 366
+      }
+    },
+    {
+      "endpoint": "cameras-list",
+      "count": 319,
+      "p50": 167.1,
+      "p95": 239.2,
+      "p99": 264.6,
+      "max": 291.9,
+      "non2xx": 0,
+      "codes": {
+        "200": 319
+      }
+    },
+    {
+      "endpoint": "incidents-list",
+      "count": 304,
+      "p50": 160.3,
+      "p95": 236.6,
+      "p99": 280.5,
+      "max": 298.7,
+      "non2xx": 0,
+      "codes": {
+        "200": 304
+      }
+    },
+    {
+      "endpoint": "incidents-summary",
+      "count": 206,
+      "p50": 96.2,
+      "p95": 151.9,
+      "p99": 169.9,
+      "max": 191.3,
+      "non2xx": 0,
+      "codes": {
+        "200": 206
+      }
+    },
+    {
+      "endpoint": "camera-health",
+      "count": 206,
+      "p50": 179.6,
+      "p95": 262,
+      "p99": 297.8,
+      "max": 452.3,
+      "non2xx": 0,
+      "codes": {
+        "200": 206
+      }
+    },
+    {
+      "endpoint": "dashboard-zones",
+      "count": 179,
+      "p50": 172.8,
+      "p95": 230.8,
+      "p99": 298.8,
+      "max": 331,
+      "non2xx": 0,
+      "codes": {
+        "200": 179
+      }
+    },
+    {
+      "endpoint": "camera-snapshots",
+      "count": 101,
+      "p50": 186.6,
+      "p95": 267.6,
+      "p99": 317.2,
+      "max": 318.3,
+      "non2xx": 0,
+      "codes": {
+        "200": 101
+      }
+    },
+    {
+      "endpoint": "incidents-recent",
+      "count": 97,
+      "p50": 100.8,
+      "p95": 157.2,
+      "p99": 175.4,
+      "max": 175.4,
+      "non2xx": 0,
+      "codes": {
+        "200": 97
+      }
+    },
+    {
+      "endpoint": "hierarchy-zones",
+      "count": 87,
+      "p50": 171.8,
+      "p95": 258.9,
+      "p99": 428.2,
+      "max": 428.2,
+      "non2xx": 0,
+      "codes": {
+        "200": 87
+      }
+    },
+    {
+      "endpoint": "hierarchy-sites",
+      "count": 83,
+      "p50": 159.9,
+      "p95": 226.2,
+      "p99": 255.4,
+      "max": 255.4,
+      "non2xx": 0,
+      "codes": {
+        "200": 83
+      }
+    }
+  ]
+}

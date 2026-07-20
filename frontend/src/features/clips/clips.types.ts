@@ -30,6 +30,9 @@ export interface ClipListQuery {
   status?: ClipStatus;
   incidentId?: string;
   limit?: number;
+  /** CR-9 — narrow within the caller's scope; ANDed with RBAC server-side. */
+  siteId?: string;
+  zoneId?: string;
 }
 
 /** POST /cameras/:cameraId/clips — body is { startAt, endAt, incidentId? }. */

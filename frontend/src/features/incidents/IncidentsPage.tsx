@@ -66,6 +66,21 @@ export function IncidentsPage(): JSX.Element {
   const [view, setView] = useState<'board' | 'list'>('board');
   const [severity, setSeverity] = useState<'' | IncidentSeverity>('');
   const [statusFilter, setStatusFilter] = useState<'' | IncidentStatus>('');
+  // CR-7 date window — `<input type="date">` values (yyyy-mm-dd, local).
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+
+  const dateParams = useMemo(() => {
+    // `from` inclusive start-of-day; `to` exclusive — send start of the NEXT day.
+    const from = fromDate ? new Date(`${fromDate}T00:00:00`).toISOString() : undefined;
+    let to: string | undefined;
+    if (toDate) {
+      const end = new Date(`${toDate}T00:00:00`);
+      end.setDate(end.getDate() + 1);
+      to = end.toISOString();
+    }
+    return { from, to };
+  }, [fromDate, toDate]);
 
   const {
     data: incidents,
@@ -73,7 +88,12 @@ export function IncidentsPage(): JSX.Element {
     isFetching,
     error,
     refetch,
-  } = useListIncidentsQuery({ limit: 200, severity: severity || undefined });
+  } = useListIncidentsQuery({
+    limit: 200,
+    severity: severity || undefined,
+    from: dateParams.from,
+    to: dateParams.to,
+  });
   const { data: summary } = useGetIncidentSummaryQuery();
 
   const openCount = useMemo(
@@ -134,6 +154,34 @@ export function IncidentsPage(): JSX.Element {
             <option value="WARNING">Warning</option>
             <option value="INFO">Info</option>
           </select>
+          <input
+            type="date"
+            value={fromDate}
+            max={toDate || undefined}
+            onChange={(event) => setFromDate(event.target.value)}
+            aria-label="Detected from date"
+            className={selectClass}
+          />
+          <input
+            type="date"
+            value={toDate}
+            min={fromDate || undefined}
+            onChange={(event) => setToDate(event.target.value)}
+            aria-label="Detected to date"
+            className={selectClass}
+          />
+          {(fromDate || toDate) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setFromDate('');
+                setToDate('');
+              }}
+            >
+              Clear dates
+            </Button>
+          )}
           {view === 'list' && (
             <select
               value={statusFilter}

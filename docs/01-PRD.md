@@ -1,6 +1,6 @@
 # Aniston VMS — Product Requirements Document (PRD)
 
-**Doc version: v1.0 · 17 July 2026 · Built for plan v1.3**
+**Doc version: v1.1 · 18 July 2026 · Built for plan v1.5**
 
 ---
 
@@ -10,7 +10,7 @@
 
 ## 2. Users & roles
 
-Every user–role assignment carries an **access scope: All / Region(s) / Zone(s) / Site(s)**. A user only ever sees data inside their scope.
+Every user–role assignment carries an **access scope: All / Region(s) / Zone(s) / Site(s) / Camera(s)** — **v1.5** lets a scope be built from any mix of these (e.g. all of one zone plus two individual cameras elsewhere); a user only ever sees data inside their scope. **v1.5:** a separate permission, **`LIVE_VIEW`**, is granted or revoked only by admins (Settings→Access, or Admin→Users), independent of role — without it a user gets Snapshot mode only on the Live Wall (see F12), no live streaming. Admin-only settings sections (users, access, storage policy, retention) are **invisible**, not merely disabled, to non-admins.
 
 | Role | Can do | Typical scope |
 |---|---|---|
@@ -23,7 +23,7 @@ Every user–role assignment carries an **access scope: All / Region(s) / Zone(s
 
 ## 3. Features
 
-**F1 — Registry & zone hierarchy.** Region → Zone → Site → Camera. Seeded Delhi structure: North (Rohini, Civil Lines, Keshav Puram, Narela, Karol Bagh (CTSP)) · South (Central, Hauz Khas) · West (Rajouri Garden, Najafgarh) · East (Shahdara North 1, Shahdara North 2, Shahdara South 1, Shahdara South 2). Zones/sites are creatable and editable with map locations; sites can move between zones and cameras between sites — locations update everywhere, open incidents follow the camera, history keeps the zone recorded at event time, every move confirmed and audited.
+**F1 — Registry & zone hierarchy.** Region → Zone → Site → Camera. Seeded Delhi structure: North (Rohini, Civil Lines, Keshav Puram, Narela, Karol Bagh (CTSP)) · South (Central, Hauz Khas) · West (Rajouri Garden, Najafgarh) · East (Shahdara North 1, Shahdara North 2, Shahdara South 1, Shahdara South 2). Zones/sites are creatable and editable with map locations; sites can move between zones and cameras between sites — locations update everywhere, open incidents follow the camera, history keeps the zone recorded at event time, every move confirmed and audited. **v1.5:** the Cameras screen defaults to an **enterprise 3D map view** — status-colored camera pins, clustering at zoomed-out levels, popover cards on click (name, status, site/zone, quick actions), and a search box that flies smoothly to a matched site or zone; the flat card/list view remains available as a toggle.
 
 **F2 — RTSP configuration.** Per-camera main/sub stream config with separate credential fields, format validation, **duplicate prevention** (unique on normalized host+port+path per stream type; conflicting camera named on rejection), "Test connection" before save, auto re-detection on change. Full URLs and passwords never reach the browser.
 
@@ -31,7 +31,7 @@ Every user–role assignment carries an **access scope: All / Region(s) / Zone(s
 
 **F4 — Root-cause diagnosis & connection quality.** Every fault labeled in plain language: Internet/SIM down at site · Weak SIM signal · Unstable network (packet loss) · Camera not responding (router online) · RTSP configuration problem · Stream degraded · Image problem. Per-camera connection-quality score (success rate, latency, jitter, signal) with history and per-zone aggregates.
 
-**F5 — Snapshots.** Substream snapshot every 15 min; full-resolution evidence snapshot + analysis every hour; stored in S3/MinIO with thumbnails; retention 90 d originals / 3 y incident images / 1 y thumbnails; signed URLs only.
+**F5 — Snapshots.** Substream snapshot on a per-camera capture interval (**v1.5:** admin-configurable 1–60 min, default 15 min, with a projected-storage/day calculator — e.g. 125 cameras @ 1 min ≈ 180k images/day — and a warning when set below 15 min); full-resolution evidence snapshot + analysis every hour; stored in S3/MinIO with thumbnails. **v1.5 authenticity stamping:** every captured image is burned at capture time with a bottom overlay — timestamp (IST) · site · zone · lat,long · camera code — and the same values are written into the image's metadata, so every snapshot is self-proving of what/where/when it was taken. **v1.5 compression tiering:** interval snapshots ~q70 JPEG/WebP; hourly evidence snapshots kept at higher quality. Retention: **30 d default (configurable)** for ordinary snapshots / 3 y for incident-linked images / 1 y thumbnails; signed URLs only.
 
 **F6 — Image analysis.** Detect black, white/overexposed, too dark/bright, blur, frozen, obstruction, scene shift vs approved reference, color cast, noise, **dust on lens**. Thresholds configurable per camera; breaches create incidents carrying the evidence image, score, threshold, and rule version.
 
@@ -45,7 +45,7 @@ Every user–role assignment carries an **access scope: All / Region(s) / Zone(s
 
 **F11 — Escalation.** 0/10/20/30/60-minute ladder (engineer → reminder → PM → ops head → senior mgmt/client), configurable per zone; acknowledgement pauses reminders but never hides the fault.
 
-**F12 — Live view & wall.** Watch any camera live in the browser; multi-camera wall with 1×1 / 2×2 / 3×2 layouts (4–6 cameras) and saved layouts. Grid uses substreams only; single-camera HD on demand with bandwidth warning; session limits per camera and site; idle timeout with "Are you still watching?".
+**F12 — Live view & wall.** Watch any camera live in the browser; multi-camera wall with 1×1 / 2×2 / 3×2 layouts (4–6 cameras) and saved layouts. Grid uses substreams only; single-camera HD on demand with bandwidth warning; idle timeout with "Are you still watching?". **v1.5:** a **Live ⇄ Snapshots** toggle sits on the Live Wall; Live is gated by the `LIVE_VIEW` permission (see §2 Users & roles) — without it a user only gets Snapshot mode. Snapshot mode shows a large selected snapshot plus a **24-hour filmstrip** at the camera's capture interval, with date navigation to browse previous days. **v1.5 capacity limits:** a maximum number of concurrent live streams is enforced both globally and per site, bounded by server capacity, with a live current-sessions readout; session limits per camera and site continue to apply.
 
 **F13 — SD-card playback.** Each camera has a 128 GB SD card. YouTube/NVR-style playback: per-day timeline of recorded segments, click-to-seek, 1×/2×/4× speed. Works per camera through ONVIF Profile G or brand adapter; unsupported cameras clearly marked (Fleet Capability report).
 
@@ -56,6 +56,10 @@ Every user–role assignment carries an **access scope: All / Region(s) / Zone(s
 **F16 — Reports & SLA.** Daily/weekly/monthly uptime per camera/site/zone, downtime, MTTA/MTTR, repeated-fault cameras, SIM performance, snapshot completeness, SLA violations vs configurable target, zone-wise image-quality & cleaning, engineer performance, audit; PDF + Excel export and scheduled email delivery.
 
 **F17 — Zone-scoped RBAC, audit & self-monitoring.** Scope guard filters every query, stream, and notification; full audit log of every change; the platform monitors itself (scheduler heartbeat, queues, DB/Redis/S3/SES/WhatsApp, workers, disk, SSL) and raises internal alerts.
+
+**F18 — Dashboard KPI row (v1.5).** The Overview dashboard leads with real, scope-filtered KPI cards: Total cameras · Healthy · Unavailable/Offline · Warning · Maintenance · Open incidents · Snapshot success (24h) · Active live sessions — each card links through to its own filtered camera/incident list. The health-mix donut and the Recent incidents feed are kept as-is; two widgets are added alongside them: **Worst connections** (cameras with the lowest connection-quality scores) and **Missing snapshots** (cameras that missed their expected capture in the last cycle).
+
+**F19 — Storage policies & backup (v1.5).** Admins enable or disable clip and snapshot storage per zone or per site. A manual backup tool lets an admin pick a date range plus a zone/site and produce a **ZIP of images with a metadata CSV**, delivered as a signed download; a "backup before purge" toggle protects data that's about to be deleted by retention; a backup history log records every run (who, when, range, scope, size, status).
 
 ## 4. Non-goals (v1)
 
@@ -78,3 +82,8 @@ Every user–role assignment carries an **access scope: All / Region(s) / Zone(s
 - Camera brands are **mixed/unknown** → per-camera ONVIF capability detection; playback support varies per camera.
 - Alerts run in **mock mode** (logged, not sent) until SES/WhatsApp credentials are provided.
 - All timestamps stored UTC, displayed IST (Asia/Kolkata).
+
+## 7. Roadmap — Phase 2 (docs only, not built in v1.5)
+
+- **Waterlogging monitoring.** Cameras positioned at flyovers and underpasses feed a water-accumulation analytics pass; a detected accumulation raises an alarm and feeds pumping-system optimization decisions. For v1.5 this is docs-only: a **`WATERLOGGING`** incident-type placeholder is reserved on the incident-type enum for this future analytic.
+- **Dedicated computer-vision service.** F6 image analysis stays JS/TS-based through v1.5. A dedicated Python/OpenCV computer-vision service (to power waterlogging detection and other heavier future CV workloads) is deferred to Phase 2.

@@ -53,9 +53,15 @@ const baseQueryWithReauth: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQue
   const url = typeof args === 'string' ? args : args.url;
   let result = await rawBaseQuery(args, api, extraOptions);
 
-  // Never refresh-and-retry the auth endpoints themselves — avoids infinite
-  // loops when the refresh cookie itself is missing/invalid (logged out).
-  if (result.error?.status === 401 && !url.startsWith('/auth/')) {
+  // Never refresh-and-retry the auth-FLOW endpoints — a 401 from refresh/login/
+  // logout must not kick off another refresh (that would loop or resurrect a
+  // dead session). But /auth/me is a normal authenticated read: on a cold page
+  // load (deep-link, bookmark, hard refresh) the access token lives only in
+  // memory, so the very first /auth/me 401s and MUST refresh-and-retry to
+  // rehydrate the current user — otherwise every role-gated control (write
+  // buttons, admin nav) silently disappears. See e2e/fixtures.ts auth model.
+  const isAuthFlow = url === '/auth/refresh' || url === '/auth/login' || url === '/auth/logout';
+  if (result.error?.status === 401 && !isAuthFlow) {
     const refreshed = await refreshAccessToken(api, extraOptions);
     if (refreshed) {
       result = await rawBaseQuery(args, api, extraOptions);

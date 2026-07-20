@@ -27,6 +27,54 @@ export interface ZoneSummary {
   state: ZoneState;
 }
 
+// ── CR-8 zone drill-down (GET /dashboard/zones/:id) ──────────────────────────
+// `type`/`severity`/`status` are backend Prisma enum strings (DETECTED,
+// INVESTIGATING, …) which are broader than the simplified frontend unions, so
+// they are kept as `string` and mapped to colours with defaulting lookups.
+export interface ZoneOverviewSite {
+  id: string;
+  name: string;
+  cameraCount: number;
+  healthy: number;
+  offline: number;
+  warning: number;
+  maintenance: number;
+}
+
+export interface ZoneOverviewCamera {
+  id: string;
+  cameraCode: string;
+  name: string;
+  siteName: string;
+  status: CameraStatus;
+  healthScore: number;
+  lastSnapshotAt: string | null;
+}
+
+export interface ZoneOverviewIncident {
+  id: string;
+  incidentNumber: string;
+  cameraCode: string | null;
+  type: string;
+  severity: string;
+  status: string;
+  firstDetectedAt: string;
+}
+
+export interface ZoneOverview {
+  id: string;
+  name: string;
+  region: string;
+  cameras: CameraStatusCounts;
+  openIncidents: number;
+  snapshotSuccess: { total: number; fresh: number; percent: number };
+  activeLiveSessions: number;
+  uptimePercent: number; // trailing-30 d fleet-average uptime
+  sites: ZoneOverviewSite[];
+  cameraList: ZoneOverviewCamera[];
+  incidents: ZoneOverviewIncident[];
+}
+
 export type IncidentSeverity = 'CRITICAL' | 'WARNING' | 'MAINTENANCE';
 export type IncidentStatus = 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED';
 export type IncidentKind = 'STREAM' | 'OFFLINE' | 'IMAGE' | 'SIGNAL' | 'MAINTENANCE';
@@ -69,6 +117,45 @@ export interface EvidenceSnapshot {
   zoneName: string;
   siteName: string;
   capturedAt: string;
+}
+
+// ── CR-2 dashboard overview (real backend: GET /api/dashboard/overview) ──
+// Mirrors backend/src/modules/dashboard/dashboard.service.ts exactly. Every
+// count/list is scope-filtered server-side through user_access_scopes.
+export interface CameraStatusCounts {
+  total: number;
+  healthy: number;
+  offline: number; // CameraStatus.CRITICAL → "Unavailable/Offline" tile
+  warning: number;
+  maintenance: number;
+  unknown: number;
+}
+
+export interface WorstConnection {
+  cameraId: string;
+  cameraCode: string;
+  name: string;
+  siteName: string;
+  status: CameraStatus;
+  healthScore: number;
+  diagnosis: string | null;
+}
+
+export interface MissingSnapshot {
+  cameraId: string;
+  cameraCode: string;
+  name: string;
+  siteName: string;
+  lastSnapshotAt: string | null;
+}
+
+export interface DashboardOverview {
+  cameras: CameraStatusCounts;
+  openIncidents: number;
+  snapshotSuccess: { total: number; fresh: number; percent: number };
+  activeLiveSessions: number;
+  worstConnections: WorstConnection[];
+  missingSnapshots: MissingSnapshot[];
 }
 
 export interface CurrentUser {

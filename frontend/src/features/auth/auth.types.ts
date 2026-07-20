@@ -69,3 +69,10 @@ export function isAdminRole(role: Role | undefined | null): boolean {
 export function isOperatorPlusRole(role: Role | undefined | null): boolean {
   return !!role && OPERATOR_PLUS_ROLES.includes(role);
 }
+
+const CAMERA_WRITE_ROLES: readonly Role[] = ['SUPER_ADMIN', 'PROJECT_ADMIN', 'ENGINEER'];
+
+/** Mirrors backend CAMERA_WRITE_ROLES — camera registration, edits and probes (CR-6). */
+export function isCameraWriteRole(role: Role | undefined | null): boolean {
+  return !!role && CAMERA_WRITE_ROLES.includes(role);
+}

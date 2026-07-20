@@ -1,6 +1,6 @@
 # Aniston VMS — Backend Schema
 
-**Doc version: v1.0 · 17 July 2026 · Built for plan v1.3**
+**Doc version: v1.1 · 18 July 2026 · Built for plan v1.5**
 
 Prisma-style reference (PostgreSQL 16). All tables: `id` uuid pk, `created_at`, `updated_at` unless noted. Timestamps UTC.
 
@@ -10,10 +10,12 @@ Prisma-style reference (PostgreSQL 16). All tables: `id` uuid pk, `created_at`, 
 
 ```
 Role: SUPER_ADMIN | PROJECT_ADMIN | OPERATOR | ENGINEER | CLIENT_VIEWER | AUDITOR
-ScopeType: ALL | REGION | ZONE | SITE
+ScopeType: ALL | REGION | ZONE | SITE | CAMERA
+PermissionType: LIVE_VIEW
 CameraStatus: HEALTHY | WARNING | CRITICAL | MAINTENANCE | UNKNOWN
 Diagnosis: SITE_INTERNET_DOWN | SIM_SIGNAL_ISSUE | NETWORK_UNSTABLE | CAMERA_OFFLINE |
-           CONFIG_ERROR | STREAM_DEGRADED | IMAGE_PROBLEM
+           CONFIG_ERROR | STREAM_DEGRADED | IMAGE_PROBLEM | WATERLOGGING
+           // WATERLOGGING: placeholder, unused in v1.5 — Phase-2 waterlogging roadmap
 CheckType: ROUTER_TCP | RTSP_PORT | RTSP_AUTH | VIDEO_VALIDATION | SNAPSHOT | IMAGE_ANALYSIS | SD_HEALTH
 IncidentStatus: DETECTED | CONFIRMED | ALERTED | ACKNOWLEDGED | ASSIGNED | INVESTIGATING |
                 RESOLVED | RECOVERY_VERIFIED | CLOSED
@@ -35,6 +37,8 @@ users            email @unique, password_hash, name, phone, role Role, mfa_secre
                  is_active, last_login_at
 user_access_scopes  user_id → users, scope_type ScopeType, scope_id uuid?   // null when ALL
                  @@index([user_id])
+user_permissions  user_id → users, permission PermissionType, granted_by → users, granted_at
+                 @@unique([user_id, permission])
 refresh_tokens   user_id, token_hash @unique, expires_at, revoked_at?
 audit_logs       user_id?, action, entity_type, entity_id, old_value Json?, new_value Json?,
                  ip_address, created_at   @@index([entity_type, entity_id]) @@index([created_at])
@@ -57,7 +61,8 @@ cameras   site_id → sites, router_id → routers, camera_code @unique ("CAM-04
           onvif_port?, onvif_capabilities Json?, playback_adapter PlaybackAdapter, playback_verified,
           expected_codec, expected_resolution, expected_fps, expected_bitrate_kbps,
           status CameraStatus, health_score int, diagnosis Diagnosis?,
-          last_healthy_at?, last_snapshot_at?, maintenance_mode bool
+          last_healthy_at?, last_snapshot_at?, maintenance_mode bool,
+          latitude float, longitude float, snapshot_interval_minutes int @default(60)
           @@index([site_id]) @@index([status])
 reference_images  camera_id → cameras, s3_key, approved_by → users, approved_at
 ```
@@ -75,7 +80,8 @@ connection_quality_hourly  camera_id, hour timestamptz, success_rate float, medi
 snapshots       camera_id, captured_at, kind (SUB|EVIDENCE), original_key, thumbnail_key,
                 brightness_score, blur_score, freeze_score, obstruction_score,
                 scene_shift_score, dust_score, noise_score, color_cast_score,
-                analysis_result Json, analysis_version
+                analysis_result Json, analysis_version,
+                stamped bool @default(true), stamp_text?, latitude float?, longitude float?
                 @@index([camera_id, captured_at])
 sd_card_status  camera_id @unique, present bool, capacity_gb?, free_gb?, recording_enabled?,
                 last_segment_at?, checked_at
@@ -124,4 +130,16 @@ saved_layouts    user_id, name, layout LayoutKind, camera_ids Json   @@unique([u
 
 ## Retention & jobs
 
+```
+storage_policies  scope_type (ZONE|SITE), scope_id, store_clips bool @default(true),
+                  store_snapshots bool @default(true)
+                  @@unique([scope_type, scope_id])
+system_settings   key @unique, value Json
+                  // keys: retention_days, compression_quality, max_live_sessions_global, max_live_sessions_per_site
+backups           requested_by → users, scope_type?, scope_id?, range_start, range_end,
+                  status (QUEUED|RUNNING|DONE|FAILED), file_key?, size_bytes?, error?, created_at
+```
+
 Nightly workers: prune `snapshots` per policy (skip incident-linked), expire `recording_segments` cache >35 d, close stale `stream_sessions`, roll `connection_quality_hourly`, S3 lifecycle rules mirror DB policy. Seeds: 4 regions, 13 zones (Delhi structure), 2 demo sites, 2 routers, 6 simulator cameras (`playback_adapter=ONVIF_G`), default alert rules matrix, default escalation policy, one admin user.
+
+**Seed updates (v1.5):** real Delhi lat/long for all zones, sites, and all 125 cameras (for map pins); demo `LIVE_VIEW` grants — admin and one operator have it, one engineer does not; one completed demo `backups` row; one camera-scoped demo user; populated data so every zone page (`/zones/:id`) is non-empty. Delivered as a real Prisma migration (no `db push` drift).

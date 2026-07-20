@@ -487,6 +487,10 @@ export interface IncidentListFilters {
   severity?: 'INFO' | 'WARNING' | 'CRITICAL';
   zoneId?: string;
   cameraId?: string;
+  /** CR-7 — inclusive lower bound on lastDetectedAt. */
+  from?: Date;
+  /** CR-7 — exclusive upper bound on lastDetectedAt. */
+  to?: Date;
   limit?: number;
 }
 
@@ -505,6 +509,14 @@ export async function listIncidents(userId: string, filters: IncidentListFilters
     ...(filters.severity ? { severity: filters.severity } : {}),
     ...(filters.zoneId ? { zoneId: filters.zoneId } : {}),
     ...(filters.cameraId ? { cameraId: filters.cameraId } : {}),
+    ...(filters.from || filters.to
+      ? {
+          lastDetectedAt: {
+            ...(filters.from ? { gte: filters.from } : {}),
+            ...(filters.to ? { lt: filters.to } : {}),
+          },
+        }
+      : {}),
   };
   return prisma.incident.findMany({
     where,
@@ -522,6 +534,50 @@ export async function listRecentIncidents(userId: string, limit = 10) {
     take: limit,
     include: listInclude,
   });
+}
+
+/**
+ * CR-7 — stats strip for the dense incidents list view:
+ *  - open incident counts grouped by severity (scoped)
+ *  - MTTA today: mean firstDetectedAt→acknowledgedAt over incidents
+ *    acknowledged since local midnight (null when none).
+ */
+export async function getIncidentStats(userId: string): Promise<{
+  openBySeverity: Record<string, number>;
+  mttaTodaySeconds: number | null;
+  ackedToday: number;
+}> {
+  const scope = await getUserScope(userId);
+  const zone = zoneScopeWhere(scope);
+
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+
+  const [severityRows, ackedRows] = await Promise.all([
+    prisma.incident.groupBy({
+      by: ['severity'],
+      _count: { _all: true },
+      where: { zone, status: { in: OPEN_STATUS_LIST } },
+    }),
+    prisma.incident.findMany({
+      where: { zone, acknowledgedAt: { gte: startOfToday } },
+      select: { firstDetectedAt: true, acknowledgedAt: true },
+    }),
+  ]);
+
+  const openBySeverity: Record<string, number> = { CRITICAL: 0, WARNING: 0, INFO: 0 };
+  for (const row of severityRows) openBySeverity[row.severity] = row._count._all;
+
+  let mttaTodaySeconds: number | null = null;
+  if (ackedRows.length > 0) {
+    const totalMs = ackedRows.reduce(
+      (sum, r) => sum + ((r.acknowledgedAt as Date).getTime() - r.firstDetectedAt.getTime()),
+      0
+    );
+    mttaTodaySeconds = Math.round(totalMs / ackedRows.length / 1000);
+  }
+
+  return { openBySeverity, mttaTodaySeconds, ackedToday: ackedRows.length };
 }
 
 export async function getIncidentSummary(userId: string): Promise<Record<string, number>> {

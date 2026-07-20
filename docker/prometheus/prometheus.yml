@@ -1,0 +1,25 @@
+# CR-12 — Prometheus scrape config for the Aniston VMS observability overlay.
+# Started via:
+#   docker compose -f docker/docker-compose.fullstack.yml \
+#                  -f docker/docker-compose.observability.yml up -d
+# The overlay joins the fullstack compose network, so the backend is reachable
+# by its service name. Metrics are PUBLIC on the backend at /api/metrics
+# (see backend/src/lib/metrics.ts — restrict at the proxy in production).
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: 'aniston-vms-backend'
+    metrics_path: /api/metrics
+    static_configs:
+      - targets: ['backend:4000']
+        labels:
+          service: backend
+    # Running the backend on the host instead of Docker? Swap the target for
+    # host.docker.internal:4000 (Docker Desktop on Windows/macOS).
+
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

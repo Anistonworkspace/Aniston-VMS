@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { Link, NavLink } from 'react-router-dom';
 import {
   AlertTriangle,
   BarChart3,
@@ -11,7 +11,6 @@ import {
   LayoutDashboard,
   Layers,
   MonitorPlay,
-  Plus,
   Settings,
   ShieldCheck,
 } from 'lucide-react';
@@ -27,6 +26,7 @@ import type { ZoneState } from '@/types/vms';
 // .claude/skills/skill-auth-patterns.md.
 import { useGetCurrentUserQuery } from '@/features/auth/auth.api';
 import { isAdminRole } from '@/features/auth/auth.types';
+import { AccountMenu } from './AccountMenu';
 
 // Dark slate sidebar — docs/04-uiux-brief.md §4: logo, nav with expandable
 // Zones (health dots), bottom dashed
@@ -135,8 +135,8 @@ export function Sidebar(): JSX.Element {
               ))}
             {zones?.map((zone) => (
               <li key={zone.id}>
-                <button
-                  type="button"
+                <Link
+                  to={`/zones/${zone.id}`}
                   className="flex w-full items-center gap-2.5 rounded-control px-3 py-1 text-sm text-sidebar-muted transition-colors duration-150 hover:bg-white/5 hover:text-sidebar-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage"
                 >
                   <span
@@ -144,7 +144,7 @@ export function Sidebar(): JSX.Element {
                     aria-hidden
                   />
                   <span className="truncate">{zone.name}</span>
-                </button>
+                </Link>
               </li>
             ))}
           </ul>
@@ -199,30 +199,19 @@ export function Sidebar(): JSX.Element {
         </NavLink>
       </nav>
 
-      {/* Bottom card — dashed "Add camera" (admin) or platform-health chip */}
-      <div className="px-4 pb-6">
-        {isAdmin ? (
-          <div className="rounded-tile border border-dashed border-white/25 bg-white/5 p-3 text-center">
-            <p className="text-xs font-medium text-sidebar-text">Add camera</p>
-            <p className="mt-0.5 text-[11px] text-sidebar-muted">Register a new device</p>
-            <button
-              type="button"
-              aria-label="Add camera"
-              className="mx-auto mt-2 grid h-8 w-8 place-items-center rounded-full bg-card text-ink shadow-soft transition-shadow duration-150 hover:shadow-soft-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage"
-            >
-              <Plus size={16} strokeWidth={1.5} />
-            </button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 rounded-tile bg-white/10 p-3 text-xs text-sidebar-muted">
-            <HeartPulse
-              size={16}
-              strokeWidth={1.5}
-              className={platformHealthy ? 'text-state-healthy' : 'text-state-critical'}
-            />
-            {platformHealthy ? 'Platform Healthy · heartbeat 20 s' : 'Critical incidents open'}
-          </div>
-        )}
+      {/* Bottom — platform-health chip + account menu.
+          CR-1: no add-camera card in the sidebar; the profile block lives here
+          so it is reachable from every page. */}
+      <div className="space-y-2 px-4 pb-6">
+        <div className="flex items-center gap-2 rounded-tile bg-white/10 p-3 text-xs text-sidebar-muted">
+          <HeartPulse
+            size={16}
+            strokeWidth={1.5}
+            className={platformHealthy ? 'text-state-healthy' : 'text-state-critical'}
+          />
+          {platformHealthy ? 'Platform Healthy · heartbeat 20 s' : 'Critical incidents open'}
+        </div>
+        <AccountMenu />
       </div>
     </aside>
   );

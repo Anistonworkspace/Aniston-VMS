@@ -4,12 +4,15 @@ import type { FetchBaseQueryError } from '@reduxjs/toolkit/query/react';
 import {
   Activity,
   Camera as CameraIcon,
+  Check,
   CheckCircle2,
   Circle,
+  Pencil,
   Wrench,
+  X,
   XCircle,
 } from 'lucide-react';
-import { Button, Drawer, Skeleton } from '@/components/ui';
+import { Button, Drawer, Input, Skeleton } from '@/components/ui';
 import { useGetCurrentUserQuery } from '@/features/auth/auth.api';
 import { isOperatorPlusRole } from '@/features/auth/auth.types';
 import type { Role } from '@/features/auth/auth.types';
@@ -110,8 +113,16 @@ export function CameraDetailDrawer({
 }: CameraDetailDrawerProps): JSX.Element {
   // Keep the last id while the drawer animates out (cameraId is null on exit).
   const [id, setId] = useState(cameraId);
+
+  // CR-11 — inline rename (parity with regions/zones/sites edit). The title
+  // swaps to an input on the pencil; Enter/✓ saves, Esc/✗ cancels.
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
+
   useEffect(() => {
     if (cameraId) setId(cameraId);
+    // Close any open rename when the drawer switches cameras or exits.
+    setEditingName(false);
   }, [cameraId]);
 
   const { data: user } = useGetCurrentUserQuery();
@@ -152,6 +163,28 @@ export function CameraDetailDrawer({
     }
   }
 
+  function startRename(): void {
+    if (!health) return;
+    setNameDraft(health.name);
+    setEditingName(true);
+  }
+
+  async function handleRename(): Promise<void> {
+    if (!id || !health) return;
+    const trimmed = nameDraft.trim();
+    if (!trimmed || trimmed === health.name) {
+      setEditingName(false);
+      return;
+    }
+    try {
+      await updateCamera({ id, body: { name: trimmed } }).unwrap();
+      setEditingName(false);
+      notify.success('Camera renamed', `Now “${trimmed}”.`);
+    } catch (err) {
+      notify.error('Rename failed', getApiErrorMessage(err as FetchBaseQueryError));
+    }
+  }
+
   async function handleCapture(): Promise<void> {
     if (!id) return;
     try {
@@ -170,10 +203,58 @@ export function CameraDetailDrawer({
         health ? (
           <div className="min-w-0">
             <div className="flex items-center gap-2.5">
-              <h2 className="truncate font-heading text-lg font-semibold text-ink">
-                {health.name}
-              </h2>
-              <CameraStatusBadge status={health.status} />
+              {editingName ? (
+                <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                  <Input
+                    aria-label="Camera name"
+                    value={nameDraft}
+                    autoFocus
+                    maxLength={150}
+                    disabled={saving}
+                    onChange={(e) => setNameDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') void handleRename();
+                      if (e.key === 'Escape') setEditingName(false);
+                    }}
+                    className="h-8 py-1 text-lg font-semibold"
+                  />
+                  <button
+                    type="button"
+                    aria-label="Save name"
+                    disabled={saving}
+                    onClick={() => void handleRename()}
+                    className="shrink-0 rounded-md p-1 text-state-healthy hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage disabled:opacity-50"
+                  >
+                    <Check size={16} strokeWidth={2} />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Cancel rename"
+                    disabled={saving}
+                    onClick={() => setEditingName(false)}
+                    className="shrink-0 rounded-md p-1 text-gray-500 hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage disabled:opacity-50"
+                  >
+                    <X size={16} strokeWidth={2} />
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <h2 className="truncate font-heading text-lg font-semibold text-ink">
+                    {health.name}
+                  </h2>
+                  {canWrite && (
+                    <button
+                      type="button"
+                      aria-label="Rename camera"
+                      onClick={startRename}
+                      className="shrink-0 rounded-md p-1 text-gray-400 hover:bg-card hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage"
+                    >
+                      <Pencil size={14} strokeWidth={1.75} />
+                    </button>
+                  )}
+                  <CameraStatusBadge status={health.status} />
+                </>
+              )}
             </div>
             <p className="mt-0.5 truncate text-xs text-gray-500">
               {health.cameraCode}

@@ -1,0 +1,139 @@
+{
+  "baseUrl": "http://127.0.0.1:4000",
+  "startedAt": "2026-07-18T15:58:48.564Z",
+  "durationS": 30.1,
+  "concurrency": 5,
+  "fleetSize": 6,
+  "totalRequests": 1911,
+  "rps": 63.6,
+  "overall": {
+    "p50": 75,
+    "p95": 131.1,
+    "p99": 161.3
+  },
+  "non2xx": 0,
+  "rateLimited429": 0,
+  "transportErrors": 0,
+  "endpoints": [
+    {
+      "endpoint": "dashboard-overview",
+      "count": 364,
+      "p50": 73.4,
+      "p95": 111.1,
+      "p99": 132.6,
+      "max": 141.5,
+      "non2xx": 0,
+      "codes": {
+        "200": 364
+      }
+    },
+    {
+      "endpoint": "cameras-list",
+      "count": 287,
+      "p50": 80.2,
+      "p95": 129.8,
+      "p99": 163.4,
+      "max": 184.9,
+      "non2xx": 0,
+      "codes": {
+        "200": 287
+      }
+    },
+    {
+      "endpoint": "incidents-list",
+      "count": 265,
+      "p50": 76.7,
+      "p95": 135.2,
+      "p99": 148.9,
+      "max": 156.3,
+      "non2xx": 0,
+      "codes": {
+        "200": 265
+      }
+    },
+    {
+      "endpoint": "camera-health",
+      "count": 212,
+      "p50": 87.9,
+      "p95": 152.4,
+      "p99": 184.7,
+      "max": 204.6,
+      "non2xx": 0,
+      "codes": {
+        "200": 212
+      }
+    },
+    {
+      "endpoint": "dashboard-zones",
+      "count": 203,
+      "p50": 88.6,
+      "p95": 155,
+      "p99": 168.5,
+      "max": 189.5,
+      "non2xx": 0,
+      "codes": {
+        "200": 203
+      }
+    },
+    {
+      "endpoint": "incidents-summary",
+      "count": 197,
+      "p50": 48,
+      "p95": 81.2,
+      "p99": 103,
+      "max": 106.4,
+      "non2xx": 0,
+      "codes": {
+        "200": 197
+      }
+    },
+    {
+      "endpoint": "hierarchy-zones",
+      "count": 102,
+      "p50": 75.7,
+      "p95": 122.9,
+      "p99": 135.7,
+      "max": 169.2,
+      "non2xx": 0,
+      "codes": {
+        "200": 102
+      }
+    },
+    {
+      "endpoint": "hierarchy-sites",
+      "count": 98,
+      "p50": 69.6,
+      "p95": 107.8,
+      "p99": 134.6,
+      "max": 134.6,
+      "non2xx": 0,
+      "codes": {
+        "200": 98
+      }
+    },
+    {
+      "endpoint": "camera-snapshots",
+      "count": 97,
+      "p50": 85.1,
+      "p95": 138.6,
+      "p99": 192.3,
+      "max": 192.3,
+      "non2xx": 0,
+      "codes": {
+        "200": 97
+      }
+    },
+    {
+      "endpoint": "incidents-recent",
+      "count": 86,
+      "p50": 51.7,
+      "p95": 99.6,
+      "p99": 114.4,
+      "max": 114.4,
+      "non2xx": 0,
+      "codes": {
+        "200": 86
+      }
+    }
+  ]
+}

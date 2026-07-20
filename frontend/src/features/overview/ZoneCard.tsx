@@ -1,4 +1,5 @@
 import { Cctv, MoreVertical } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import type { ZoneState, ZoneSummary } from '@/types/vms';
 
@@ -29,21 +30,31 @@ interface ZoneCardProps {
 export function ZoneCard({ zone, index }: ZoneCardProps): JSX.Element {
   const tint = TINTS[zone.state];
   return (
-    <article
+    <Link
+      to={`/zones/${zone.id}`}
+      aria-label={`Open ${zone.name} zone`}
       className={cn(
-        'flex h-52 flex-col rounded-card p-4 shadow-soft transition-shadow duration-150 hover:shadow-soft-hover',
+        'flex h-52 flex-col rounded-card p-4 shadow-soft transition-shadow duration-150 hover:shadow-soft-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage',
         tint.card
       )}
     >
       <div className="flex items-start justify-between">
         <span
-          className={cn('text-sm font-medium tabular-nums', tint.onDark ? 'text-white/70' : 'text-muted')}
+          className={cn(
+            'text-sm font-medium tabular-nums',
+            tint.onDark ? 'text-white/70' : 'text-muted'
+          )}
         >
           {String(index + 1).padStart(2, '0')}
         </span>
         <button
           type="button"
           aria-label={`Zone ${zone.name} menu`}
+          onClick={(e) => {
+            // Kebab click guard — don't let the click bubble to the card Link.
+            e.preventDefault();
+            e.stopPropagation();
+          }}
           className={cn(
             'rounded-control p-1 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage',
             tint.onDark ? 'text-white/70 hover:text-white' : 'text-muted hover:text-ink'
@@ -61,6 +72,6 @@ export function ZoneCard({ zone, index }: ZoneCardProps): JSX.Element {
           {metaLine(zone)}
         </p>
       </div>
-    </article>
+    </Link>
   );
 }

@@ -41,4 +41,49 @@ test.describe('app shell + sidebar pages', () => {
     await clickAndExpect(/admin/i, /administration/i);
     await clickAndExpect(/settings/i, /^settings$/i);
   });
+
+  test('dashboard zone card navigates to its populated zone page', async ({ authedPage: page }) => {
+    await page.goto('/');
+    // Zone cards on the overview grid (main content, NOT the sidebar flyout —
+    // both render a[href^="/zones/"]) link to their populated /zones/:id page.
+    const zoneCard = page.locator('main a[href^="/zones/"]').first();
+    await expect(zoneCard).toBeVisible({ timeout: 15_000 });
+    await zoneCard.click();
+    await expect(page).toHaveURL(/\/zones\/[^/]+$/);
+    // The zone page renders the zone name as its h1 + a Dashboard back link.
+    // Scope to the zone-detail region: the sidebar also has a "Dashboard" link,
+    // so an unscoped getByRole would trip Playwright's strict mode.
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 15_000 });
+    await expect(
+      page.getByTestId('zone-detail').getByRole('link', { name: /^dashboard$/i })
+    ).toBeVisible();
+  });
+
+  test('sidebar zone link navigates to the zone page', async ({ authedPage: page }) => {
+    await page.goto('/');
+    // Expand Zones in the sidebar, then click the first zone entry.
+    const nav = page.getByRole('navigation', { name: 'Primary' });
+    const zoneLink = nav.locator('a[href^="/zones/"]').first();
+    await expect(zoneLink).toBeVisible({ timeout: 15_000 });
+    await zoneLink.click();
+    await expect(page).toHaveURL(/\/zones\/[^/]+$/);
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 15_000 });
+  });
+
+  test('dashboard KPI tile deep-links into the pre-filtered cameras grid', async ({
+    authedPage: page,
+  }) => {
+    await page.goto('/');
+    // The "Healthy" KPI tile is a Link to the status-filtered fleet grid.
+    await page.locator('a[href="/cameras?status=HEALTHY"]').click();
+    await expect(page).toHaveURL(/\/cameras\?status=HEALTHY$/);
+    await expect(page.getByRole('heading', { level: 1, name: /^cameras$/i })).toBeVisible({
+      timeout: 15_000,
+    });
+    // The matching status filter button reflects the deep-linked selection.
+    await expect(page.getByRole('button', { name: /^healthy$/i })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+  });
 });

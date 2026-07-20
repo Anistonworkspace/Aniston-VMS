@@ -32,6 +32,9 @@ export interface Camera {
   firmware: string | null;
   serialNumber: string | null;
   onvifPort: number | null;
+  /** CR-6 — WGS-84 map position registered via the add-camera MapLibre pin. */
+  latitude: number;
+  longitude: number;
   playbackAdapter: string;
   expectedCodec: string | null;
   expectedResolution: string | null;
@@ -69,6 +72,74 @@ export interface CameraListQuery {
 export interface UpdateCameraInput {
   name?: string;
   maintenanceMode?: boolean;
+}
+
+/**
+ * POST /cameras — backend createCameraSchema (CR-6, admin/engineer only).
+ * RTSP secrets are plaintext in transit over TLS and encrypted at rest.
+ */
+export interface CreateCameraInput {
+  siteId: string;
+  routerId: string;
+  cameraCode: string;
+  name: string;
+  brand?: string;
+  model?: string;
+  firmware?: string;
+  serialNumber?: string;
+  mainRtspUrl: string;
+  subRtspUrl: string;
+  rtspUsername: string;
+  rtspPassword: string;
+  onvifPort?: number;
+  expectedCodec: string;
+  expectedResolution: string;
+  expectedFps: number;
+  expectedBitrateKbps: number;
+  latitude: number;
+  longitude: number;
+}
+
+/** POST /cameras/test-connection — backend testCameraConnectionSchema (CR-6). */
+export interface TestCameraConnectionInput {
+  mainRtspUrl: string;
+  rtspUsername: string;
+  rtspPassword: string;
+  cameraCode?: string;
+  expectedCodec?: string;
+  expectedResolution?: string;
+  expectedFps?: number;
+  expectedBitrateKbps?: number;
+}
+
+/** One probe stage of testCameraConnection (RTSP DESCRIBE or ffprobe frame). */
+export interface ProbeStageResult {
+  success: boolean;
+  responseTimeMs?: number | null;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  codec?: string | null;
+  resolution?: string | null;
+  fps?: number | null;
+  bitrateKbps?: number | null;
+}
+
+/** testCameraConnection() response — nothing is persisted server-side. */
+export interface TestConnectionResult {
+  success: boolean;
+  simMode: boolean;
+  describe: ProbeStageResult;
+  video: ProbeStageResult;
+}
+
+/** GET /routers list item — powers the add-camera modal's router select. */
+export interface RouterItem {
+  id: string;
+  siteId: string;
+  serialNumber: string;
+  model: string;
+  operator?: string;
+  connectionStatus?: string;
 }
 
 /** One stage of the ROUTER_TCP → RTSP_PORT → RTSP_AUTH → VIDEO_VALIDATION pipeline. */

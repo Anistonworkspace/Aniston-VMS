@@ -32,7 +32,7 @@ interface LocationState {
 }
 
 // Aniston VMS sign-in — split "welcome" layout mirroring .claude/docs/Login-Page.png:
-// a warm cream form panel beside a purple illustration panel with a curved seam.
+// a light form panel (#F7F9FC) beside a light-blue welcome panel (#D8EAF7) with a curved seam.
 // Access token + user are held in memory only (features/auth/auth.slice.ts) —
 // never localStorage/sessionStorage.
 export function LoginPage(): JSX.Element {
@@ -101,36 +101,36 @@ export function LoginPage(): JSX.Element {
   }
 
   const fieldBase =
-    'peer w-full rounded-xl border bg-white/70 px-3.5 py-2.5 text-sm text-[#2f2b3a] outline-none transition-colors placeholder:text-[#a9a591] focus:border-[#6c6890] focus:ring-2 focus:ring-[#6c6890]/15';
+    'peer w-full rounded-xl border bg-auth-field px-3.5 py-2.5 text-sm text-auth-ink outline-none transition-colors placeholder:text-auth-muted focus:border-auth-accent focus:ring-2 focus:ring-auth-accent/25';
 
   return (
-    <div className="min-h-screen w-full bg-[#efe8cf]">
+    <div className="min-h-screen w-full bg-auth-bg">
       <motion.div
         initial={reduceMotion ? false : 'hidden'}
         animate="visible"
         variants={pageTransition}
-        className="relative w-full overflow-hidden bg-[#efe8cf]"
+        className="relative w-full overflow-hidden bg-auth-bg"
       >
         <div className="relative flex min-h-screen flex-col md:flex-row">
-          {/* ── Form panel (cream) ─────────────────────────────── */}
-          <div className="relative z-10 flex w-full flex-col justify-center px-7 py-10 sm:px-12 md:w-[52%]">
+          {/* ── Form panel (#F7F9FC) ─────────────────────────────── */}
+          <div className="relative z-10 flex w-full flex-col justify-center bg-auth-surface px-7 py-10 sm:px-12 md:w-[52%]">
             {/* Compact brand (mobile only) */}
             <div className="mb-8 flex items-center gap-2.5 md:hidden">
-              <span className="grid h-8 w-8 place-items-center rounded-full bg-[#6c6890]">
+              <span className="grid h-8 w-8 place-items-center rounded-full bg-auth-accent">
                 <Cctv size={16} strokeWidth={1.5} className="text-white" />
               </span>
-              <span className="font-heading text-base font-semibold text-[#2f2b3a]">
+              <span className="font-heading text-base font-semibold text-auth-ink">
                 Aniston VMS
               </span>
             </div>
 
             <div className="mx-auto w-full max-w-sm">
-              <h1 className="text-center font-heading text-2xl font-semibold text-[#2f2b3a]">
+              <h1 className="text-center font-heading text-2xl font-semibold text-auth-ink">
                 Sign in
               </h1>
 
               {formError && (
-                <div className="mt-5 flex items-start gap-2 rounded-xl border border-[#e0b7ac] bg-[#f7e2da] px-3.5 py-2.5 text-sm text-[#a64a35]">
+                <div className="mt-5 flex items-start gap-2 rounded-xl border border-coral/30 bg-coral-soft px-3.5 py-2.5 text-sm text-coral">
                   <ShieldAlert size={16} strokeWidth={1.5} className="mt-0.5 shrink-0" />
                   <span>{formError}</span>
                 </div>
@@ -138,7 +138,7 @@ export function LoginPage(): JSX.Element {
 
               <form onSubmit={handleSubmit(onSubmit)} noValidate className="mt-8 space-y-6">
                 <div>
-                  <label htmlFor="login-email" className="text-xs font-medium text-[#7c7768]">
+                  <label htmlFor="login-email" className="text-xs font-medium text-auth-ink">
                     Email
                   </label>
                   <input
@@ -146,19 +146,16 @@ export function LoginPage(): JSX.Element {
                     type="email"
                     autoComplete="username"
                     placeholder="you@example.com"
-                    className={cn(
-                      fieldBase,
-                      errors.email ? 'border-[#c0563d]' : 'border-[#c7c0a6]'
-                    )}
+                    className={cn(fieldBase, errors.email ? 'border-coral' : 'border-auth-border')}
                     {...register('email')}
                   />
                   {errors.email?.message && (
-                    <p className="mt-1 text-xs text-[#c0563d]">{errors.email.message}</p>
+                    <p className="mt-1 text-xs text-coral">{errors.email.message}</p>
                   )}
                 </div>
 
                 <div>
-                  <label htmlFor="login-password" className="text-xs font-medium text-[#7c7768]">
+                  <label htmlFor="login-password" className="text-xs font-medium text-auth-ink">
                     Password
                   </label>
                   <div className="relative">
@@ -170,7 +167,7 @@ export function LoginPage(): JSX.Element {
                       className={cn(
                         fieldBase,
                         'pr-10',
-                        errors.password ? 'border-[#c0563d]' : 'border-[#c7c0a6]'
+                        errors.password ? 'border-coral' : 'border-auth-border'
                       )}
                       {...register('password')}
                     />
@@ -178,26 +175,26 @@ export function LoginPage(): JSX.Element {
                       type="button"
                       tabIndex={-1}
                       onClick={() => setShowPassword((v) => !v)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#a9a591] transition-colors hover:text-[#6c6890]"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-auth-muted transition-colors hover:text-auth-accent"
                       aria-label={showPassword ? 'Hide password' : 'Show password'}
                     >
                       {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
                   </div>
                   {errors.password?.message && (
-                    <p className="mt-1 text-xs text-[#c0563d]">{errors.password.message}</p>
+                    <p className="mt-1 text-xs text-coral">{errors.password.message}</p>
                   )}
                 </div>
 
                 {mfaRequired && (
                   <div>
-                    <label htmlFor="login-mfa" className="text-xs font-medium text-[#7c7768]">
+                    <label htmlFor="login-mfa" className="text-xs font-medium text-auth-ink">
                       Authenticator code
                     </label>
                     <div className="relative">
                       <KeyRound
                         size={16}
-                        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#a9a591]"
+                        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-auth-muted"
                       />
                       <input
                         id="login-mfa"
@@ -210,28 +207,28 @@ export function LoginPage(): JSX.Element {
                         className={cn(
                           fieldBase,
                           'pl-10',
-                          errors.mfaCode ? 'border-[#c0563d]' : 'border-[#c7c0a6]'
+                          errors.mfaCode ? 'border-coral' : 'border-auth-border'
                         )}
                         {...register('mfaCode')}
                       />
                     </div>
-                    <p className="mt-1 text-xs text-[#8f8a79]">
+                    <p className="mt-1 text-xs text-auth-muted">
                       Enter the 6-digit code from your authenticator app
                     </p>
                     {errors.mfaCode?.message && (
-                      <p className="mt-1 text-xs text-[#c0563d]">{errors.mfaCode.message}</p>
+                      <p className="mt-1 text-xs text-coral">{errors.mfaCode.message}</p>
                     )}
                   </div>
                 )}
 
                 <div className="pt-2 text-center">
-                  <p className="mb-3 text-xs text-[#8f8a79]">
+                  <p className="mb-3 text-xs text-auth-muted">
                     You&apos;re all set — pick up where you left off.
                   </p>
                   <button
                     type="submit"
                     disabled={isLoading}
-                    className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-full bg-[#6c6890] px-6 text-sm font-medium text-white shadow-sm transition-colors hover:bg-[#5b577b] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#6c6890] focus-visible:ring-offset-2 focus-visible:ring-offset-[#efe8cf] disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-full bg-auth-accent px-6 text-sm font-medium text-white shadow-sm transition-colors hover:bg-auth-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-auth-accent focus-visible:ring-offset-2 focus-visible:ring-offset-auth-surface disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
                     Sign in
@@ -242,7 +239,7 @@ export function LoginPage(): JSX.Element {
               <button
                 type="button"
                 onClick={fillDemoCredentials}
-                className="mt-6 flex w-full items-center justify-center gap-1.5 rounded-full border border-dashed border-[#c7c0a6] py-2 text-xs font-medium text-[#8f8a79] transition-colors hover:text-[#6c6890]"
+                className="mt-6 flex w-full items-center justify-center gap-1.5 rounded-full border border-dashed border-auth-border py-2 text-xs font-medium text-auth-muted transition-colors hover:text-auth-link"
               >
                 <Wand2 size={14} strokeWidth={1.5} />
                 Use demo credentials
@@ -250,9 +247,9 @@ export function LoginPage(): JSX.Element {
             </div>
           </div>
 
-          {/* ── Illustration panel (purple, curved seam) ───────── */}
+          {/* ── Illustration panel (blue, curved seam) ───────── */}
           <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-[54%] md:block">
-            {/* Curved seam: purple shape whose left edge waves into the cream. */}
+            {/* Curved seam: blue shape whose left edge waves into the sign-in surface. */}
             <svg
               className="absolute inset-0 h-full w-full"
               viewBox="0 0 100 100"
@@ -260,27 +257,30 @@ export function LoginPage(): JSX.Element {
               aria-hidden
             >
               <path
+                className="fill-auth-panel"
                 d="M26 0 C56 16, 2 44, 24 72 C38 92, 32 96, 44 100 L100 100 L100 0 Z"
-                fill="#6c6890"
               />
             </svg>
 
-            <div className="pointer-events-auto absolute inset-0 flex flex-col justify-between py-10 pl-16 pr-10">
-              <div className="flex items-center justify-end gap-2 text-white/90">
-                <span className="grid h-6 w-6 place-items-center rounded-full bg-white/20">
-                  <Cctv size={13} strokeWidth={1.5} className="text-white" />
+            {/* Overlay: brand pinned top-right; welcome copy + art centred within the
+                blue mass — clear of the curved seam, responsive, never viewport-centred. */}
+            <div className="pointer-events-auto absolute inset-0">
+              <div className="absolute right-8 top-9 flex items-center gap-2 text-auth-ink/80 lg:right-12">
+                <span className="grid h-6 w-6 place-items-center rounded-full bg-auth-ink/10">
+                  <Cctv size={13} strokeWidth={1.5} className="text-auth-ink" />
                 </span>
                 <span className="text-sm font-semibold tracking-tight">Aniston VMS</span>
               </div>
 
-              <div className="pl-10">
-                <h2 className="font-heading text-3xl font-bold leading-tight text-white">
-                  Welcome back!
-                </h2>
-                <p className="mt-2 text-sm text-white/70">Pick up where you left off.</p>
+              <div className="flex h-full flex-col items-center justify-center gap-7 pl-[32%] pr-8 text-center lg:pl-[30%] lg:pr-12">
+                <div>
+                  <h2 className="font-heading text-3xl font-bold leading-tight text-auth-ink">
+                    Welcome back!
+                  </h2>
+                  <p className="mt-2 text-sm text-auth-muted">Pick up where you left off.</p>
+                </div>
+                <LoginIllustration className="w-52 max-w-full lg:w-60" />
               </div>
-
-              <LoginIllustration className="mx-auto -mb-2 w-64 max-w-full" />
             </div>
           </div>
         </div>

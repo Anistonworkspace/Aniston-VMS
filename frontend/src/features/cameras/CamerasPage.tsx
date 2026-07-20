@@ -1,14 +1,27 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Cctv, ChevronLeft, ChevronRight, RefreshCw, Search } from 'lucide-react';
+import {
+  Cctv,
+  ChevronLeft,
+  ChevronRight,
+  LayoutGrid,
+  Map as MapIcon,
+  Plus,
+  RefreshCw,
+  Search,
+} from 'lucide-react';
 import { Button, Input, SkeletonCard, ToastContainer } from '@/components/ui';
+import { useGetCurrentUserQuery } from '@/features/auth/auth.api';
+import { isCameraWriteRole } from '@/features/auth/auth.types';
 import { useToast } from '@/hooks/useToast';
 import { getApiErrorMessage } from '@/lib/apiError';
 import { cn } from '@/lib/utils';
 import { listContainer, pageChild, pageTransition } from '@/lib/animations';
+import { AddCameraModal } from './AddCameraModal';
 import { CameraCard } from './CameraCard';
 import { CameraDetailDrawer } from './CameraDetailDrawer';
+import { CameraMapView } from './CameraMapView';
 import { useListCamerasQuery, useListSitesLiteQuery } from './cameras.api';
 import type { CameraStatus } from './cameras.types';
 
@@ -23,6 +36,16 @@ const STATUS_FILTERS: Array<{ value: CameraStatus | ''; label: string }> = [
   { value: 'UNKNOWN', label: 'Unknown' },
 ];
 
+// Valid status values that may arrive via the "?status=" query param (e.g. from
+// the dashboard KPI tiles that deep-link into a pre-filtered fleet grid).
+const VALID_STATUSES = STATUS_FILTERS.map((filter) => filter.value).filter(
+  Boolean
+) as CameraStatus[];
+
+function parseStatusParam(value: string | null): CameraStatus | '' {
+  return value && (VALID_STATUSES as string[]).includes(value) ? (value as CameraStatus) : '';
+}
+
 // Cameras ("/cameras" + "/cameras/:cameraId") — filterable fleet grid backed by
 // GET /cameras; the :cameraId segment opens the health drawer over the grid.
 export function CamerasPage(): JSX.Element {
@@ -30,11 +53,43 @@ export function CamerasPage(): JSX.Element {
   const { cameraId } = useParams<{ cameraId: string }>();
   const { toasts, dismiss, success, error: notifyError } = useToast();
 
+  const [searchParams, setSearchParams] = useSearchParams();
+
   const [search, setSearch] = useState('');
   const [q, setQ] = useState('');
-  const [status, setStatus] = useState<CameraStatus | ''>('');
+  // Status is URL-derived so dashboard KPI tiles can deep-link into a filtered
+  // grid (e.g. "/cameras?status=CRITICAL") and in-page changes stay shareable.
+  const status = parseStatusParam(searchParams.get('status'));
   const [siteId, setSiteId] = useState('');
   const [page, setPage] = useState(1);
+
+  // CR-6 — grid/map presentation toggle + role-gated registration modal.
+  const [view, setView] = useState<'grid' | 'map'>('grid');
+  const [addOpen, setAddOpen] = useState(false);
+
+  const { data: user } = useGetCurrentUserQuery();
+  const canRegister = isCameraWriteRole(user?.role);
+
+  const setStatus = (next: CameraStatus | ''): void => {
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev);
+        if (next) {
+          params.set('status', next);
+        } else {
+          params.delete('status');
+        }
+        return params;
+      },
+      { replace: true }
+    );
+  };
+
+  // Reset to the first page whenever the active status filter changes, including
+  // when it is driven externally by a KPI-tile link rather than an in-page click.
+  useEffect(() => {
+    setPage(1);
+  }, [status]);
 
   // Debounce free-text search so we don't hit GET /cameras on every keystroke.
   useEffect(() => {
@@ -59,6 +114,13 @@ export function CamerasPage(): JSX.Element {
   const { data, isLoading, isFetching, error, refetch } = useListCamerasQuery(query);
   const { data: sites } = useListSitesLiteQuery();
 
+  // The map ignores pagination — it plots the whole filtered fleet (capped at
+  // 200 pins) so every site cluster is visible at once.
+  const { data: mapData } = useListCamerasQuery(
+    { ...query, page: 1, limit: 200 },
+    { skip: view !== 'map' }
+  );
+
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.limit)) : 1;
 
   return (
@@ -75,14 +137,21 @@ export function CamerasPage(): JSX.Element {
               : 'Fleet health at a glance'}
           </p>
         </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => refetch()}
-          leftIcon={<RefreshCw size={14} className={cn(isFetching && 'animate-spin')} />}
-        >
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => refetch()}
+            leftIcon={<RefreshCw size={14} className={cn(isFetching && 'animate-spin')} />}
+          >
+            Refresh
+          </Button>
+          {canRegister && (
+            <Button size="sm" onClick={() => setAddOpen(true)} leftIcon={<Plus size={14} />}>
+              Add camera
+            </Button>
+          )}
+        </div>
       </motion.header>
 
       <motion.div variants={pageChild} className="flex flex-wrap items-center gap-3">
@@ -120,10 +189,8 @@ export function CamerasPage(): JSX.Element {
             <button
               key={filter.label}
               type="button"
-              onClick={() => {
-                setStatus(filter.value);
-                setPage(1);
-              }}
+              aria-pressed={status === filter.value}
+              onClick={() => setStatus(filter.value)}
               className={cn(
                 'rounded-full px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage',
                 status === filter.value
@@ -135,9 +202,42 @@ export function CamerasPage(): JSX.Element {
             </button>
           ))}
         </div>
+        <div
+          className="ml-auto flex items-center gap-1 rounded-full bg-card p-1 shadow-soft"
+          role="group"
+          aria-label="Toggle grid or map view"
+        >
+          {(
+            [
+              { value: 'grid', label: 'Grid', icon: <LayoutGrid size={13} /> },
+              { value: 'map', label: 'Map', icon: <MapIcon size={13} /> },
+            ] as const
+          ).map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={view === option.value}
+              onClick={() => setView(option.value)}
+              className={cn(
+                'flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage',
+                view === option.value ? 'bg-ink text-white' : 'text-gray-600 hover:text-ink'
+              )}
+            >
+              {option.icon}
+              {option.label}
+            </button>
+          ))}
+        </div>
       </motion.div>
 
-      {error ? (
+      {view === 'map' ? (
+        <motion.div variants={pageChild}>
+          <CameraMapView
+            cameras={mapData?.items ?? data?.items ?? []}
+            onOpen={(id) => navigate(`/cameras/${id}`)}
+          />
+        </motion.div>
+      ) : error ? (
         <motion.div
           variants={pageChild}
           className="rounded-card bg-card p-10 text-center shadow-soft"
@@ -182,7 +282,7 @@ export function CamerasPage(): JSX.Element {
         </motion.div>
       )}
 
-      {data && totalPages > 1 && (
+      {view === 'grid' && data && totalPages > 1 && (
         <motion.footer variants={pageChild} className="flex items-center justify-center gap-3">
           <Button
             variant="ghost"
@@ -211,6 +311,12 @@ export function CamerasPage(): JSX.Element {
       <CameraDetailDrawer
         cameraId={cameraId ?? null}
         onClose={() => navigate('/cameras')}
+        notify={{ success, error: notifyError }}
+      />
+
+      <AddCameraModal
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
         notify={{ success, error: notifyError }}
       />
 

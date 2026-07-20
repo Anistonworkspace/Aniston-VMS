@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import * as SelectPrimitive from '@radix-ui/react-select';
 import { Check, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -37,12 +38,23 @@ export function Select({
   hint,
   className,
 }: SelectProps) {
-  const selectId = label ? `report-select-${label.toLowerCase().replace(/\s+/g, '-')}` : undefined;
+  // useId keeps the label→trigger wiring valid even when two Selects share the
+  // same label text on one page (e.g. the Clips filter bar's "Camera" and the
+  // New-clip dialog's "Camera") — a slug-only id duplicates and the <label>
+  // then resolves to the first match document-wide, leaving this one nameless.
+  const uniqueId = useId();
+  const selectId = label
+    ? `report-select-${label.toLowerCase().replace(/\s+/g, '-')}-${uniqueId.replace(/:/g, '')}`
+    : undefined;
+  // Radix's trigger is a <button>, and browsers do not compute an accessible
+  // name for buttons from an associated <label> (that only works for native
+  // inputs) — wire the name explicitly via aria-labelledby.
+  const labelId = selectId ? `${selectId}-label` : undefined;
 
   return (
     <div className="w-full space-y-1.5">
       {label && (
-        <label htmlFor={selectId} className="block text-sm font-medium text-gray-700">
+        <label id={labelId} htmlFor={selectId} className="block text-sm font-medium text-gray-700">
           {label}
         </label>
       )}
@@ -53,6 +65,7 @@ export function Select({
       >
         <SelectPrimitive.Trigger
           id={selectId}
+          aria-labelledby={labelId}
           className={cn(
             'flex w-full items-center justify-between gap-2 rounded-lg border bg-white/70 backdrop-blur-sm text-sm text-gray-900',
             'border-gray-200 hover:border-gray-300 px-3.5 py-2 transition-colors',

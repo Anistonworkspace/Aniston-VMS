@@ -11,12 +11,14 @@ import {
   createReferenceImageSchema,
   referenceImageIdParamsSchema,
   referenceImageListQuerySchema,
+  testCameraConnectionSchema,
   updateCameraSchema,
 } from './camera.schemas.js';
 import type {
   CameraListQuery,
   CreateCameraInput,
   CreateReferenceImageInput,
+  TestCameraConnectionInput,
   UpdateCameraInput,
 } from './camera.schemas.js';
 
@@ -63,6 +65,20 @@ cameraRouter.post(
     const body = req.body as CreateCameraInput;
     const data = await cameraService.createCamera(body, authUser(req), req);
     res.status(201).json({ success: true, data });
+  })
+);
+
+// POST /cameras/test-connection — CR-6 pre-registration probe (RTSP DESCRIBE +
+// one ffprobe frame; sim-aware). Gated like create, but nothing is persisted
+// and no audit row is written — it is a read-only network probe.
+cameraRouter.post(
+  '/test-connection',
+  requireRole(...CAMERA_WRITE_ROLES),
+  validateRequest({ body: testCameraConnectionSchema }),
+  asyncHandler(async (req, res) => {
+    const body = req.body as TestCameraConnectionInput;
+    const data = await cameraService.testCameraConnection(body);
+    res.json({ success: true, data });
   })
 );
 

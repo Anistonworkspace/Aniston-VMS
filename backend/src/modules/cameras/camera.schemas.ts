@@ -47,11 +47,18 @@ export const createCameraSchema = z.object({
   expectedResolution: z.string().min(1).max(50),
   expectedFps: z.coerce.number().int().min(1).max(240),
   expectedBitrateKbps: z.coerce.number().int().min(1).max(1_000_000),
+  // CR-6 — the add-camera modal registers the camera's map position directly
+  // (MapLibre pin); Delhi NCR in practice, but any valid WGS-84 pair is fine.
+  latitude: z.coerce.number().min(-90).max(90),
+  longitude: z.coerce.number().min(-180).max(180),
   status: cameraStatusEnum.optional(),
 });
 
 export const updateCameraSchema = createCameraSchema.partial().extend({
   maintenanceMode: z.boolean().optional(),
+  // CR-4 — per-camera snapshot cadence, editable 1–60 min (frontend pairs this
+  // with a projected-storage calculator and warns below 15 min).
+  snapshotIntervalMinutes: z.coerce.number().int().min(1).max(60).optional(),
 });
 
 export const createReferenceImageSchema = z.object({
@@ -61,8 +68,25 @@ export const createReferenceImageSchema = z.object({
 
 export const referenceImageListQuerySchema = PaginationSchema;
 
+// CR-6 — pre-registration "Test connection" from the add-camera modal: an RTSP
+// DESCRIBE plus a one-frame ffprobe against the candidate URL. Sim-aware —
+// under HEALTH_SIM_MODE the result is synthesized from the injected sim fault
+// (health.checkers.ts) so the modal works against the simulated fleet.
+export const testCameraConnectionSchema = z.object({
+  mainRtspUrl: z.string().min(1).max(500),
+  rtspUsername: z.string().min(1).max(200),
+  rtspPassword: z.string().min(1).max(200),
+  // Optional — lets the sim path look up an injected fault for this code.
+  cameraCode: z.string().min(1).max(50).optional(),
+  expectedCodec: z.string().min(1).max(50).optional(),
+  expectedResolution: z.string().min(1).max(50).optional(),
+  expectedFps: z.coerce.number().int().min(1).max(240).optional(),
+  expectedBitrateKbps: z.coerce.number().int().min(1).max(1_000_000).optional(),
+});
+
 export type CameraListQuery = z.infer<typeof cameraListQuerySchema>;
 export type CreateCameraInput = z.infer<typeof createCameraSchema>;
 export type UpdateCameraInput = z.infer<typeof updateCameraSchema>;
 export type CreateReferenceImageInput = z.infer<typeof createReferenceImageSchema>;
 export type ReferenceImageListQuery = z.infer<typeof referenceImageListQuerySchema>;
+export type TestCameraConnectionInput = z.infer<typeof testCameraConnectionSchema>;

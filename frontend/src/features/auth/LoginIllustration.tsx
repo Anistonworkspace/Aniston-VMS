@@ -27,7 +27,7 @@ export function LoginIllustration({ className }: { className?: string }): JSX.El
       {/* Left figure */}
       <g>
         <path d="M118 236l-6-58a20 20 0 0140 0l-6 58z" fill="#e0876c" />
-        <rect x="112" y="150" width="34" height="52" rx="16" fill="#3fb3a8" />
+        <rect x="112" y="150" width="34" height="52" rx="16" fill="#3d99f0" />
         {/* raised arm to the high-five point */}
         <path
           d="M142 158c14-6 26-16 34-28"
@@ -36,13 +36,13 @@ export function LoginIllustration({ className }: { className?: string }): JSX.El
           strokeLinecap="round"
         />
         <circle cx="129" cy="132" r="18" fill="#f0b99f" />
-        <path d="M111 128a18 18 0 0136 0c-6-6-12-9-18-9s-12 3-18 9z" fill="#3a3350" />
+        <path d="M111 128a18 18 0 0136 0c-6-6-12-9-18-9s-12 3-18 9z" fill="#1e3a5f" />
       </g>
 
       {/* Right figure */}
       <g>
-        <path d="M202 236l6-58a20 20 0 00-40 0l6 58z" fill="#2f2b45" />
-        <rect x="174" y="150" width="34" height="52" rx="16" fill="#e88a6f" />
+        <path d="M202 236l6-58a20 20 0 00-40 0l6 58z" fill="#243b6b" />
+        <rect x="174" y="150" width="34" height="52" rx="16" fill="#5aa9ef" />
         {/* raised arm to the high-five point */}
         <path
           d="M178 158c-14-6-26-16-34-28"
@@ -60,8 +60,8 @@ export function LoginIllustration({ className }: { className?: string }): JSX.El
       </g>
 
       {/* Feet */}
-      <ellipse cx="120" cy="238" rx="10" ry="4" fill="#2f2b45" />
-      <ellipse cx="146" cy="238" rx="10" ry="4" fill="#2f2b45" />
+      <ellipse cx="120" cy="238" rx="10" ry="4" fill="#243b6b" />
+      <ellipse cx="146" cy="238" rx="10" ry="4" fill="#243b6b" />
       <ellipse cx="174" cy="238" rx="10" ry="4" fill="#c56b52" />
       <ellipse cx="200" cy="238" rx="10" ry="4" fill="#c56b52" />
     </svg>

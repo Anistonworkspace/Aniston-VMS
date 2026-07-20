@@ -80,6 +80,30 @@ export async function createClipExport(
 ): Promise<ReturnType<typeof toPublicClip>> {
   const camera = await requireCamera(actor.id, cameraId);
 
+  // CR-9 — a SITE- or ZONE-level storage policy with storeClips=false blocks
+  // new exports for every camera under that scope, with a clear message.
+  // (Cameras hang off sites; the zone is reached through Site.zoneId.)
+  const site = await prisma.site.findUnique({
+    where: { id: camera.siteId },
+    select: { zoneId: true },
+  });
+  const policies = await prisma.storagePolicy.findMany({
+    where: {
+      OR: [
+        { scopeType: 'SITE', scopeId: camera.siteId },
+        ...(site ? [{ scopeType: 'ZONE' as const, scopeId: site.zoneId }] : []),
+      ],
+    },
+    select: { scopeType: true, storeClips: true },
+  });
+  const blocking = policies.find((p) => !p.storeClips);
+  if (blocking) {
+    const level = blocking.scopeType === 'SITE' ? 'site' : 'zone';
+    throw new ValidationError(
+      `Clip storage is disabled for this camera's ${level} by storage policy — new clip exports are blocked here`
+    );
+  }
+
   const startAt = new Date(input.startAt);
   const endAt = new Date(input.endAt);
   const durationMinutes = (endAt.getTime() - startAt.getTime()) / 60_000;
@@ -119,8 +143,18 @@ export async function listClipExports(
   filters: ClipListQuery
 ): Promise<Array<ReturnType<typeof toPublicClip>>> {
   const scope = await getUserScope(actor.id);
+  // CR-9 — optional site/zone narrowing composed with AND so the user's
+  // access scope (which also filters via the `site` relation) is never
+  // widened or clobbered. Zone reaches the camera through Site.zoneId.
+  const cameraWhere: Prisma.CameraWhereInput = {
+    AND: [
+      cameraScopeWhere(scope),
+      ...(filters.siteId ? [{ siteId: filters.siteId }] : []),
+      ...(filters.zoneId ? [{ site: { zoneId: filters.zoneId } }] : []),
+    ],
+  };
   const where: Prisma.ClipExportWhereInput = {
-    camera: cameraScopeWhere(scope),
+    camera: cameraWhere,
     ...(filters.cameraId ? { cameraId: filters.cameraId } : {}),
     ...(filters.status ? { status: filters.status } : {}),
     ...(filters.incidentId ? { incidentId: filters.incidentId } : {}),

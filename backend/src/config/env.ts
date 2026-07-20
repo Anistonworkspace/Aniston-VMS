@@ -104,6 +104,11 @@ const envSchema = z.object({
   // Stage 7 — reports
   REPORTS_MAX_RANGE_DAYS: z.coerce.number().int().min(1).default(92),
   REPORTS_SLA_UPTIME_TARGET_PCT: z.coerce.number().min(0).max(100).default(99.5),
+  // CR-12 — recurring scheduled-report email delivery (mock transport unless
+  // SMTP_HOST is configured; attachments land in UPLOAD_DIR/reports-outbox).
+  REPORT_EMAIL_ENABLED: z.coerce.boolean().default(true),
+  REPORT_EMAIL_TO: z.string().default('ops@anistonvms.example'),
+  REPORT_EMAIL_CRON: z.string().default('30 2 * * *'),
 
   // Stage 8 — maintenance windows
   MAINTENANCE_REMINDER_HOURS_BEFORE: z.coerce.number().int().min(1).default(24),

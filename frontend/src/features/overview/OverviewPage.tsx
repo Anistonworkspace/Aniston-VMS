@@ -1,34 +1,274 @@
-import { Plus } from 'lucide-react';
+import type { ReactNode } from 'react';
+import {
+  AlertTriangle,
+  Camera,
+  Cctv,
+  Flame,
+  MonitorPlay,
+  ShieldCheck,
+  VideoOff,
+  Wrench,
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { Skeleton } from '@/components/ui';
-import type { EvidenceSnapshot } from '@/types/vms';
+import { cn } from '@/lib/utils';
+import type {
+  CameraStatus,
+  DashboardOverview,
+  EvidenceSnapshot,
+  MissingSnapshot,
+  WorstConnection,
+} from '@/types/vms';
 import { ActivityListCard } from './ActivityListCard';
 import { DonutCard } from './DonutCard';
 import { ZoneCard } from './ZoneCard';
 import { timeAgo } from './timeAgo';
 import {
+  useGetDashboardOverviewQuery,
   useGetHealthSummaryQuery,
   useGetLatestEvidenceQuery,
   useListRecentIncidentsQuery,
   useListZoneSummariesQuery,
 } from './overview.api';
-// Real auth (not the legacy vms.ts mock CurrentUser/VmsRole) — the real API's
-// role literals live in features/auth/auth.types.ts.
-import { useGetCurrentUserQuery } from '@/features/auth/auth.api';
-import { isAdminRole } from '@/features/auth/auth.types';
 
 // Overview ("/") — signature dashboard layout, docs/04-uiux-brief.md §6–7:
-// hero left · zone-cards row right · donut under hero · incidents list right.
-function AddZoneTile(): JSX.Element {
+// hero left · CR-2 KPI row right · zone-cards row · donut + incidents ·
+// CR-2 worst-connections / missing-snapshots widgets.
+
+// ── CR-2 KPI tile ──────────────────────────────────────────────────────────
+// Eight scope-aware tiles whose live counts link to the matching filtered list.
+type KpiAccent = 'neutral' | 'sage' | 'coral' | 'sand' | 'indigo';
+
+const KPI_ACCENT: Record<KpiAccent, { chip: string; icon: string }> = {
+  neutral: { chip: 'bg-canvas', icon: 'text-muted' },
+  sage: { chip: 'bg-sage-soft', icon: 'text-sage' },
+  coral: { chip: 'bg-coral-soft', icon: 'text-coral' },
+  sand: { chip: 'bg-sand', icon: 'text-sand-deep' },
+  indigo: { chip: 'bg-indigo-soft', icon: 'text-indigo' },
+};
+
+interface KpiTileProps {
+  to: string;
+  label: string;
+  value: number | string;
+  icon: LucideIcon;
+  accent: KpiAccent;
+}
+
+function KpiTile({ to, label, value, icon: Icon, accent }: KpiTileProps): JSX.Element {
+  const a = KPI_ACCENT[accent];
   return (
-    <article className="grid h-52 place-items-center rounded-card border-2 border-dashed border-sidebar-muted">
-      <button
-        type="button"
-        aria-label="Add zone"
-        className="grid h-11 w-11 place-items-center rounded-full bg-card text-ink shadow-soft transition-shadow duration-150 hover:shadow-soft-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage"
-      >
-        <Plus size={20} strokeWidth={1.5} />
-      </button>
+    <Link
+      to={to}
+      className="flex flex-col rounded-card bg-card p-4 shadow-soft transition-shadow duration-150 hover:shadow-soft-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage"
+    >
+      <span className={cn('grid h-9 w-9 place-items-center rounded-control', a.chip)}>
+        <Icon size={18} strokeWidth={1.5} className={a.icon} />
+      </span>
+      <p className="mt-5 font-heading text-[26px] font-semibold leading-none tabular-nums text-ink">
+        {value}
+      </p>
+      <p className="mt-1 text-xs font-medium text-muted">{label}</p>
+    </Link>
+  );
+}
+
+function KpiRow({
+  overview,
+  isLoading,
+  isError,
+  onRetry,
+}: {
+  overview?: DashboardOverview;
+  isLoading: boolean;
+  isError: boolean;
+  onRetry: () => void;
+}): JSX.Element {
+  if (isError) {
+    return (
+      <div className="grid h-full min-h-[13rem] place-items-center rounded-card bg-card shadow-soft">
+        <div className="text-center">
+          <p className="text-sm text-muted">Couldn&apos;t load fleet metrics.</p>
+          <button
+            type="button"
+            onClick={onRetry}
+            className="mt-3 rounded-control bg-sage px-4 py-2 text-sm font-medium text-white transition-colors duration-150 hover:bg-sage-hover"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (isLoading || !overview) {
+    return (
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <Skeleton key={i} className="h-[104px] rounded-card" />
+        ))}
+      </div>
+    );
+  }
+
+  const c = overview.cameras;
+  const tiles: KpiTileProps[] = [
+    { to: '/cameras', label: 'Total cameras', value: c.total, icon: Cctv, accent: 'neutral' },
+    {
+      to: '/cameras?status=HEALTHY',
+      label: 'Healthy',
+      value: c.healthy,
+      icon: ShieldCheck,
+      accent: 'sage',
+    },
+    {
+      to: '/cameras?status=CRITICAL',
+      label: 'Unavailable / Offline',
+      value: c.offline,
+      icon: VideoOff,
+      accent: 'coral',
+    },
+    {
+      to: '/cameras?status=WARNING',
+      label: 'Warning',
+      value: c.warning,
+      icon: AlertTriangle,
+      accent: 'sand',
+    },
+    {
+      to: '/cameras?status=MAINTENANCE',
+      label: 'Maintenance',
+      value: c.maintenance,
+      icon: Wrench,
+      accent: 'indigo',
+    },
+    {
+      to: '/incidents',
+      label: 'Open incidents',
+      value: overview.openIncidents,
+      icon: Flame,
+      accent: 'coral',
+    },
+    {
+      to: '/reports',
+      label: 'Snapshot success (24 h)',
+      value: `${overview.snapshotSuccess.percent}%`,
+      icon: Camera,
+      accent: 'sage',
+    },
+    {
+      to: '/live',
+      label: 'Active live sessions',
+      value: overview.activeLiveSessions,
+      icon: MonitorPlay,
+      accent: 'indigo',
+    },
+  ];
+
+  return (
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      {tiles.map((t) => (
+        <KpiTile key={t.label} {...t} />
+      ))}
+    </div>
+  );
+}
+
+// ── CR-2 widgets ─────────────────────────────────────────────────────────────
+const STATUS_DOT: Record<CameraStatus, string> = {
+  HEALTHY: 'bg-sage',
+  WARNING: 'bg-sand-deep',
+  CRITICAL: 'bg-coral',
+  MAINTENANCE: 'bg-indigo',
+  UNKNOWN: 'bg-muted',
+};
+
+const ROW_LINK =
+  '-mx-2 flex items-center gap-3 rounded-control px-2 py-2.5 transition-colors duration-150 hover:bg-canvas focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage';
+
+function WidgetCard({
+  title,
+  isLoading,
+  isError,
+  isEmpty,
+  emptyText,
+  onRetry,
+  children,
+}: {
+  title: string;
+  isLoading: boolean;
+  isError: boolean;
+  isEmpty: boolean;
+  emptyText: string;
+  onRetry: () => void;
+  children: ReactNode;
+}): JSX.Element {
+  return (
+    <article className="rounded-card bg-card p-5 shadow-soft">
+      <h3 className="font-heading text-base font-semibold text-ink">{title}</h3>
+      {isError ? (
+        <div className="mt-4">
+          <p className="text-sm text-muted">Couldn&apos;t load {title.toLowerCase()}.</p>
+          <button
+            type="button"
+            onClick={onRetry}
+            className="mt-2 rounded-control bg-sage px-3 py-1.5 text-sm font-medium text-white transition-colors duration-150 hover:bg-sage-hover"
+          >
+            Retry
+          </button>
+        </div>
+      ) : isLoading ? (
+        <div className="mt-4 space-y-3">
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} variant="line" width="100%" />
+          ))}
+        </div>
+      ) : isEmpty ? (
+        <p className="mt-4 text-sm text-muted">{emptyText}</p>
+      ) : (
+        <ul className="mt-2 divide-y divide-black/5">{children}</ul>
+      )}
     </article>
+  );
+}
+
+function WorstConnectionRow({ cam }: { cam: WorstConnection }): JSX.Element {
+  return (
+    <li>
+      <Link to={`/cameras/${cam.cameraId}`} className={ROW_LINK}>
+        <span className={cn('h-2 w-2 shrink-0 rounded-full', STATUS_DOT[cam.status])} aria-hidden />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-ink">{cam.name}</p>
+          <p className="truncate text-xs text-muted">
+            {cam.cameraCode} · {cam.siteName}
+            {cam.diagnosis ? ` · ${cam.diagnosis}` : ''}
+          </p>
+        </div>
+        <span className="shrink-0 text-sm font-semibold tabular-nums text-ink">
+          {cam.healthScore}
+        </span>
+      </Link>
+    </li>
+  );
+}
+
+function MissingSnapshotRow({ cam }: { cam: MissingSnapshot }): JSX.Element {
+  return (
+    <li>
+      <Link to={`/cameras/${cam.cameraId}`} className={ROW_LINK}>
+        <span className="h-2 w-2 shrink-0 rounded-full bg-sand-deep" aria-hidden />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-ink">{cam.name}</p>
+          <p className="truncate text-xs text-muted">
+            {cam.cameraCode} · {cam.siteName}
+          </p>
+        </div>
+        <span className="shrink-0 text-xs text-muted">
+          {cam.lastSnapshotAt ? timeAgo(cam.lastSnapshotAt) : 'never'}
+        </span>
+      </Link>
+    </li>
   );
 }
 
@@ -69,6 +309,12 @@ function EvidenceCard({ evidence }: { evidence?: EvidenceSnapshot }): JSX.Elemen
 
 export function OverviewPage(): JSX.Element {
   const {
+    data: overview,
+    isLoading: overviewLoading,
+    isError: overviewError,
+    refetch: refetchOverview,
+  } = useGetDashboardOverviewQuery();
+  const {
     data: health,
     isLoading: healthLoading,
     isError: healthError,
@@ -87,9 +333,7 @@ export function OverviewPage(): JSX.Element {
     refetch: refetchIncidents,
   } = useListRecentIncidentsQuery();
   const { data: evidence } = useGetLatestEvidenceQuery();
-  const { data: user } = useGetCurrentUserQuery();
 
-  const isAdmin = isAdminRole(user?.role);
   const featuredZones = zones
     ? [...zones].sort((a, b) => b.cameraCount - a.cameraCount).slice(0, 2)
     : [];
@@ -117,8 +361,18 @@ export function OverviewPage(): JSX.Element {
         )}
       </section>
 
-      {/* Row 1 — zone cards (dashed add tile · pastel zones · latest evidence) */}
-      <section className="col-span-12 xl:col-span-8" aria-label="Zones">
+      {/* CR-2 KPI row — 8 scope-aware tiles linking to filtered lists */}
+      <section className="col-span-12 self-center xl:col-span-8" aria-label="Fleet metrics">
+        <KpiRow
+          overview={overview}
+          isLoading={overviewLoading}
+          isError={overviewError}
+          onRetry={() => void refetchOverview()}
+        />
+      </section>
+
+      {/* Row 1 — zone cards (pastel zones · latest evidence) */}
+      <section className="col-span-12" aria-label="Zones">
         {zonesError ? (
           <div className="grid h-52 place-items-center rounded-card bg-card shadow-soft">
             <div className="text-center">
@@ -133,8 +387,7 @@ export function OverviewPage(): JSX.Element {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-6 md:grid-cols-4">
-            {isAdmin && <AddZoneTile />}
+          <div className="grid grid-cols-2 gap-6 md:grid-cols-3">
             {zonesLoading ? (
               [0, 1].map((i) => <Skeleton key={i} className="h-52 rounded-card" />)
             ) : featuredZones.length === 0 ? (
@@ -165,6 +418,36 @@ export function OverviewPage(): JSX.Element {
           isError={incidentsError}
           onRetry={() => void refetchIncidents()}
         />
+      </div>
+
+      {/* Row 3 — CR-2 widgets: worst connections · missing snapshots */}
+      <div className="col-span-12 xl:col-span-6">
+        <WidgetCard
+          title="Worst connections"
+          isLoading={overviewLoading}
+          isError={overviewError}
+          isEmpty={!overview || overview.worstConnections.length === 0}
+          emptyText="No degraded cameras in your scope — all healthy."
+          onRetry={() => void refetchOverview()}
+        >
+          {overview?.worstConnections.map((cam) => (
+            <WorstConnectionRow key={cam.cameraId} cam={cam} />
+          ))}
+        </WidgetCard>
+      </div>
+      <div className="col-span-12 xl:col-span-6">
+        <WidgetCard
+          title="Missing snapshots"
+          isLoading={overviewLoading}
+          isError={overviewError}
+          isEmpty={!overview || overview.missingSnapshots.length === 0}
+          emptyText="Every in-service camera has a fresh snapshot."
+          onRetry={() => void refetchOverview()}
+        >
+          {overview?.missingSnapshots.map((cam) => (
+            <MissingSnapshotRow key={cam.cameraId} cam={cam} />
+          ))}
+        </WidgetCard>
       </div>
     </div>
   );

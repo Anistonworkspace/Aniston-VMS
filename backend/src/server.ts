@@ -12,6 +12,7 @@ import {
   stopEscalationWorker,
 } from './modules/incidents/escalation.worker.js';
 import { startClipExportWorker, stopClipExportWorker } from './modules/clips/clip.worker.js';
+import { startReportScheduler, stopReportScheduler } from './modules/reports/report.scheduler.js';
 import { startSelfMonitor, stopSelfMonitor } from './modules/health/platform.service.js';
 import { startStreamReaper, stopStreamReaper } from './modules/playback/playback.reaper.js';
 import { startSchedulerWorker, stopSchedulerWorker } from './lib/scheduler.queue.js';
@@ -49,6 +50,9 @@ function main(): void {
     if (env.CLIP_EXPORT_WORKER_ENABLED && env.NODE_ENV !== 'test') {
       startClipExportWorker();
     }
+    if (env.REPORT_EMAIL_ENABLED && env.NODE_ENV !== 'test') {
+      startReportScheduler(); // CR-12: daily uptime+incidents email (mock transport)
+    }
     if (env.SOCKET_IO_ENABLED && env.NODE_ENV !== 'test') {
       initRealtime(httpServer);
     }
@@ -65,6 +69,7 @@ function main(): void {
     stopEscalationWorker();
     stopStreamReaper();
     stopSelfMonitor();
+    stopReportScheduler();
     void stopClipExportWorker();
     void stopSchedulerWorker();
     httpServer.close(() => process.exit(0));

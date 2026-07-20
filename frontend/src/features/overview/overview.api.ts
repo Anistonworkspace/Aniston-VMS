@@ -1,11 +1,14 @@
 import { api } from '@/app/api';
-import type { EvidenceSnapshot, HealthSummary, IncidentSummary, ZoneSummary } from '@/types/vms';
-import {
-  mockHealthSummary,
-  mockLatestEvidence,
-  mockRecentIncidents,
-  mockZones,
-} from '@/mocks/vms-fixtures';
+import { unwrapEnvelope } from '@/lib/apiError';
+import type {
+  DashboardOverview,
+  EvidenceSnapshot,
+  HealthSummary,
+  IncidentSummary,
+  ZoneOverview,
+  ZoneSummary,
+} from '@/types/vms';
+import { mockHealthSummary, mockLatestEvidence, mockRecentIncidents } from '@/mocks/vms-fixtures';
 
 // MOCK: Stage 1 has no backend — every endpoint below resolves from
 // src/mocks/vms-fixtures.ts via queryFn (with a small latency so loading
@@ -25,13 +28,26 @@ async function fromFixture<T>(data: T): Promise<{ data: T }> {
 // (e.g. auth.api `getCurrentUser`, settings.api `listZones`) — a collision
 // makes real pages receive mock-fixture shapes and crash.
 export const overviewApi = api
-  .enhanceEndpoints({ addTagTypes: ['Zone', 'Incident', 'Health', 'Evidence'] })
+  .enhanceEndpoints({ addTagTypes: ['Zone', 'Incident', 'Health', 'Evidence', 'Dashboard'] })
   .injectEndpoints({
     endpoints: (builder) => ({
-      // Renamed from `listZones` — that name collided with the REAL paginated
-      // GET /zones endpoint in features/settings/settings.api.ts.
+      // CR-2 dashboard overview — REAL backend endpoint (not a mock fixture).
+      // Exists exactly as GET /api/dashboard/overview in
+      // backend/src/modules/dashboard/dashboard.router.ts; scope-filtered
+      // server-side. Envelope { success, data } unwrapped to DashboardOverview.
+      getDashboardOverview: builder.query<DashboardOverview, void>({
+        query: () => '/dashboard/overview',
+        transformResponse: unwrapEnvelope<DashboardOverview>,
+        providesTags: [{ type: 'Dashboard' as const, id: 'OVERVIEW' }],
+      }),
+
+      // CR-8: REAL scope-aware zone cards for the sidebar + dashboard grid.
+      // GET /api/dashboard/zones returns real zone IDs so each card/sidebar row
+      // deep-links to its populated /zones/:id page. Renamed from `listZones`
+      // to avoid colliding with the paginated GET /zones in settings.api.ts.
       listZoneSummaries: builder.query<ZoneSummary[], void>({
-        queryFn: () => fromFixture(mockZones),
+        query: () => '/dashboard/zones',
+        transformResponse: unwrapEnvelope<ZoneSummary[]>,
         providesTags: (result) =>
           result
             ? [
@@ -39,6 +55,14 @@ export const overviewApi = api
                 { type: 'Zone' as const, id: 'LIST' },
               ]
             : [{ type: 'Zone' as const, id: 'LIST' }],
+      }),
+
+      // CR-8: populated single-zone overview (KPIs, sites, cameras, open
+      // incidents, trailing-30 d uptime). GET /api/dashboard/zones/:id.
+      getZoneOverview: builder.query<ZoneOverview, string>({
+        query: (zoneId) => `/dashboard/zones/${zoneId}`,
+        transformResponse: unwrapEnvelope<ZoneOverview>,
+        providesTags: (_result, _err, zoneId) => [{ type: 'Zone' as const, id: zoneId }],
       }),
 
       getHealthSummary: builder.query<HealthSummary, void>({
@@ -70,7 +94,9 @@ export const overviewApi = api
   });
 
 export const {
+  useGetDashboardOverviewQuery,
   useListZoneSummariesQuery,
+  useGetZoneOverviewQuery,
   useGetHealthSummaryQuery,
   useListRecentIncidentsQuery,
   useGetLatestEvidenceQuery,

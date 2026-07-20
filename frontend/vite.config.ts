@@ -12,6 +12,10 @@ export default defineConfig({
       strategies: 'injectManifest',
       srcDir: 'src',
       filename: 'sw.ts',
+      injectManifest: {
+        // MapLibre GL (CR-6 map view) pushes the main chunk past the 2 MiB default.
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+      },
       manifest: {
         name: 'Aniston VMS',
         short_name: 'Aniston VMS',

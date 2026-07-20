@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import type { Prisma, Role, StreamSession } from '@prisma/client';
+import type { Prisma, Role, StreamKind, StreamSession } from '@prisma/client';
 import { env } from '../../config/env.js';
 import { prisma } from '../../lib/prisma.js';
 import { logger } from '../../lib/logger.js';
 import { canAccessCamera, cameraScopeWhere, getUserScope } from '../../lib/scope.js';
 import { ConflictError, ForbiddenError, NotFoundError } from '../../middleware/errorHandler.js';
 import type { AuthUser } from '../../middleware/auth.js';
+import { getNumericSetting } from '../settings/settings.service.js';
 import {
   buildMediamtxPath,
   buildStreamEndpoints,
@@ -88,11 +89,25 @@ function toPublicSession(session: StreamSession, range?: PlaybackRange) {
   };
 }
 
+// CR-4 — live viewing is permission-gated: non-admin users need an explicit
+// LIVE_VIEW grant (prisma UserPermission) before a LIVE_SUB/LIVE_MAIN session
+// may start. PLAYBACK (VOD) is not gated by LIVE_VIEW.
+async function requireLiveViewPermission(actor: AuthUser): Promise<void> {
+  if (ADMIN_ROLES.includes(actor.role)) return;
+  const grant = await prisma.userPermission.findUnique({
+    where: { userId_permission: { userId: actor.id, permission: 'LIVE_VIEW' } },
+  });
+  if (!grant) {
+    throw new ForbiddenError('Live view permission required — ask your administrator');
+  }
+}
+
 export async function startSession(
   actor: AuthUser,
   input: StartSessionInput,
   clientIp: string
 ): Promise<ReturnType<typeof toPublicSession>> {
+  if (input.kind !== 'PLAYBACK') await requireLiveViewPermission(actor);
   const camera = await requireCamera(actor.id, input.cameraId);
 
   const activeCount = await prisma.streamSession.count({
@@ -102,6 +117,31 @@ export async function startSession(
     throw new ConflictError(
       `Camera has reached the maximum of ${env.STREAM_MAX_CONCURRENT_PER_CAMERA} concurrent stream sessions`
     );
+  }
+
+  // CR-10 — TRD §17 global / per-site concurrent live-stream caps, sourced
+  // from system_settings (Settings → Capacity) rather than env so admins can
+  // tune them at runtime. PLAYBACK (VOD) sessions are not capped here.
+  if (input.kind !== 'PLAYBACK') {
+    const LIVE_KINDS: StreamKind[] = ['LIVE_SUB', 'LIVE_MAIN'];
+    const [globalCap, siteCap, activeLiveGlobal, activeLiveSite] = await Promise.all([
+      getNumericSetting('max_live_sessions_global'),
+      getNumericSetting('max_live_sessions_per_site'),
+      prisma.streamSession.count({ where: { endedAt: null, kind: { in: LIVE_KINDS } } }),
+      prisma.streamSession.count({
+        where: { endedAt: null, kind: { in: LIVE_KINDS }, camera: { siteId: camera.siteId } },
+      }),
+    ]);
+    if (activeLiveGlobal >= globalCap) {
+      throw new ConflictError(
+        `The system is at its limit of ${globalCap} concurrent live streams — close another live view and try again`
+      );
+    }
+    if (activeLiveSite >= siteCap) {
+      throw new ConflictError(
+        `This site is at its limit of ${siteCap} concurrent live streams — close another live view from this site and try again`
+      );
+    }
   }
 
   const id = randomUUID();

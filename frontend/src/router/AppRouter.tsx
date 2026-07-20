@@ -3,6 +3,7 @@ import { BrowserRouter, Route, Routes, Navigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { AppShell } from '@/components/layout/AppShell';
 import { OverviewPage } from '@/features/overview/OverviewPage';
+import { ZoneDetailPage } from '@/features/overview/ZoneDetailPage';
 import { CamerasPage } from '@/features/cameras/CamerasPage';
 import { IncidentsPage } from '@/features/incidents/IncidentsPage';
 import { ClipsPage } from '@/features/clips/ClipsPage';
@@ -36,6 +37,7 @@ export function AppRouter(): JSX.Element {
             }
           >
             <Route path="/" element={<OverviewPage />} />
+            <Route path="/zones/:zoneId" element={<ZoneDetailPage />} />
             <Route path="/live" element={<LiveWallPage />} />
             <Route path="/reports" element={<ReportsPage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />

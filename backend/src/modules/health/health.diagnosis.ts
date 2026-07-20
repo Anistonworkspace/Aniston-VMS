@@ -43,6 +43,9 @@ export const DIAGNOSIS_TEXT: Record<Diagnosis, string> = {
   CONFIG_ERROR: 'Configuration error — wrong credentials, path, codec or resolution',
   STREAM_DEGRADED: 'Stream degraded — low FPS/bitrate against expected profile',
   IMAGE_PROBLEM: 'Image problem — stream up but image analysis flagged the view',
+  // v1.5 placeholder — never emitted by the health engine; reserved for the
+  // Phase-2 waterlogging detection roadmap (docs/06-implementation-plan.md).
+  WATERLOGGING: 'Waterlogging detected — standing water flagged in the camera view',
 };
 
 export interface DiagnosisOutcome {

@@ -540,6 +540,18 @@
   /* Surfaces */
   --canvas: #e8e8e6; /* page background behind the app frame */
   --surface: #f6f5f1; /* main content background (cream) */
+  /* Sign-in (unauthenticated) light-blue topology.
+     Single source of truth for the Login page. */
+  --auth-bg: #e8f0f5; /* outer page background */
+  --auth-surface: #f7f9fc; /* sign-in form panel */
+  --auth-panel: #d8eaf7; /* right welcome panel */
+  --auth-field: #eef5fb; /* input background */
+  --auth-field-border: #bcd0e2; /* input border */
+  --auth-ink: #142b4a; /* primary text (dark) */
+  --auth-muted: #68778d; /* secondary text */
+  --auth-accent: #168c8c; /* sign-in button (teal) */
+  --auth-accent-hover: #117575; /* sign-in button hover */
+  --auth-link: #3f67d8; /* secondary accent / links */
   --card: #ffffff; /* cards, topbar controls, list rows */
   --sidebar: #5c6672; /* slate gray-blue sidebar */
   --sidebar-text: #f3f4f5;

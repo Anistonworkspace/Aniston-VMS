@@ -19,6 +19,12 @@ const prismaMock = {
   recordingSegment: {
     findMany: vi.fn(),
   },
+  userPermission: {
+    findUnique: vi.fn(),
+  },
+  systemSetting: {
+    findFirst: vi.fn(),
+  },
 };
 
 vi.mock('../../lib/prisma.js', () => ({ prisma: prismaMock }));
@@ -57,6 +63,17 @@ beforeEach(() => {
   // scopeType: 'ALL' short-circuits every canAccess* check in lib/scope.ts to
   // true without any further prisma calls (see maintenance.service.test.ts).
   prismaMock.userAccessScope.findMany.mockResolvedValue([{ scopeType: 'ALL', scopeId: null }]);
+  // v1.5 — non-admin callers need an explicit LIVE_VIEW grant before any
+  // stream session is opened; default the grant to present so the existing
+  // scope/quota tests keep exercising their own concern.
+  prismaMock.userPermission.findUnique.mockResolvedValue({
+    userId: 'user-1',
+    permission: 'LIVE_VIEW',
+  });
+  // CR-10 — startSession reads the live-session caps from system_settings;
+  // null falls back to the seeded defaults (40 global / 6 per site), which are
+  // far above the counts the existing tests mock.
+  prismaMock.systemSetting.findFirst.mockResolvedValue(null);
 });
 
 describe('startSession', () => {
@@ -72,6 +89,16 @@ describe('startSession', () => {
     expect(prismaMock.streamSession.create).not.toHaveBeenCalled();
   });
 
+  it('throws ForbiddenError when a non-admin caller lacks the LIVE_VIEW grant', async () => {
+    prismaMock.userPermission.findUnique.mockResolvedValue(null);
+
+    await expect(
+      playbackService.startSession(operator, { cameraId: 'cam-1', kind: 'LIVE_SUB' }, '10.0.0.1')
+    ).rejects.toThrow(ForbiddenError);
+    expect(publishStreamMock).not.toHaveBeenCalled();
+    expect(prismaMock.streamSession.create).not.toHaveBeenCalled();
+  });
+
   it('throws NotFoundError when the camera row does not exist', async () => {
     prismaMock.camera.findUnique.mockResolvedValue(null);
 
@@ -83,6 +110,21 @@ describe('startSession', () => {
   it('throws ConflictError once the camera is at STREAM_MAX_CONCURRENT_PER_CAMERA', async () => {
     prismaMock.camera.findUnique.mockResolvedValue(camera);
     prismaMock.streamSession.count.mockResolvedValue(env.STREAM_MAX_CONCURRENT_PER_CAMERA);
+
+    await expect(
+      playbackService.startSession(operator, { cameraId: 'cam-1', kind: 'LIVE_SUB' }, '10.0.0.1')
+    ).rejects.toThrow(ConflictError);
+    expect(publishStreamMock).not.toHaveBeenCalled();
+    expect(prismaMock.streamSession.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects a live session once the global live-stream cap is reached (CR-10)', async () => {
+    prismaMock.camera.findUnique.mockResolvedValue(camera);
+    prismaMock.streamSession.count.mockResolvedValue(0);
+    prismaMock.systemSetting.findFirst.mockImplementation(
+      async ({ where }: { where: { key: string } }) =>
+        where.key === 'max_live_sessions_global' ? { value: 0 } : null
+    );
 
     await expect(
       playbackService.startSession(operator, { cameraId: 'cam-1', kind: 'LIVE_SUB' }, '10.0.0.1')

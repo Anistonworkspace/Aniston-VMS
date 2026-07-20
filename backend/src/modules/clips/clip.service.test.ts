@@ -12,6 +12,12 @@ const prismaMock = {
   incident: {
     findUnique: vi.fn(),
   },
+  site: {
+    findUnique: vi.fn(),
+  },
+  storagePolicy: {
+    findMany: vi.fn(),
+  },
   clipExport: {
     create: vi.fn(),
     update: vi.fn(),
@@ -50,6 +56,10 @@ const camera = { id: 'cam-1', cameraCode: 'CAM-1' };
 beforeEach(() => {
   vi.clearAllMocks();
   storageMock.exists.mockResolvedValue(true);
+  // CR-9/CR-10 storage-policy gate — default to "no policies" so the existing
+  // tests keep exercising their own concern.
+  prismaMock.site.findUnique.mockResolvedValue({ zoneId: 'zone-1' });
+  prismaMock.storagePolicy.findMany.mockResolvedValue([]);
   // scopeType: 'ALL' short-circuits every canAccess* check in lib/scope.ts to
   // true without any further prisma calls (see maintenance.service.test.ts).
   prismaMock.userAccessScope.findMany.mockResolvedValue([{ scopeType: 'ALL', scopeId: null }]);
@@ -141,6 +151,19 @@ describe('createClipExport', () => {
     });
     expect(enqueueClipExportMock).toHaveBeenCalledWith('clip-1');
     expect(result).toMatchObject({ id: 'clip-1', status: 'QUEUED', downloadUrl: null });
+  });
+
+  it('throws ValidationError when a storage policy disables clips for the scope', async () => {
+    prismaMock.camera.findUnique.mockResolvedValue(camera);
+    prismaMock.storagePolicy.findMany.mockResolvedValue([{ scopeType: 'SITE', storeClips: false }]);
+
+    await expect(
+      clipService.createClipExport(operator, 'cam-1', {
+        startAt: '2026-07-01T00:00:00.000Z',
+        endAt: '2026-07-01T00:10:00.000Z',
+      })
+    ).rejects.toThrow(ValidationError);
+    expect(prismaMock.clipExport.create).not.toHaveBeenCalled();
   });
 });
 

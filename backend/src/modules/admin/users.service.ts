@@ -198,7 +198,7 @@ export async function listAccessScopes(userId: string) {
 }
 
 async function scopeTargetExists(
-  scopeType: 'REGION' | 'ZONE' | 'SITE',
+  scopeType: 'REGION' | 'ZONE' | 'SITE' | 'CAMERA',
   scopeId: string
 ): Promise<boolean> {
   switch (scopeType) {
@@ -213,6 +213,12 @@ async function scopeTargetExists(
     case 'SITE':
       return (
         (await prisma.site.findUnique({ where: { id: scopeId }, select: { id: true } })) !== null
+      );
+    // v1.5 — camera-level access scopes (CR-3): a user may be granted a single
+    // camera, e.g. a client viewer who should only ever see one feed.
+    case 'CAMERA':
+      return (
+        (await prisma.camera.findUnique({ where: { id: scopeId }, select: { id: true } })) !== null
       );
   }
 }

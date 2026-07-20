@@ -8,6 +8,8 @@ import type { SelectOption } from '@/features/reports/Select';
 import { useGetCurrentUserQuery } from '@/features/auth/auth.api';
 import { isOperatorPlusRole } from '@/features/auth/auth.types';
 import { useGetFleetHealthQuery } from '@/features/analytics/analytics.api';
+import { useListSitesLiteQuery } from '@/features/cameras/cameras.api';
+import { useListZoneSummariesQuery } from '@/features/overview/overview.api';
 import { timeAgo } from '@/features/overview/timeAgo';
 import { getApiErrorMessage } from '@/lib/apiError';
 import { useListClipsQuery } from './clips.api';
@@ -64,6 +66,9 @@ export function ClipsPage(): JSX.Element {
   const { toasts, dismiss, success, error: toastError } = useToast();
   const [cameraFilter, setCameraFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  // CR-9 — scope narrowing; ANDed with camera/status server-side.
+  const [zoneFilter, setZoneFilter] = useState('');
+  const [siteFilter, setSiteFilter] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [pollingInterval, setPollingInterval] = useState(0);
 
@@ -82,6 +87,27 @@ export function ClipsPage(): JSX.Element {
     [fleet]
   );
 
+  // CR-9 scope pickers — zones from the overview summary, sites from the
+  // hierarchy list. Site options narrow to the picked zone when one is set.
+  const { data: zones } = useListZoneSummariesQuery();
+  const { data: sitesPage } = useListSitesLiteQuery();
+  const zoneOptions = useMemo<SelectOption[]>(
+    () => [
+      { value: '', label: 'All zones' },
+      ...(zones ?? []).map((zone) => ({ value: zone.id, label: zone.name })),
+    ],
+    [zones]
+  );
+  const siteOptions = useMemo<SelectOption[]>(
+    () => [
+      { value: '', label: 'All sites' },
+      ...(sitesPage?.items ?? [])
+        .filter((site) => !zoneFilter || site.zoneId === zoneFilter)
+        .map((site) => ({ value: site.id, label: site.name })),
+    ],
+    [sitesPage, zoneFilter]
+  );
+
   const {
     data: clips,
     isLoading,
@@ -92,6 +118,8 @@ export function ClipsPage(): JSX.Element {
     {
       cameraId: cameraFilter || undefined,
       status: (statusFilter || undefined) as ClipStatus | undefined,
+      zoneId: zoneFilter || undefined,
+      siteId: siteFilter || undefined,
     },
     { pollingInterval }
   );
@@ -123,6 +151,28 @@ export function ClipsPage(): JSX.Element {
 
       {/* Filters */}
       <div className="flex flex-wrap items-end gap-3">
+        <div className="w-48">
+          <Select
+            label="Zone"
+            value={zoneFilter}
+            onValueChange={(value) => {
+              setZoneFilter(value);
+              // A site outside the new zone would silently over-filter.
+              setSiteFilter('');
+            }}
+            options={zoneOptions}
+            placeholder="All zones"
+          />
+        </div>
+        <div className="w-48">
+          <Select
+            label="Site"
+            value={siteFilter}
+            onValueChange={setSiteFilter}
+            options={siteOptions}
+            placeholder="All sites"
+          />
+        </div>
         <div className="w-64">
           <Select
             label="Camera"

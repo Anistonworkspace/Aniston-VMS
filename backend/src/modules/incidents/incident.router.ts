@@ -51,6 +51,15 @@ incidentRouter.get(
   })
 );
 
+// CR-7 — stats strip (open-by-severity + MTTA today) for the list view.
+incidentRouter.get(
+  '/incidents/stats',
+  asyncHandler(async (req, res) => {
+    const data = await incidentService.getIncidentStats(authUser(req).id);
+    res.json({ success: true, data });
+  })
+);
+
 incidentRouter.get(
   '/incidents/recent',
   asyncHandler(async (req, res) => {

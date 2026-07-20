@@ -208,3 +208,95 @@ export function canWriteRouters(role: Role | undefined | null): boolean {
 }
 
 export type HierarchyKind = 'region' | 'zone' | 'site' | 'router';
+
+// ── CR-10 Settings admin API — mirrors backend/src/modules/settings/
+// settings.schemas.ts (request validation) and settings.service.ts (response
+// shapes). Every route is REAL and admin-gated: settings.router.ts applies
+// requireRole('SUPER_ADMIN', 'PROJECT_ADMIN') to all /settings/* routes. ────
+
+/** GET /settings/system — SETTING_DEFAULTS keys (settings.service.ts). */
+export interface SystemSettings {
+  retention_days: number;
+  compression_quality: number;
+  max_live_sessions_global: number;
+  max_live_sessions_per_site: number;
+}
+/** PUT /settings/system body (updateSystemSettingsSchema — partial, ≥1 key). */
+export type UpdateSystemSettingsInput = Partial<SystemSettings>;
+/** PUT /settings/system response — `{ old, settings }` for audit clarity. */
+export interface UpdateSystemSettingsResult {
+  old: SystemSettings;
+  settings: SystemSettings;
+}
+
+export type StorageScopeType = 'ZONE' | 'SITE';
+
+/** listStoragePolicies() row — StoragePolicy + resolved scopeName. */
+export interface StoragePolicyModel {
+  id: string;
+  scopeType: StorageScopeType;
+  scopeId: string;
+  scopeName: string;
+  storeClips: boolean;
+  storeSnapshots: boolean;
+  updatedAt: string;
+}
+/** PUT /settings/storage-policies body (upsertStoragePolicySchema). */
+export interface UpsertStoragePolicyInput {
+  scopeType: StorageScopeType;
+  scopeId: string;
+  storeClips: boolean;
+  storeSnapshots: boolean;
+}
+
+/** GET /settings/capacity — getCapacityOverview() per-site row. */
+export interface CapacitySiteRow {
+  siteId: string;
+  siteName: string;
+  zoneName: string;
+  cameraCount: number;
+  activeLiveSessions: number;
+  estimatedDailyGb: number;
+}
+export interface CapacityOverview {
+  caps: {
+    maxLiveSessionsGlobal: number;
+    maxLiveSessionsPerSite: number;
+    perCameraStreamCap: number;
+  };
+  live: { activeGlobal: number };
+  storage: {
+    retentionDays: number;
+    compressionQuality: number;
+    cameraCount: number;
+    estimatedDailyGb: number;
+    estimatedRetainedGb: number;
+  };
+  perSite: CapacitySiteRow[];
+}
+
+/** Prisma `BackupStatus` enum (schema.prisma). */
+export type BackupStatus = 'QUEUED' | 'RUNNING' | 'DONE' | 'FAILED';
+
+/** GET /settings/backups row — toPublicBackup() in settings.service.ts. */
+export interface BackupModel {
+  id: string;
+  scopeType: StorageScopeType;
+  scopeId: string;
+  rangeStart: string;
+  rangeEnd: string;
+  status: BackupStatus;
+  sizeBytes: number | null;
+  error: string | null;
+  requesterName: string | null;
+  createdAt: string;
+  /** Signed URL, only present once status === 'DONE'. */
+  downloadUrl: string | null;
+}
+/** POST /settings/backups body (createBackupSchema — dates ISO-coerced). */
+export interface CreateBackupInput {
+  scopeType: StorageScopeType;
+  scopeId: string;
+  rangeStart: string;
+  rangeEnd: string;
+}

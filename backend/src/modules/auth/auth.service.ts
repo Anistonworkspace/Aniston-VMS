@@ -184,13 +184,24 @@ export async function logout(
   }
 }
 
-export async function me(userId: string): Promise<PublicUser & { accessScopes: unknown[] }> {
+export async function me(
+  userId: string
+): Promise<PublicUser & { accessScopes: unknown[]; permissions: string[] }> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    include: { accessScopes: { select: { scopeType: true, scopeId: true } } },
+    include: {
+      accessScopes: { select: { scopeType: true, scopeId: true } },
+      // CR-3/CR-4 — explicit permission grants (e.g. LIVE_VIEW). Admin roles
+      // hold every permission implicitly; the frontend treats them as such.
+      permissions: { select: { permission: true } },
+    },
   });
   if (!user || !user.isActive) throw new NotFoundError('User not found');
-  return { ...publicUser(user), accessScopes: user.accessScopes };
+  return {
+    ...publicUser(user),
+    accessScopes: user.accessScopes,
+    permissions: user.permissions.map((p) => p.permission),
+  };
 }
 
 export async function setupMfa(userId: string): Promise<{ secret: string; otpauthUrl: string }> {

@@ -1,8 +1,8 @@
 # MASTER PROMPT — Aniston VMS (Aniston Video Management System)
 
-**Plan version: v1.4 — 17 July 2026**
+**Plan version: v1.5 — 18 July 2026**
 
-> **How to use this file:** Create a folder `aniston-vms`, open it in VS Code, start Claude Code, copy the provided planning docs into `docs/` (01–03, 05–06 at v1.0; 04 at v2.0) **plus the design reference image as `docs/actual-design.png`**, then paste this entire file as your first message. Fill in Section 10 (Assumptions) answers when Claude Code asks.
+> **How to use this file:** Create a folder `aniston-vms`, open it in VS Code, start Claude Code, copy the provided planning docs into `docs/` (01, 03, 05 at v1.1; 02, 06 at v2.0; 04 at v3.0) **plus the design reference image as `docs/actual-design.png`**, then paste this entire file as your first message. Fill in Section 10 (Assumptions) answers when Claude Code asks.
 
 ## Versioning policy
 
@@ -18,6 +18,7 @@
 | v1.2 | 17 Jul 2026 | Delhi zone hierarchy + zone-scoped RBAC & alert routing; RTSP configuration rules, duplicate prevention & Test-connection; root-cause diagnosis + connection-quality score; dust analytics + auto cleaning tasks; YouTube-grade `PlayerShell` |
 | v1.3 | 17 Jul 2026 | Product named **Aniston VMS**; the six planning docs are now supplied as finished v1.0 files; parallel-execution workflow for Claude Code; this versioning policy |
 | v1.4 | 17 Jul 2026 | **UI redesigned** to the provided light "soft SaaS" reference (`docs/actual-design.png`): slate sidebar with zone dots, cream canvas, white rounded cards, sage/indigo/coral/sand palette, Poppins + Inter, rounded app frame; doc 04 → **v2.0**; PlayerShell keeps charcoal chrome inside the light UI |
+| v1.5 | 18 Jul 2026 | Sidebar/profile relocation; dashboard KPI row; site+camera RBAC scopes + `LIVE_VIEW` permission; Live Wall v2 (Live⇄Snapshots toggle, 24h filmstrip, per-camera 1–60 min interval); snapshot authenticity stamp + compression + retention; add-camera RTSP modal + MapLibre 3D map; incidents enterprise list view; clickable zone pages; clips/storage policies + snapshot browser; Settings expansion (Access / Storage & Backup / Capacity / Cameras); load test + capacity report + waterlogging Phase-2 roadmap; carried v1.4 gaps (drills, Grafana, runbooks, adapter/email verification, real migration, E2E); **stack confirmed as-built** — Express + TypeScript + Prisma, Redux Toolkit + RTK Query, BullMQ, MediaMTX (not NestJS/TanStack); image analysis stays JS/TS for v1.5, Python/OpenCV deferred to Phase-2 for waterlogging CV |
 
 ---
 
@@ -25,7 +26,7 @@
 
 You are a senior full-stack architect and developer building a production system for Aniston. Work in **phases with approval gates**:
 
-1. **Phase 0** — The six planning docs (v1.0) are **provided**; ensure they are in `docs/` (if any is missing, regenerate it from the outlines in Section 3). Read all six, cross-check them against this prompt (**this prompt wins on conflict**), list any gaps, ask me the Assumption questions (Section 10), and wait for my approval before writing any code.
+1. **Phase 0** — The six planning docs (01, 03, 05 at v1.1; 02, 06 at v2.0; 04 at v3.0) are **provided**; ensure they are in `docs/` (if any is missing, regenerate it from the outlines in Section 3). Read all six, cross-check them against this prompt (**this prompt wins on conflict**), list any gaps, ask me the Assumption questions (Section 10), and wait for my approval before writing any code.
 2. **Phase 1** — Scaffold the monorepo, `CLAUDE.md`, `.claude/` config, Docker Compose, `.env.example`, and the camera simulator.
 3. **Phases 2–10** — Implement build Stages 1–9 (Section 5), **one stage at a time**. After each stage: run lint/build/tests, update `docs/PROGRESS.md` with what was done and how to demo it, then wait for my go-ahead.
 
@@ -91,7 +92,9 @@ Aniston operates **125 CCTV cameras** across sites in Delhi (e.g. Rohini zones).
 
 ---
 
-## 3. The six planning docs — provided as v1.0 files (outlines below are the fallback spec)
+## 3. The six planning docs — provided as v1.1/v2.0/v3.0 files (outlines below are the fallback spec)
+
+*These outlines are the original pre-v1.5 fallback specs, retained only so a missing doc can be regenerated. Where an outline differs from the provided file (e.g. the as-built Express/npm-workspaces stack, or doc 04's edge-to-edge layout, retired Add-camera card, and incidents **list** view), **the provided v1.1/v2.0/v3.0 file is authoritative** — see each doc's changelog and doc 04 §14 for the v1.5 deltas.*
 
 The six docs already exist and should sit in `docs/`. Keep them as the working spec and bump their versions when they change. If any is missing, regenerate it from its outline below. Each must be complete enough that a developer could build from it alone.
 
@@ -267,7 +270,7 @@ Build one polished `PlayerShell` component reused by Live view, Wall tiles (comp
 - **Playback mode:** the 24-hour `TimelineScrubber` under the player — recorded segments highlighted, gaps greyed, click/drag to seek, zoom to hour level, draggable clip-range handles for export.
 - Keyboard shortcuts: Space play/pause, ←/→ ±10 s, ↑/↓ speed, F fullscreen, M mute; double-tap left/right ±10 s on mobile.
 - Product-grade states: loading skeleton/shimmer, buffering spinner, friendly error card ("Camera unreachable — Retry / View incident"), offline placeholder showing the last snapshot.
-- Base on hls.js/WHEP with fully **custom controls** (media-chrome or Vidstack as foundation is acceptable) — never default browser controls; **charcoal player chrome** per the Aniston VMS theme (doc 04 v2.0): a dark video surface inside the light UI.
+- Base on hls.js/WHEP with fully **custom controls** (media-chrome or Vidstack as foundation is acceptable) — never default browser controls; **charcoal player chrome** per the Aniston VMS theme (doc 04 v3.0): a dark video surface inside the light UI.
 
 ---
 

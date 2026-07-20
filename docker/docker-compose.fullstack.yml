@@ -51,8 +51,12 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-devpassword123}@postgres:5432/${POSTGRES_DB:-aniston_vms}
       REDIS_URL: redis://redis:6379
       NODE_ENV: production
-      # Demo/dev stack only: headroom for Playwright E2E runs (one UI login per
-      # worker + auth specs). Production default stays 50 (backend/src/config/env.ts).
+      # Demo/dev stack only: headroom for Playwright E2E runs. The suite drives many
+      # data-rich page loads (dashboard/zones/incidents/health) that each fan out to
+      # ~10 API calls, so the global limiter (default 100/60s) is the real ceiling —
+      # raise it plus the auth limiter here. Production defaults stay strict at
+      # 100 general / 50 auth (backend/src/config/env.ts); this override is E2E-only.
+      RATE_LIMIT_MAX_REQUESTS: 2000
       AUTH_RATE_LIMIT_MAX_REQUESTS: 200
     depends_on:
       postgres:

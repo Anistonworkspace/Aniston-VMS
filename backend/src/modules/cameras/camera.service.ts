@@ -18,8 +18,17 @@ import type {
   CameraListQuery,
   CreateCameraInput,
   CreateReferenceImageInput,
+  TestCameraConnectionInput,
   UpdateCameraInput,
 } from './camera.schemas.js';
+import { env } from '../../config/env.js';
+import {
+  ffprobeStream,
+  getSimFault,
+  rtspDescribe,
+  simulateStages,
+  type CheckResult,
+} from '../health/health.checkers.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Cameras — leaf of the Region → Zone → Site → Router → Camera hierarchy
@@ -158,6 +167,9 @@ export async function createCamera(input: CreateCameraInput, actor: AuthUser, re
       expectedResolution: input.expectedResolution,
       expectedFps: input.expectedFps,
       expectedBitrateKbps: input.expectedBitrateKbps,
+      // CR-6 — map position comes straight from the add-camera modal.
+      latitude: input.latitude,
+      longitude: input.longitude,
       status: input.status ?? 'UNKNOWN',
     },
   });
@@ -170,6 +182,55 @@ export async function createCamera(input: CreateCameraInput, actor: AuthUser, re
     newValue: safe,
   });
   return safe;
+}
+
+// CR-6 — "Test connection" for the add-camera modal: RTSP DESCRIBE + a single
+// ffprobe frame against the candidate URL, before anything is persisted.
+// Sim-aware: under HEALTH_SIM_MODE the stages are synthesized from the
+// injected sim fault (mirroring health.scheduler.ts), so the modal behaves
+// sensibly against the simulated 125-camera fleet.
+export interface TestConnectionResult {
+  success: boolean;
+  simMode: boolean;
+  describe: CheckResult;
+  video: CheckResult;
+}
+
+export async function testCameraConnection(
+  input: TestCameraConnectionInput
+): Promise<TestConnectionResult> {
+  if (env.HEALTH_SIM_MODE) {
+    const fault = await getSimFault(input.cameraCode ?? '');
+    const sim = simulateStages(fault, {
+      codec: input.expectedCodec ?? 'H.264',
+      resolution: input.expectedResolution ?? '1920x1080',
+      fps: input.expectedFps ?? 15,
+      bitrateKbps: input.expectedBitrateKbps ?? 2048,
+    });
+    return {
+      success: sim.rtspAuth.success && sim.video.success,
+      simMode: true,
+      describe: sim.rtspAuth,
+      video: sim.video,
+    };
+  }
+
+  const describe = await rtspDescribe(input.mainRtspUrl, input.rtspUsername, input.rtspPassword);
+  if (!describe.success) {
+    return {
+      success: false,
+      simMode: false,
+      describe,
+      video: {
+        success: false,
+        responseTimeMs: 0,
+        errorCode: 'SKIPPED',
+        errorMessage: 'Skipped — DESCRIBE failed',
+      },
+    };
+  }
+  const video = await ffprobeStream(input.mainRtspUrl);
+  return { success: video.success, simMode: false, describe, video };
 }
 
 export async function updateCamera(
@@ -208,6 +269,8 @@ export async function updateCamera(
     expectedBitrateKbps: input.expectedBitrateKbps,
     status: input.status,
     maintenanceMode: input.maintenanceMode,
+    // CR-4 — per-camera snapshot cadence (1–60 min, validated in camera.schemas).
+    snapshotIntervalMinutes: input.snapshotIntervalMinutes,
   };
   if (input.mainRtspUrl !== undefined) {
     data.mainRtspUrlEncrypted = encrypt(input.mainRtspUrl);

@@ -1,6 +1,6 @@
 # Aniston VMS — App Flow
 
-**Doc version: v1.0 · 17 July 2026 · Built for plan v1.3**
+**Doc version: v1.1 · 18 July 2026 · Built for plan v1.5**
 
 ---
 
@@ -129,3 +129,70 @@ flowchart TD
 ## 8. Zone / camera move
 
 Select camera → "Move to…" (zone→site picker, scope-checked) → confirmation dialog showing impact (location, alert routing, open incidents follow) → audit entry → dashboards, wall layouts, and reports reflect the new zone immediately; historical incidents keep their original `zone_id`.
+
+## 9. Live ⇄ Snapshot toggle (permission-gated)
+
+```mermaid
+flowchart TD
+  H[Live Wall focus header] --> Tg{Toggle: Live / Snapshots}
+  Tg -- Live --> Perm{LIVE_VIEW permission?}
+  Perm -- no --> Lock[Lock icon + Ask your administrator - Live disabled, Snapshots still works]
+  Perm -- yes --> LiveView[Live substream session - see section 4]
+  Tg -- Snapshots --> Snap[Big selected snapshot]
+  Snap --> Film[24h filmstrip at camera capture interval]
+  Snap --> Nav[Date navigation: arrows/calendar - browse previous days]
+  Tile[Right-side camera tile clicked] --> H
+  Zone[Zone filter - scope-aware] --> H
+```
+
+Note (v1.5 shell): topbar is reduced to notification bell + "Open Live Wall" button; the Live/Snapshots toggle and zone filter live in the focus header itself, not the topbar.
+
+## 10. Add-camera modal flow
+
+```mermaid
+flowchart TD
+  E[Entry: Cameras page / Settings-Cameras / Admin] --> M[Add camera opens center modal - shared form]
+  M --> F1[Name + CAM-code]
+  F1 --> F2[Zone-Site cascader, inline create site]
+  F2 --> F3[RTSP main + sub, or host/port/path + credentials]
+  F3 --> F4[Lat/long via mini map-picker]
+  F4 --> F5[Snapshot interval]
+  F5 --> T[Test connection: RTSP DESCRIBE + grab 1 frame]
+  T -- fail --> Err[Inline error, not saved]
+  T -- pass --> Dup{Duplicate RTSP?}
+  Dup -- yes --> Err2[Reject - name conflicting camera]
+  Dup -- no --> Save[Save] --> Cap[Capability auto-detection] --> HC[Immediate health check]
+```
+
+Note (v1.5 shell): the dashboard's dashed "Add camera" card is retired; this modal is now the single entry point, shared across Cameras, Settings→Cameras, and Admin, and reuses the same form/validation described in section 7 (RTSP save with validation).
+
+## 11. Backup-before-purge flow
+
+```mermaid
+flowchart TD
+  A[Admin: Settings-Storage and Backup] --> R[Set retention days]
+  A --> B[Enable Backup before purge]
+  P[Retention purge due] --> Chk{Backup before purge enabled?}
+  Chk -- yes --> Job[Backup job: ZIP images + metadata CSV] --> Sign[Signed link recorded in backup history] --> Purge[Purge expired data]
+  Chk -- no --> Purge
+  MB[Manual backup: pick date-range + zone/site] --> BJob[Background ZIP job] --> SDL[Signed download]
+```
+
+## 12. Map search → flyTo
+
+```mermaid
+sequenceDiagram
+  participant U as User (Cameras 3D map)
+  participant UI as Map UI
+  U->>UI: search / select site or zone
+  UI->>UI: flyTo(location) - smooth pan + zoom
+  UI-->>U: status-colored camera pins for that area
+  U->>UI: click pin
+  UI-->>U: popover - Focus in Live Wall / Open detail
+```
+
+## 13. Zone click navigation
+
+Clicking a sidebar zone, or a dashboard zone card, opens `/zones/:id` — a populated zone page (KPIs, sites, cameras, open incidents, uptime). Same destination regardless of entry point; scope-checked like all zone-scoped views.
+
+Note (v1.5 shell): user profile now lives at the sidebar bottom (moved from the topbar); the sidebar zone list remains the primary nav entry point into zone pages.

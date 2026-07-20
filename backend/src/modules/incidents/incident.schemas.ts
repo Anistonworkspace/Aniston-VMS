@@ -23,6 +23,10 @@ export const incidentListQuerySchema = z.object({
   severity: z.enum(['INFO', 'WARNING', 'CRITICAL']).optional(),
   zoneId: z.string().uuid().optional(),
   cameraId: z.string().uuid().optional(),
+  // CR-7 — date-range filter for the dense list view. Interpreted against
+  // lastDetectedAt: `from` is inclusive start-of-instant, `to` exclusive end.
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
 });
 

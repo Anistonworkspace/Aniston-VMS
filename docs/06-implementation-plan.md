@@ -1,6 +1,6 @@
 # Aniston VMS — Implementation Plan
 
-**Doc version: v1.0 · 17 July 2026 · Built for plan v1.3**
+**Doc version: v2.0 · 18 July 2026 · Built for plan v1.5**
 
 ---
 
@@ -18,88 +18,101 @@ One stage at a time → run `pnpm lint && pnpm typecheck && pnpm build` + tests 
 
 Track D (simulator) should be built **early in Stage 1** so every later track can test against fake cameras.
 
-## 2. Stages
+## 2. Phases (v1.5 change order)
 
-### Stage 1 — Foundation
-- [ ] Auth: JWT access+refresh, RBAC, MFA (TOTP) for admins, login rate limit
-- [ ] **Zone-scoped access:** `user_access_scopes` + scope-guard middleware on every query
-- [ ] Region/zone CRUD seeded with the Delhi structure (4 regions, 13 zones)
-- [ ] Sites/routers/cameras CRUD incl. move-between-zones with confirmation + audit
-- [ ] RTSP config form: validation, normalized-hash **duplicate prevention**, "Test connection", encrypted credential storage
-- [ ] ONVIF capability auto-detection on camera add (brand/model/Profile G → `playback_adapter`)
-- [ ] Prisma schema + migrations + seeds; Redis/BullMQ wiring; audit logging; camera list UI
-- [ ] Simulator: 6 FFmpeg fake cameras publishing to MediaMTX; fault-injector skeleton
+The v1.4 9-stage build (Foundation → Health → Snapshots → Incidents/alerts → Image analysis → Live view/wall → SD playback/clips → Reports/SLA → Hardening) is **complete and verified** — 56 backend tests + 14 Playwright specs green, Docker-deployed and E2E-checked — and is the frozen foundation. v1.5 is delivered as **phases P0–P6** layered on top; each phase ships behind its gate before the next begins. Change requests are labelled CR-1 … CR-12.
 
-**Accept/Demo:** Rohini-scoped engineer sees only Rohini; duplicate RTSP rejected naming the conflict; camera moved zones with audit entry; capabilities detected on add.
+### P0 — Docs update (this Part A)
+- [ ] Bump this plan to v2.0 / plan v1.5; replace the Stage list with the P0–P6 phase plan; record acceptance per CR.
+- [ ] Docs-only — no code, schema, tests, configs or builds in this part; do not touch `PROGRESS.md` or `CHANGELOG.md`.
 
-### Stage 2 — Health engine
-- [ ] Router TCP, RTSP port, RTSP auth, FFprobe video validation workers
-- [ ] Jittered scheduler (~25 cams/min), retries, hysteresis, status history
-- [ ] Health score + status model; **diagnosis engine** (7 causes); connection-quality hourly rollup
-- [ ] Camera detail health charts + `DiagnosisBanner`; zone rollups
+**Gate:** user approval of this document.
 
-**Accept/Demo:** fault-injector scenarios yield distinct diagnoses — "Internet down at site" vs "Camera offline — router online" vs "Unstable network"; thresholds respected.
+### P1 — Navigation & dashboard (CR-1, CR-2, CR-8)
+**Contents:** CR-1 sidebar/profile relocation · CR-2 dashboard KPI upgrade · CR-8 zone pages.
 
-### Stage 3 — Snapshot engine
-- [ ] 15-min sub + hourly evidence snapshot pipeline → S3 layout → metadata → thumbnails
-- [ ] Retention workers (originals 90 d / incident 3 y / thumbs 1 y; short TTL in dev) + S3 lifecycle
-- [ ] Snapshot strip on camera detail; signed URLs only
+**Acceptance:**
+- CR-1 — [ ] No add-camera card anywhere in the sidebar; [ ] the profile menu works from the sidebar on every page; [ ] the topbar carries no profile chip (only the notification bell + "Open Live Wall").
+- CR-2 — [ ] Dashboard shows a KPI row — Total cameras · Healthy · Unavailable/Offline · Warning · Maintenance · Open incidents · Snapshot success (24 h) · Active live sessions — with live, scope-aware numbers that link to the matching filtered lists; [ ] no dashed add card; [ ] all tiles are scope-aware; [ ] "Worst connections" and "Missing snapshots" widgets are present.
+- CR-8 — [ ] Clicking any sidebar zone (or a dashboard zone card) opens its populated `/zones/:id` page (KPIs, sites, cameras, open incidents, uptime).
 
-**Accept/Demo:** hourly grid fills for all sim cameras; retention prunes; incident-linked snapshots protected.
+**Gate:** UI review + E2E navigation.
 
-### Stage 4 — Incidents & alerts
-- [ ] Incident creation with rule matrix, dedup, numbering, lifecycle, `incident_events` timeline
-- [ ] Dependency suppression (router ⊃ cameras) + site grouping + maintenance windows + cooldown
-- [ ] SES email (HTML, snapshot compare links) + bounce webhook — **mock mode default**
-- [ ] WhatsApp Cloud API: 3 templates, status webhook, **Acknowledge button** → incident update
-- [ ] Escalation worker 0/10/20/30/60 with per-zone overrides; recovery after 2 good checks + recovery notice + downtime calc
-- [ ] Incident Kanban + drawer; alert-delivery dashboard
+### P2 — Data model & RBAC (CR-3)
+**Contents:** Migration for the §4 data model · CR-3 RBAC/permissions (site + camera scopes, `LIVE_VIEW`) · Settings→Access screen.
 
-**Accept/Demo:** kill sim stream → 3 fails → incident → mock email/WA logged with statuses → escalation fires → restore → recovery verified & notified.
+**Acceptance:**
+- CR-3 — [ ] A demo engineer scoped to 2 cameras sees exactly those 2 everywhere; [ ] revoking `LIVE_VIEW` flips their Live Wall to snapshots immediately; [ ] admin-only settings sections are invisible (not merely disabled) to non-admins.
 
-### Stage 5 — Image analysis & analytics
-- [ ] OpenCV service: black/white/dark/bright/blur/frozen/obstruction/scene-shift/color-cast/noise/**dust**
-- [ ] Reference-image approval UI; per-camera thresholds; breaches → incidents with evidence
-- [ ] **Analytics dashboard:** quality & dust trends per camera/zone; "Needs cleaning" list → auto `maintenance_tasks` (zone engineer); before/after compare
+**Gate:** scope/permission E2E.
 
-**Accept/Demo:** injector serves black → black incident; serves hazy/dusty → dust score rises, camera enters "Needs cleaning", task auto-created.
+### P3 — Live Wall v2 & snapshots (CR-4, CR-5)
+**Contents:** CR-4 Live Wall v2 · CR-5 snapshot stamping / compression / retention.
 
-### Stage 6 — Live view & wall
-- [ ] MediaMTX on-demand paths (sub+main) via API; auth webhook validating stream JWTs
-- [ ] `POST live/start` with scope + limits (≤1 HD per camera, ≤3/site); heartbeats; idle "Still watching?" teardown; `stream_sessions` + SIM byte estimates
-- [ ] `PlayerShell` live mode; **Live Wall** 1×1/2×2/3×2, saved layouts, tile overlays/reconnect; HD toggle with warning
+**Acceptance:**
+- CR-4 — [ ] Permission-gated Live/Snapshots toggle works (lock + "Ask your administrator" shown without `LIVE_VIEW`); [ ] 24 h filmstrip + previous-day browsing works; [ ] per-camera interval editable 1–60 min with a projected-storage calculator and a <15 min warning; [ ] independent (sticky-focus) scroll verified; [ ] the zone filter respects scope.
+- CR-5 — [ ] Every new snapshot (filmstrip, clips browser, evidence card) visibly carries the stamp (timestamp IST · site · zone · lat,long · CAM-code); [ ] metadata matches the stamp; [ ] the storage math is reflected in the interval calculator; [ ] compression tiering applied; [ ] retention default 30 d (configurable), incident-linked 3 y.
 
-**Accept/Demo:** 5 sim cameras on 3×2 wall; 2nd HD session refused; idle session auto-closes; MediaMTX drops camera when last viewer leaves.
+**Gate:** toggle + filmstrip E2E.
 
-### Stage 7 — SD playback, clips & SD health
-- [ ] `CameraPlaybackAdapter` + OnvifG / Hikvision / Dahua implementations, chosen per camera
-- [ ] Day segment sync → `recording_segments`; playback windows ≤60 min via MediaMTX→HLS; seek; speed 1×/2×/4×
-- [ ] `PlayerShell` playback mode + `TimelineScrubber` + `ClipRangeSelector`
-- [ ] Clip export jobs (FFmpeg → S3, ≤15 min) + Clips library + attach-to-incident
-- [ ] SD health hourly check → `SD_CARD_*` incidents; simulator fakes a recording archive
+### P4 — Add-camera & map (CR-6)
+**Contents:** CR-6 add-camera modal + MapLibre map view.
 
-**Accept/Demo:** open yesterday on a sim camera, scrub/seek, change speed, export a 2-min clip, download, attach to an incident; unplugged-SD sim raises `SD_CARD_MISSING`.
+**Acceptance:**
+- CR-6 — [ ] A camera can be added fully from the modal incl. lat/long, with Test connection (DESCRIBE + one frame) and duplicate-RTSP validation; [ ] the MapLibre 3D map renders 125 seeded pins with correct status colours (sage/amber/coral/indigo); [ ] searching "Rohini" flies to Rohini and shows its cameras; [ ] the list/map toggle is preserved.
 
-### Stage 8 — Reports & SLA
-- [ ] Uptime (camera/site/zone), downtime, MTTA/MTTR, repeated faults, SIM performance, snapshot completeness, SLA violations vs target, zone image-quality & cleaning, engineer performance, audit
-- [ ] PDF + Excel export; scheduled email delivery; report screens
+**Gate:** map + modal E2E.
 
-**Accept/Demo:** monthly report from seeded history exports in both formats with correct math.
+### P5 — Incidents, clips & Settings (CR-7, CR-9, CR-10)
+**Contents:** CR-7 incidents list view · CR-9 clips/storage organization · CR-10 Settings (backup, capacity).
 
-### Stage 9 — Hardening
-- [ ] Self-monitoring alerts (heartbeat, queues, deps, workers, disk, SSL) + Platform-health page
-- [ ] Prometheus metrics + Grafana dashboards; backups runbook; helmet/rate limits/session expiry
-- [ ] Load test full 125-camera schedule; scripted failure drills (the 20 mandatory scenarios) via fault-injector; SOP docs
+**Acceptance:**
+- CR-7 — [ ] The dense list is the default view, filterable by severity/status/zone/date; [ ] a row opens a detail drawer with ack/assign/resolve actions; [ ] the board view is still available; [ ] a stats strip shows open-by-severity and MTTA today.
+- CR-9 — [ ] Disabling clip storage for a site blocks new exports there with a clear message; [ ] the snapshot browser navigates Zone→Site→Camera→date with stamped previews; [ ] the clips table gains site/zone columns + filters.
+- CR-10 — [ ] A backup ZIP of one site/day downloads and opens; [ ] exceeding the live-stream cap returns a friendly limit message; [ ] a non-admin sees no admin sections (Access / Storage & Backup / Capacity / Cameras hidden).
 
-**Accept/Demo:** kill a worker → self-alert; drill script produces exactly the expected incidents; load test passes targets.
+**Gate:** backup + policy E2E.
+
+### P6 — Load test, roadmap & carried v1.4 gaps (CR-11, CR-12)
+**Contents:** CR-11 load test + capacity report + roadmap docs · CR-12 drills / Grafana / runbook / SOP / adapter + email verification.
+
+**Acceptance:**
+- CR-11 — [ ] A load-test script (k6/artillery) simulates the 125-camera schedule + snapshot ingest + concurrent viewers and outputs `docs/capacity-report.md` with an upgrade/no-upgrade verdict; [ ] waterlogging is documented as a Phase-2 roadmap item (PRD) with a `WATERLOGGING` enum placeholder + a commented analysis hook (no ML in v1.5); [ ] inline rename for regions/zones/sites/cameras is verified; [ ] every per-camera/site record requires an RTSP link + lat/long + site info.
+- CR-12 (carried v1.4 gaps) —
+  - Stage-9 remainder — [ ] 20 scripted failure drills via the fault-injector + Grafana dashboards + a backups runbook + SOP docs.
+  - Stage-7 — [ ] `CameraPlaybackAdapter` + Onvif/Hikvision/Dahua implementations compile against the interface (SIM functional; real adapters may be typed stubs).
+  - Stage-8 — [ ] The recurring scheduled-report email delivery job exists and runs (mock transport OK).
+  - Migration — [ ] A REAL Prisma migration for the v1.5 schema (no `db push` drift).
+  - Playwright — [ ] New specs for the permission-gated live toggle, add-camera modal validation + duplicate RTSP, map load + flyTo, zone-click navigation, clips filters + storage-policy block, and backup job download.
+
+**Gate:** all suites green + drill script.
+
+### Non-regression rules
+- [ ] Design system stays on the **doc-04 tokens** — cream/white/slate/sage/indigo/coral, Poppins + Inter, rounded cards; doc-04 v3.0 only *adds* the new layouts listed above (no redesign, no new palette).
+- [ ] The existing green suites (56 backend unit, Playwright, `typecheck`, `lint`) stay green after every phase.
+- [ ] No breaking API changes without updating the RTK Query slices **and** the shared zod schemas together in the same change.
 
 ## 3. PROGRESS.md template
 
 ```
-# Aniston VMS — Progress   (building against plan v1.3, docs v1.0)
+# Aniston VMS — Progress   (building against plan v1.5, docs v2.0)
 - [x] Stage 1 — Foundation   ✅ 2026-07-19   demo: <steps>   notes: <links>
 - [ ] Stage 2 — Health engine
 ...
 ## Doc changes
 | Date | Doc | v | Change |
 ```
+
+## Final acceptance — real camera on local machine
+
+A manual end-to-end pass against one physical camera on the operator's LAN, run after P6:
+
+1. [ ] `docker compose -f docker/docker-compose.fullstack.yml up -d`, then log in as **admin**.
+2. [ ] **Cameras → Add camera** → paste a real RTSP URL (e.g. `rtsp://user:pass@192.168.1.64:554/Streaming/Channels/101`), pick zone/site, set lat/long on the mini-map, run **Test connection** (must pass) → **Save**.
+3. [ ] **Settings → Access** → confirm `LIVE_VIEW` → **Live Wall** → toggle **Live** → the real stream plays via MediaMTX (on-demand, `-rtsp_transport tcp`).
+4. [ ] Set the snapshot interval to **1 min** → within 2–3 min the filmstrip shows **STAMPED** snapshots (time + site + zone + lat/long + CAM-code).
+5. [ ] Toggle **Snapshots**, browse today + the previous day; export a 1-min clip and download it.
+
+**Networking note:** containers must be able to reach LAN camera IPs — Docker NAT egress is normally fine; document the `host.docker.internal` / host-firewall edge cases.
+
+**Deliverable:** a short `docs/real-camera-test.md` runbook — the steps above plus troubleshooting: **401 → credentials**, **timeout → port-forward/firewall**, **no video → wrong path/transport**.

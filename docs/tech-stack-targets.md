@@ -1,9 +1,9 @@
 # Tech Stack & Targets — Aniston VMS
 
-Versions/targets per the plan docs (`02-TRD.md` v1.0 · 17 July 2026 · built for plan v1.3).
+Versions/targets per the plan docs (`02-TRD.md` v2.0 · 18 July 2026 · built for plan v1.5).
 Update this file when dependencies are bumped.
 
-**Canonical stack (decided):** the plan docs are the source of truth — the target is a **pnpm monorepo**: **NestJS** (`apps/api`) · **BullMQ workers** (`apps/workers`) · **MediaMTX** (`services/media`) · **FastAPI + OpenCV** (`services/image-analysis`) · **`packages/shared`** (`@aniston-vms/shared`). The current on-disk `backend/` (npm-workspaces Express + Prisma + BullMQ scaffold) is **legacy being migrated to NestJS** — it is not the pattern to follow.
+**Canonical stack (decided, v1.5):** the **as-built stack is official** — an **npm-workspaces** monorepo: **Express + TypeScript (ESM)** (`backend/`) · **Prisma + PostgreSQL** · **BullMQ workers** (in-process, `backend/src/modules/*`) · **MediaMTX** (media plane) · **Redux Toolkit + RTK Query** (`frontend/`). There is **no NestJS/pnpm/FastAPI migration**; image analysis stays **JS/TS in-worker** for v1.5 (Python/OpenCV deferred to the Phase-2 waterlogging roadmap). The on-disk `backend/` **is** the pattern to follow.
 
 **Primary target: the web SPA.** The boilerplate's Capacitor/Electron shells remain in the repo
 but are **out of scope for Aniston VMS v1** (a control-room web app).
@@ -29,7 +29,7 @@ but are **out of scope for Aniston VMS v1** (a control-room web app).
 | Concern | Choice | Notes |
 |---|---|---|
 | Runtime | **Node.js 20+**, TypeScript, ESM | |
-| Framework | **NestJS** | modules → controllers → providers/services, guards + pipes + interceptors, class-validator DTOs (current `backend/` is an Express 4 scaffold being ported to this target) |
+| Framework | **Express 4 + TypeScript (ESM)** | layered routers → services → Prisma; `zod` request validation; middleware auth guards (JWT + RBAC). Official as-built stack per v1.5 change order — no NestJS port. |
 | ORM / DB | **Prisma 6** + **PostgreSQL 16** | schema source: `05-backend-schema.md` (28 tables) |
 | Cache/queues | **Redis 7** + **BullMQ** | probes, snapshots, notifications, clip exports |
 | Realtime | **Socket.io** | live health/incident updates to dashboards |
@@ -43,7 +43,7 @@ but are **out of scope for Aniston VMS v1** (a control-room web app).
 |---|---|---|
 | Media server | **MediaMTX** | on-demand RTSP pull → **WHEP** (`/{path}/whep`) + **HLS** (`/{path}/index.m3u8`); auth via `POST /internal/media-auth` |
 | Probing | **FFprobe/FFmpeg** workers | `RTSP_AUTH` / `RTSP_PORT` / `ROUTER_TCP` checks, snapshot capture |
-| Image analysis | **Python OpenCV** service | brightness/blur/freeze/obstruction/scene-shift scoring |
+| Image analysis | **JS/TS in-worker detectors** (`sharp` + pixel heuristics) | brightness/blur/freeze/obstruction/scene-shift scoring; Python/OpenCV service deferred to Phase-2 waterlogging roadmap |
 | Playback | Per-brand **PlaybackAdapter** | `ONVIF_G` (ONVIF Profile G) first; `HIKVISION` / `DAHUA` later |
 | Cameras | RTSP + ONVIF, SD-card recording | fleet behind 4G **SIM routers** with public static IPs (~125 at launch) |
 | Object storage | S3-compatible | snapshots, evidence, clip exports; lifecycle rules mirror DB retention |
@@ -68,7 +68,7 @@ but are **out of scope for Aniston VMS v1** (a control-room web app).
 ## Deferred targets (boilerplate capability, not VMS v1)
 
 PWA/Workbox and Capacitor 6 (Android/iOS) build configs are retained from the boilerplate and
-may be activated later (e.g. a field-engineer mobile app); just don't target them in Stages 1–10
+may be activated later (e.g. a field-engineer mobile app); just don't target them in phases P0–P6
 unless the plan docs change. The Electron desktop shell (`agent-desktop/`) was removed from this
 project — Aniston VMS is web-only. Restore it from the boilerplate repo if a desktop target is
 ever needed.

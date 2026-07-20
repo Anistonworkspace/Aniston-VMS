@@ -29,6 +29,9 @@ export const clipListQuerySchema = z.object({
   cameraId: z.string().uuid().optional(),
   status: z.enum(['QUEUED', 'PROCESSING', 'DONE', 'FAILED']).optional(),
   incidentId: z.string().uuid().optional(),
+  // CR-9 — site/zone filters for the clips table.
+  siteId: z.string().uuid().optional(),
+  zoneId: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });
 
