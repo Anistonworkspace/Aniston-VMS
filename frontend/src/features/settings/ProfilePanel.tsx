@@ -60,7 +60,7 @@ export function ProfilePanel() {
 
   if (error || !user) {
     return (
-      <Card className="flex items-center gap-3 text-red-600">
+      <Card className="flex items-center gap-3 text-coral">
         <AlertTriangle className="h-5 w-5 shrink-0" />
         <span className="text-sm">
           {getApiErrorMessage(error) || 'Could not load your profile.'}
@@ -81,17 +81,17 @@ export function ProfilePanel() {
       <Card padding="lg" className={isFetching ? 'opacity-80 transition-opacity' : undefined}>
         <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4">
-            <span className="grid h-16 w-16 shrink-0 place-items-center rounded-full bg-indigo-100 text-xl font-semibold text-indigo-700">
+            <span className="grid h-16 w-16 shrink-0 place-items-center rounded-full bg-sage-soft text-xl font-semibold text-sage">
               {initials}
             </span>
             <div className="min-w-0">
-              <h2 className="font-sora text-lg font-semibold text-gray-900">{user.name}</h2>
-              <div className="mt-1 flex items-center gap-1.5 text-sm text-gray-500">
+              <h2 className="font-heading text-lg font-semibold text-ink">{user.name}</h2>
+              <div className="mt-1 flex items-center gap-1.5 text-sm text-muted">
                 <Mail className="h-3.5 w-3.5" />
                 <span className="truncate">{user.email}</span>
               </div>
               {user.phone && (
-                <div className="mt-1 flex items-center gap-1.5 text-sm text-gray-500">
+                <div className="mt-1 flex items-center gap-1.5 text-sm text-muted">
                   <Phone className="h-3.5 w-3.5" />
                   <span>{user.phone}</span>
                 </div>
@@ -119,14 +119,14 @@ export function ProfilePanel() {
         </CardHeader>
         <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <dt className="text-xs font-medium uppercase tracking-wide text-gray-400">Role</dt>
-            <dd className="mt-1 text-sm text-gray-800">{ROLE_LABELS[user.role]}</dd>
+            <dt className="text-xs font-medium uppercase tracking-wide text-muted">Role</dt>
+            <dd className="mt-1 text-sm text-ink">{ROLE_LABELS[user.role]}</dd>
           </div>
           <div>
-            <dt className="text-xs font-medium uppercase tracking-wide text-gray-400">
+            <dt className="text-xs font-medium uppercase tracking-wide text-muted">
               Last login
             </dt>
-            <dd className="mt-1 text-sm text-gray-800">
+            <dd className="mt-1 text-sm text-ink">
               {user.lastLoginAt ? formatDateTime(user.lastLoginAt) : 'Never'}
             </dd>
           </div>
@@ -146,7 +146,7 @@ export function ProfilePanel() {
             mock `getCurrentUser` endpoint collision in overview.api.ts that
             shadowed the real /auth/me (whose payload always has accessScopes). */}
         {(user.accessScopes ?? []).length === 0 ? (
-          <p className="text-sm text-gray-500">No access scopes assigned.</p>
+          <p className="text-sm text-muted">No access scopes assigned.</p>
         ) : (
           <div className="flex flex-wrap gap-2">
             {(user.accessScopes ?? []).map((scope, i) => (

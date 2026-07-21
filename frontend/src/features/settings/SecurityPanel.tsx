@@ -142,12 +142,12 @@ function EnableMfaFlow({ toast, onDone }: PanelProps & { onDone: () => void }) {
   if (!setup) {
     return (
       <div className="space-y-3">
-        <p className="text-sm text-gray-600">
+        <p className="text-sm text-muted">
           Two-factor authentication requires an authenticator app (Google Authenticator, Authy,
           1Password…).
         </p>
         {setupError && (
-          <p className="text-sm text-red-500">
+          <p className="text-sm text-coral">
             {getApiErrorMessage(setupError as Parameters<typeof getApiErrorMessage>[0])}
           </p>
         )}
@@ -161,11 +161,11 @@ function EnableMfaFlow({ toast, onDone }: PanelProps & { onDone: () => void }) {
   return (
     <div className="space-y-4">
       <div>
-        <p className="text-sm text-gray-600">
+        <p className="text-sm text-muted">
           Scan this in your authenticator app, or enter the key manually:
         </p>
-        <div className="mt-2 flex items-center gap-2 rounded-lg border border-gray-200 bg-white/70 px-3 py-2">
-          <code className="flex-1 truncate text-sm font-mono text-gray-800">{setup.secret}</code>
+        <div className="mt-2 flex items-center gap-2 rounded-lg border border-hairline bg-card px-3 py-2">
+          <code className="flex-1 truncate text-sm font-mono text-ink">{setup.secret}</code>
           <button
             type="button"
             onClick={() => {
@@ -173,13 +173,13 @@ function EnableMfaFlow({ toast, onDone }: PanelProps & { onDone: () => void }) {
               setCopied(true);
               setTimeout(() => setCopied(false), 1500);
             }}
-            className="shrink-0 rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            className="shrink-0 rounded-md p-1.5 text-muted hover:bg-surface hover:text-muted"
             aria-label="Copy secret key"
           >
-            {copied ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
+            {copied ? <Check className="h-4 w-4 text-state-success" /> : <Copy className="h-4 w-4" />}
           </button>
         </div>
-        <p className="mt-2 break-all text-xs text-gray-400">{setup.otpauthUrl}</p>
+        <p className="mt-2 break-all text-xs text-muted">{setup.otpauthUrl}</p>
       </div>
       <form onSubmit={handleSubmit(onVerify)} className="flex items-end gap-3">
         <Input
@@ -260,7 +260,7 @@ function MfaCard({ toast }: PanelProps) {
       </CardHeader>
 
       {isLoading || !user ? (
-        <p className="text-sm text-gray-400">Loading…</p>
+        <p className="text-sm text-muted">Loading…</p>
       ) : !user.mfaEnabled && !flowOpen ? (
         <Button variant="secondary" onClick={() => setFlowOpen(true)}>
           Enable two-factor authentication
@@ -281,7 +281,7 @@ function MfaCard({ toast }: PanelProps) {
 export function SecurityPanel({ toast }: PanelProps) {
   return (
     <motion.div variants={pageChild} className="space-y-6">
-      <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-sm text-amber-800">
+      <div className="flex items-start gap-2 rounded-xl border border-state-warning bg-state-warning-soft px-4 py-3 text-sm text-state-warning">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
         <span>
           Changing your password immediately invalidates your session — you&apos;ll need to sign in

@@ -33,6 +33,13 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
+# ffprobe (shipped in alpine's ffmpeg package) is REQUIRED for real RTSP video
+# validation: the VIDEO_VALIDATION health stage and POST /cameras/test-connection
+# both spawn `ffprobe`. Without it, ffprobeStream() now fails closed
+# (FFPROBE_MISSING) and every real camera reads CRITICAL. Alpine's ffmpeg package
+# provides both ffmpeg and ffprobe; no pin needed for a demo/dev image.
+RUN apk add --no-cache ffmpeg
+
 # Install only production dependencies (shared/package.json comes from the
 # builder so its exports point at dist/, which Node can load at runtime)
 COPY package.json package-lock.json ./

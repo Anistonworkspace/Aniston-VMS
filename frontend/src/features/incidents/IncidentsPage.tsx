@@ -23,7 +23,7 @@ function byPriority(a: IncidentListItem, b: IncidentListItem): number {
 }
 
 const selectClass =
-  'h-9 rounded-lg border border-gray-200 bg-white/70 px-3 text-sm text-gray-900 backdrop-blur-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500';
+  'h-9 rounded-lg border border-hairline bg-card px-3 text-sm text-ink focus:border-sage focus:outline-none focus:ring-2 focus:ring-sage';
 
 function IncidentCard({
   incident,
@@ -36,7 +36,7 @@ function IncidentCard({
     <button
       type="button"
       onClick={onOpen}
-      className="w-full rounded-tile bg-card p-3 text-left shadow-soft transition-shadow hover:shadow-soft-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+      className="w-full rounded-tile bg-card p-3 text-left shadow-soft transition-shadow hover:shadow-soft-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage"
     >
       <div className="flex items-center justify-between gap-2">
         <span className="truncate text-xs font-semibold tabular-nums text-ink">
@@ -45,12 +45,12 @@ function IncidentCard({
         <SeverityBadge severity={incident.severity} />
       </div>
       <p className="mt-1.5 truncate text-sm font-medium text-ink">{prettyEnum(incident.type)}</p>
-      <p className="mt-0.5 truncate text-xs text-gray-500">
+      <p className="mt-0.5 truncate text-xs text-muted">
         {incident.camera
           ? `${incident.camera.cameraCode} · ${incident.camera.name}`
           : `Site · ${incident.site.name}`}
       </p>
-      <div className="mt-2 flex items-center justify-between gap-2 text-xs text-gray-400">
+      <div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted">
         <span className="shrink-0">{timeAgo(incident.lastDetectedAt)}</span>
         {incident.assignedTo && <span className="truncate">{incident.assignedTo.email}</span>}
       </div>
@@ -137,7 +137,7 @@ export function IncidentsPage(): JSX.Element {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="font-heading text-2xl font-semibold text-ink">Incidents</h1>
-          <p className="mt-1 text-sm text-gray-500">
+          <p className="mt-1 text-sm text-muted">
             {openCount != null ? `${openCount} open · ` : ''}
             Camera &amp; site fault lifecycle
           </p>
@@ -204,7 +204,7 @@ export function IncidentsPage(): JSX.Element {
               aria-pressed={view === 'board'}
               className={cn(
                 'flex items-center gap-1.5 rounded-[10px] px-3 py-1.5 text-xs font-medium transition-colors',
-                view === 'board' ? 'bg-card text-ink shadow-soft' : 'text-gray-500 hover:text-ink'
+                view === 'board' ? 'bg-card text-ink shadow-soft' : 'text-muted hover:text-ink'
               )}
             >
               <LayoutGrid size={14} strokeWidth={1.5} />
@@ -216,7 +216,7 @@ export function IncidentsPage(): JSX.Element {
               aria-pressed={view === 'list'}
               className={cn(
                 'flex items-center gap-1.5 rounded-[10px] px-3 py-1.5 text-xs font-medium transition-colors',
-                view === 'list' ? 'bg-card text-ink shadow-soft' : 'text-gray-500 hover:text-ink'
+                view === 'list' ? 'bg-card text-ink shadow-soft' : 'text-muted hover:text-ink'
               )}
             >
               <List size={14} strokeWidth={1.5} />
@@ -237,7 +237,7 @@ export function IncidentsPage(): JSX.Element {
 
       {error ? (
         <div className="rounded-card bg-card p-10 text-center shadow-soft">
-          <p className="text-sm text-gray-600">{getApiErrorMessage(error)}</p>
+          <p className="text-sm text-muted">{getApiErrorMessage(error)}</p>
           <Button variant="secondary" size="sm" className="mt-4" onClick={() => refetch()}>
             Try again
           </Button>
@@ -256,11 +256,11 @@ export function IncidentsPage(): JSX.Element {
               <section key={column.key} className="rounded-card bg-charcoal/[0.03] p-3">
                 <header className="flex items-center justify-between px-1">
                   <h2 className="text-sm font-semibold text-ink">{column.title}</h2>
-                  <span className="text-xs tabular-nums text-gray-400">{items.length}</span>
+                  <span className="text-xs tabular-nums text-muted">{items.length}</span>
                 </header>
                 <div className="mt-3 space-y-2.5">
                   {items.length === 0 ? (
-                    <p className="rounded-tile border border-dashed border-gray-200 p-3 text-center text-xs text-gray-400">
+                    <p className="rounded-tile border border-dashed border-hairline p-3 text-center text-xs text-muted">
                       None
                     </p>
                   ) : (
@@ -279,11 +279,11 @@ export function IncidentsPage(): JSX.Element {
         </div>
       ) : listRows.length === 0 ? (
         <div className="rounded-card bg-card p-10 text-center shadow-soft">
-          <p className="text-sm text-gray-500">No incidents match the current filters.</p>
+          <p className="text-sm text-muted">No incidents match the current filters.</p>
         </div>
       ) : (
         <div className="overflow-hidden rounded-card bg-card shadow-soft">
-          <div className="hidden grid-cols-[1.3fr_0.9fr_1fr_1.5fr_1fr_0.9fr] gap-3 border-b border-gray-100 px-4 py-2.5 text-xs font-medium uppercase tracking-wide text-gray-400 md:grid">
+          <div className="hidden grid-cols-[1.3fr_0.9fr_1fr_1.5fr_1fr_0.9fr] gap-3 border-b border-hairline px-4 py-2.5 text-xs font-medium uppercase tracking-wide text-muted md:grid">
             <span>Incident</span>
             <span>Severity</span>
             <span>Status</span>
@@ -291,19 +291,19 @@ export function IncidentsPage(): JSX.Element {
             <span>Zone</span>
             <span>Detected</span>
           </div>
-          <ul className="divide-y divide-gray-100">
+          <ul className="divide-y divide-hairline">
             {listRows.map((incident) => (
               <li key={incident.id}>
                 <button
                   type="button"
                   onClick={() => openIncident(incident.id)}
-                  className="grid w-full grid-cols-2 items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 md:grid-cols-[1.3fr_0.9fr_1fr_1.5fr_1fr_0.9fr]"
+                  className="grid w-full grid-cols-2 items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sage md:grid-cols-[1.3fr_0.9fr_1fr_1.5fr_1fr_0.9fr]"
                 >
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-medium tabular-nums text-ink">
                       {incident.incidentNumber}
                     </span>
-                    <span className="block truncate text-xs text-gray-500">
+                    <span className="block truncate text-xs text-muted">
                       {prettyEnum(incident.type)}
                     </span>
                   </span>
@@ -313,13 +313,13 @@ export function IncidentsPage(): JSX.Element {
                   <span>
                     <IncidentStatusChip status={incident.status} />
                   </span>
-                  <span className="truncate text-sm text-gray-600">
+                  <span className="truncate text-sm text-muted">
                     {incident.camera
                       ? `${incident.camera.cameraCode} · ${incident.camera.name}`
                       : `Site · ${incident.site.name}`}
                   </span>
-                  <span className="truncate text-sm text-gray-600">{incident.zone.name}</span>
-                  <span className="truncate text-xs text-gray-400">
+                  <span className="truncate text-sm text-muted">{incident.zone.name}</span>
+                  <span className="truncate text-xs text-muted">
                     {timeAgo(incident.lastDetectedAt)}
                   </span>
                 </button>

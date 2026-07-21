@@ -1,0 +1,112 @@
+/* CR-6 — 3D teardrop CCTV pin styling for the MapLibre fleet map.
+   MapLibre owns .camera-pin-root's `transform` (it positions the marker), so
+   ALL motion here targets the nested .camera-pin — the anchored tip never
+   moves during hover/select/zoom/pan. */
+
+.camera-pin-root {
+  /* Darker extruded right/bottom edge derived from the live status colour. */
+  --pin-edge: color-mix(in srgb, var(--pin-color, #9aa1a9) 62%, #0b1220);
+  display: block;
+  width: 36px;
+  height: 46px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  line-height: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.camera-pin-root:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.9);
+  outline-offset: 2px;
+  border-radius: 10px;
+}
+
+.camera-pin {
+  position: relative;
+  display: block;
+  width: 36px;
+  height: 46px;
+  /* Grow from the tip so scaling never shifts the anchored coordinate. */
+  transform-origin: 50% 100%;
+  transition: transform 140ms ease-out;
+  will-change: transform;
+}
+
+.camera-pin__svg {
+  position: relative;
+  z-index: 1;
+  display: block;
+  overflow: visible;
+  /* Soft cast/contact shadow grounding the pin on the basemap. */
+  filter: drop-shadow(0 2px 2.5px rgba(2, 6, 23, 0.45));
+}
+
+/* Lift on hover/focus without touching the MapLibre-positioned root. */
+.camera-pin-root:hover .camera-pin,
+.camera-pin-root:focus-visible .camera-pin {
+  transform: scale(1.09);
+}
+
+/* Attention pulse — nested, centred on the pin head, painted behind the shell. */
+.camera-pin__pulse {
+  position: absolute;
+  left: 50%;
+  top: 37%;
+  width: 26px;
+  height: 26px;
+  margin: -13px 0 0 -13px;
+  border-radius: 9999px;
+  background: var(--pin-color, #9aa1a9);
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.camera-pin__pulse--warning {
+  animation: camera-pin-pulse-soft 2400ms ease-out infinite;
+}
+
+.camera-pin__pulse--critical {
+  animation: camera-pin-pulse-strong 1500ms ease-out infinite;
+}
+
+@keyframes camera-pin-pulse-soft {
+  0% {
+    opacity: 0.32;
+    transform: scale(0.55);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(1.5);
+  }
+}
+
+@keyframes camera-pin-pulse-strong {
+  0% {
+    opacity: 0.55;
+    transform: scale(0.5);
+  }
+  60%,
+  100% {
+    opacity: 0;
+    transform: scale(1.95);
+  }
+}
+
+/* Respect reduced-motion: no pulse, no hover scale/transition. */
+@media (prefers-reduced-motion: reduce) {
+  .camera-pin {
+    transition: none;
+  }
+  .camera-pin-root:hover .camera-pin,
+  .camera-pin-root:focus-visible .camera-pin {
+    transform: none;
+  }
+  .camera-pin__pulse {
+    display: none;
+    animation: none;
+  }
+}

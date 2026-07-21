@@ -58,7 +58,7 @@ export function NotificationsTab(): JSX.Element {
       <div className="flex flex-wrap items-end gap-3">
         <div>
           <h2 className="text-lg font-semibold text-ink">Notification delivery log</h2>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-muted">
             Outbound incident alerts — rows are filtered by your access scopes.
           </p>
         </div>
@@ -101,7 +101,7 @@ export function NotificationsTab(): JSX.Element {
       )}
       {isError && (
         <div className="rounded-card bg-card p-10 text-center shadow-soft">
-          <p className="text-sm text-gray-600">{getApiErrorMessage(error)}</p>
+          <p className="text-sm text-secondary">{getApiErrorMessage(error)}</p>
           <Button
             className="mt-4"
             variant="secondary"
@@ -118,7 +118,7 @@ export function NotificationsTab(): JSX.Element {
       {data && (
         <div className="overflow-x-auto rounded-card bg-card shadow-soft">
           <table className="w-full min-w-[860px] text-sm">
-            <thead className="border-b border-gray-100 text-left text-xs uppercase tracking-wide text-gray-500">
+            <thead className="border-b border-hairline text-left text-xs uppercase tracking-wide text-muted">
               <tr>
                 <th className="px-4 py-3 font-medium">Created</th>
                 <th className="px-4 py-3 font-medium">Incident</th>
@@ -132,7 +132,7 @@ export function NotificationsTab(): JSX.Element {
             <tbody>
               {data.items.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-500">
+                  <td colSpan={7} className="px-4 py-10 text-center text-sm text-muted">
                     No notifications match the current filters.
                   </td>
                 </tr>
@@ -140,15 +140,15 @@ export function NotificationsTab(): JSX.Element {
               {data.items.map((row) => (
                 <tr
                   key={row.id}
-                  className="border-b border-gray-50 transition-colors last:border-b-0 hover:bg-gray-50/60"
+                  className="border-b border-hairline transition-colors last:border-b-0 hover:bg-surface"
                 >
-                  <td className="px-4 py-3 whitespace-nowrap text-gray-600">
+                  <td className="px-4 py-3 whitespace-nowrap text-secondary">
                     {formatDateTime(row.createdAt)}
                   </td>
                   <td className="px-4 py-3">
                     <Link
                       to={`/incidents/${row.incident.id}`}
-                      className="font-medium text-indigo-600 hover:underline"
+                      className="font-medium text-indigo hover:underline"
                     >
                       {row.incident.incidentNumber}
                     </Link>
@@ -160,26 +160,26 @@ export function NotificationsTab(): JSX.Element {
                       {row.incident.severity}
                     </Badge>
                   </td>
-                  <td className="px-4 py-3 text-gray-600">{row.channel}</td>
-                  <td className="px-4 py-3 text-gray-600">{row.recipient}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-gray-500">{row.templateName}</td>
+                  <td className="px-4 py-3 text-secondary">{row.channel}</td>
+                  <td className="px-4 py-3 text-secondary">{row.recipient}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-muted">{row.templateName}</td>
                   <td className="px-4 py-3">
                     <Badge variant={STATUS_BADGE[row.status]} size="sm">
                       {row.status}
                     </Badge>
                     {row.attemptCount > 1 && (
-                      <span className="ml-1.5 text-xs text-gray-400">×{row.attemptCount}</span>
+                      <span className="ml-1.5 text-xs text-muted">×{row.attemptCount}</span>
                     )}
                     {row.failureReason && (
                       <p
-                        className="mt-0.5 max-w-[220px] truncate text-xs text-red-600"
+                        className="mt-0.5 max-w-[220px] truncate text-xs text-coral"
                         title={row.failureReason}
                       >
                         {row.failureReason}
                       </p>
                     )}
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-gray-600">
+                  <td className="px-4 py-3 whitespace-nowrap text-secondary">
                     {row.sentAt ? formatDateTime(row.sentAt) : '—'}
                   </td>
                 </tr>
@@ -196,7 +196,7 @@ export function NotificationsTab(): JSX.Element {
               >
                 Previous
               </Button>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted">
                 Page {data.page} of {totalPages} · {data.total} notifications
               </p>
               <Button

@@ -25,6 +25,28 @@ rtspAddress: :8554
 rtspTransports: [tcp, udp]
 rtspAuthMethods: [basic]
 
+# MediaMTX's default policy only allows the control API from 127.0.0.1, but the
+# backend reaches this server from its own container IP (MEDIAMTX_API_URL=
+# http://mediamtx:9997), so publishStream()'s path-config POSTs would 401 and no
+# stream (transcode or plain) would ever be created. Widen the `api` action to
+# private/Docker network ranges only — the API port is bound to loopback on the
+# host, so it stays off the public internet. publish/read/playback keep the
+# default open policy.
+authInternalUsers:
+  - user: any
+    pass:
+    permissions:
+      - action: publish
+      - action: read
+      - action: playback
+  - user: any
+    pass:
+    ips: [127.0.0.1, '::1', 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]
+    permissions:
+      - action: api
+      - action: metrics
+      - action: pprof
+
 rtmp: no
 srt: no
 

@@ -6,15 +6,15 @@ import { buttonTap } from "@/lib/animations";
 
 const variants = {
   primary:
-    "bg-indigo-600 text-white shadow-sm hover:bg-indigo-700 focus-visible:ring-indigo-500",
+    "bg-sage text-white shadow-sm hover:bg-sage-hover focus-visible:ring-sage",
   secondary:
-    "bg-white/70 text-gray-800 border border-white/40 backdrop-blur-sm shadow-glass hover:bg-white/90 focus-visible:ring-indigo-400",
+    "bg-card text-ink border border-hairline shadow-soft hover:bg-surface focus-visible:ring-sage",
   ghost:
-    "bg-transparent text-gray-700 hover:bg-gray-100/70 focus-visible:ring-indigo-400",
+    "bg-transparent text-secondary hover:bg-surface focus-visible:ring-sage",
   danger:
-    "bg-red-600 text-white shadow-sm hover:bg-red-700 focus-visible:ring-red-500",
+    "bg-coral text-white shadow-sm hover:bg-coral/90 focus-visible:ring-coral",
   outline:
-    "border border-indigo-600 text-indigo-600 hover:bg-indigo-50 focus-visible:ring-indigo-500",
+    "border border-sage text-sage hover:bg-sage-soft focus-visible:ring-sage",
 };
 
 const sizes = {

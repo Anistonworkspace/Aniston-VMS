@@ -1,8 +1,9 @@
 import crypto from 'node:crypto';
 import type { Request } from 'express';
-import type { Camera, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import type { Camera } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
-import { audit } from '../../lib/audit.js';
+import { audit, auditWithinTx } from '../../lib/audit.js';
 import {
   ConflictError,
   ForbiddenError,
@@ -85,11 +86,14 @@ function sanitizeCamera(camera: Camera) {
 
 export async function listCameras(actor: AuthUser, filters: CameraListQuery) {
   const scope = await getUserScope(actor.id);
-  const { page, limit, siteId, routerId, status, q } = filters;
+  const { page, limit, siteId, zoneId, routerId, status, q } = filters;
   const where: Prisma.CameraWhereInput = {
     AND: [
       cameraScopeWhere(scope),
       siteId ? { siteId } : {},
+      // Zone filter rides the site relation; ANDed with cameraScopeWhere so it
+      // only ever narrows the caller's visible fleet (never widens RBAC).
+      zoneId ? { site: { zoneId } } : {},
       routerId ? { routerId } : {},
       status ? { status } : {},
       q
@@ -297,7 +301,7 @@ export async function updateCamera(
 }
 
 export async function deleteCamera(id: string, actor: AuthUser, req: Request) {
-  const before = await findCameraOrThrow(id, actor);
+  const before = await findCameraOrThrow(id, actor); // 404 out-of-scope-missing / 403 forbidden
   const [incidentCount, referenceImageCount] = await Promise.all([
     prisma.incident.count({ where: { cameraId: id } }),
     prisma.referenceImage.count({ where: { cameraId: id } }),
@@ -307,13 +311,43 @@ export async function deleteCamera(id: string, actor: AuthUser, req: Request) {
   if (referenceImageCount > 0) {
     throw new ConflictError('Cannot delete a camera that still has approved reference images');
   }
-  await prisma.camera.delete({ where: { id } });
-  await audit(req, {
-    userId: actor.id,
-    action: 'camera.delete',
-    entityType: 'Camera',
-    entityId: id,
-    oldValue: sanitizeCamera(before),
+
+  // Delete + audit as one atomic unit: auditWithinTx writes inside the same
+  // transaction, so we never lose the audit trail for a delete (the old
+  // best-effort audit(req, …) swallowed failures). Throwing anywhere inside the
+  // callback rolls the whole transaction back, so nothing is left half-removed.
+  await prisma.$transaction(async (tx) => {
+    // Scope the P2003 → 409 conversion to the delete itself. A foreign-key
+    // violation HERE means the camera still has retained history. An audit-side
+    // DB failure must NOT be caught here, or it would be mislabeled as
+    // "retained history"; it propagates instead (→ 500 via the global handler),
+    // which is the correct signal for a genuine server-side audit failure.
+    try {
+      await tx.camera.delete({ where: { id } });
+    } catch (err) {
+      // The remaining RESTRICT foreign keys (health_checks, snapshots,
+      // connection_quality_hourly, sd_card_status, recording_segments,
+      // maintenance_tasks, stream_sessions, clip_exports) throw Prisma P2003.
+      // The global errorHandler only maps P2002/P2025, so without this a camera
+      // with history would 500 and leak a Prisma message. Convert to a clean 409.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2003') {
+        throw new ConflictError(
+          "This camera can't be removed because it still has recorded history " +
+            '(recordings, snapshots, or health records). Its history is retained.'
+        );
+      }
+      throw err; // unknown delete errors bubble to the global errorHandler unchanged
+    }
+
+    await auditWithinTx(tx, {
+      userId: actor.id,
+      action: 'camera.delete',
+      entityType: 'Camera',
+      entityId: id,
+      siteId: before.siteId, // Camera has a direct site_id column; enables site-scoped audit filtering. No zoneId column (zone lives above site), so it defaults null.
+      oldValue: sanitizeCamera(before), // strips all 6 encrypted/hash fields — no creds in the audit row
+      ipAddress: req.ip ?? null,
+    });
   });
 }
 

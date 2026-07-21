@@ -1,13 +1,13 @@
 import { cn } from "@/lib/utils";
 
 const variants = {
-  default: "bg-gray-100 text-gray-700",
-  primary: "bg-indigo-100 text-indigo-700",
-  success: "bg-emerald-100 text-emerald-700",
-  warning: "bg-amber-100 text-amber-700",
-  danger: "bg-red-100 text-red-700",
-  info: "bg-sky-100 text-sky-700",
-  purple: "bg-purple-100 text-purple-700",
+  default: "bg-state-unknown-soft text-state-unknown",
+  primary: "bg-sage-soft text-sage",
+  success: "bg-state-healthy-soft text-state-healthy",
+  warning: "bg-state-warning-soft text-state-warning",
+  danger: "bg-state-critical-soft text-state-critical",
+  info: "bg-state-maintenance-soft text-state-maintenance",
+  purple: "bg-indigo-soft text-indigo",
 };
 
 const sizes = {
@@ -45,13 +45,13 @@ export function Badge({
           className={cn(
             "h-1.5 w-1.5 rounded-full",
             {
-              default: "bg-gray-500",
-              primary: "bg-indigo-500",
-              success: "bg-emerald-500",
-              warning: "bg-amber-500",
-              danger: "bg-red-500",
-              info: "bg-sky-500",
-              purple: "bg-purple-500",
+              default: "bg-state-unknown",
+              primary: "bg-sage",
+              success: "bg-state-healthy",
+              warning: "bg-state-warning",
+              danger: "bg-state-critical",
+              info: "bg-state-maintenance",
+              purple: "bg-indigo",
             }[variant]
           )}
         />

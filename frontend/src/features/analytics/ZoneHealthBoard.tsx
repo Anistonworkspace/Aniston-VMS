@@ -23,19 +23,19 @@ export function ZoneHealthBoard({ rollups }: { rollups: ZoneRollup[] }): JSX.Ele
       </CardHeader>
 
       {rollups.length === 0 ? (
-        <p className="py-6 text-center text-sm text-gray-500">No zones in your scope.</p>
+        <p className="py-6 text-center text-sm text-muted">No zones in your scope.</p>
       ) : (
-        <ul className="divide-y divide-gray-100">
+        <ul className="divide-y divide-hairline">
           {rollups.map((zone) => (
             <li key={zone.zoneId} className="flex items-center gap-4 py-3">
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline justify-between gap-2">
-                  <p className="truncate text-sm font-medium text-gray-900">{zone.zoneName}</p>
-                  <p className="shrink-0 text-xs text-gray-400">
+                  <p className="truncate text-sm font-medium text-ink">{zone.zoneName}</p>
+                  <p className="shrink-0 text-xs text-muted">
                     {zone.region.name} · {zone.siteCount} sites · {zone.cameraCount} cameras
                   </p>
                 </div>
-                <div className="mt-1.5 flex h-2 w-full overflow-hidden rounded-full bg-gray-100">
+                <div className="mt-1.5 flex h-2 w-full overflow-hidden rounded-full bg-hairline">
                   {zone.cameraCount > 0 &&
                     SEGMENTS.map(({ key, className, label }) =>
                       zone[key] > 0 ? (
@@ -50,19 +50,19 @@ export function ZoneHealthBoard({ rollups }: { rollups: ZoneRollup[] }): JSX.Ele
                 </div>
               </div>
               <div className="w-12 shrink-0 text-right">
-                <p className="font-sora text-sm font-semibold text-gray-900">
+                <p className="font-heading text-sm font-semibold text-ink">
                   {zone.avgHealthScore}
                 </p>
-                <p className="text-[10px] uppercase tracking-wide text-gray-400">score</p>
+                <p className="text-[10px] uppercase tracking-wide text-muted">score</p>
               </div>
             </li>
           ))}
         </ul>
       )}
 
-      <div className="mt-3 flex flex-wrap gap-3 border-t border-gray-100 pt-3">
+      <div className="mt-3 flex flex-wrap gap-3 border-t border-hairline pt-3">
         {SEGMENTS.map(({ key, className, label }) => (
-          <span key={key} className="inline-flex items-center gap-1.5 text-xs text-gray-500">
+          <span key={key} className="inline-flex items-center gap-1.5 text-xs text-muted">
             <span className={cn('h-2 w-2 rounded-full', className)} aria-hidden />
             {label}
           </span>

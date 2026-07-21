@@ -44,7 +44,7 @@ export function AccountMenu(): JSX.Element {
         <button
           type="button"
           aria-label="Account menu"
-          className="flex w-full items-center gap-2.5 rounded-control border border-white/10 bg-white/5 px-2 py-2 text-left transition-colors duration-150 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage"
+          className="flex w-full items-center gap-2.5 rounded-control border border-hairline bg-white/60 px-2 py-2 text-left transition-colors duration-150 hover:bg-white/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage"
         >
           {user ? (
             <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-indigo-soft font-heading text-xs font-semibold text-indigo">
@@ -69,7 +69,7 @@ export function AccountMenu(): JSX.Element {
         type="button"
         onClick={handleLogout}
         disabled={loggingOut}
-        className="flex w-full items-center gap-2.5 rounded-control px-3 py-2 text-sm font-medium text-ink transition-colors duration-150 hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage disabled:pointer-events-none disabled:opacity-50"
+        className="flex w-full items-center gap-2.5 rounded-control px-3 py-2 text-sm font-medium text-ink transition-colors duration-150 hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage disabled:pointer-events-none disabled:opacity-50"
       >
         <LogOut size={16} strokeWidth={1.5} />
         {loggingOut ? 'Signing out…' : 'Sign out'}

@@ -7,44 +7,44 @@
    Design Tokens — Boilerplate Design System (Light)
    ───────────────────────────────────────────── */
 :root {
-  /* Primary */
-  --primary-color: #0073ea;
-  --primary-hover-color: #0060b9;
-  --primary-highlighted-color: rgba(0, 115, 234, 0.12);
-  --primary-selected-color: #cce5ff;
-  --primary-background-hover-color: #f0f4ff;
+  /* Primary — light-blue topology (teal accent, matches Login --auth-accent) */
+  --primary-color: #168c8c;
+  --primary-hover-color: #117575;
+  --primary-highlighted-color: rgba(22, 140, 140, 0.12);
+  --primary-selected-color: #d8ecec;
+  --primary-background-hover-color: #eef4fb;
 
-  /* Text */
-  --primary-text-color: #323338;
-  --secondary-text-color: #676879;
-  --text-tertiary: #c5c7d0;
-  --text-muted: #c4c4c4;
+  /* Text — navy ink on light-blue */
+  --primary-text-color: #142b4a;
+  --secondary-text-color: #68778d;
+  --text-tertiary: #9bb0c5;
+  --text-muted: #9fb2c5;
   --text-color-on-inverted: #ffffff;
 
-  /* Backgrounds */
+  /* Backgrounds — light-blue tints */
   --primary-background-color: #ffffff;
-  --allgrey-background-color: #f6f7fb;
-  --ui-background-color: #f0f1f5;
+  --allgrey-background-color: #eef4fb;
+  --ui-background-color: #e4eef7;
   --bg-elevated: #ffffff;
   --dialog-background-color: #ffffff;
   --modal-background-color: #ffffff;
-  --inverted-color-background: #323338;
+  --inverted-color-background: #142b4a;
 
-  /* Borders */
-  --layout-border-color: #d0d4e4;
-  --ui-border-color: #c3c6d4;
-  --border-color: #d0d4e4;
-  --ui-bg-border-color: #e7e9ef;
+  /* Borders — light-blue */
+  --layout-border-color: #cddceb;
+  --ui-border-color: #bcd0e2;
+  --border-color: #cddceb;
+  --ui-bg-border-color: #dce8f2;
 
   /* Status / semantic */
-  --positive-color: #00854d;
-  --negative-color: #d83a52;
-  --warning-color: #ffcb00;
-  --disabled-background-color: #ecedf2;
-  --disabled-text-color: #c3c6d4;
+  --positive-color: #1f9e6a;
+  --negative-color: #e0523f;
+  --warning-color: #e2a93b;
+  --disabled-background-color: #e4eef7;
+  --disabled-text-color: #9fb2c5;
 
   /* Shell */
-  --base-tint: #f1ece3;
+  --base-tint: #dce8f3;
   --card-bg: #ffffff;
   --card-radius: 14px;
   --card-shadow:
@@ -52,11 +52,11 @@
     0 8px 32px 0 rgba(0, 0, 0, 0.06);
 
   /* Backdrop */
-  --backdrop-color: rgba(41, 47, 76, 0.7);
+  --backdrop-color: rgba(20, 43, 74, 0.55);
 
   /* Sidebar */
-  --sidebar-border: #d0d4e4;
-  --sidebar-hover: #f0f1f5;
+  --sidebar-border: #cddceb;
+  --sidebar-hover: #e4eef7;
   --sidebar-text-active: #323338;
 
   /* Typography */
@@ -141,7 +141,9 @@
   html,
   body,
   #root {
+    width: 100%;
     height: 100%;
+    margin: 0;
   }
 
   body {
@@ -537,9 +539,9 @@
    inside components.
    ============================================================ */
 :root {
-  /* Surfaces */
-  --canvas: #e8e8e6; /* page background behind the app frame */
-  --surface: #f6f5f1; /* main content background (cream) */
+  /* Surfaces — light-blue topology (repaint to match Login) */
+  --canvas: #dce8f3; /* page background behind the app frame */
+  --surface: #eef4fb; /* main content background (light blue) */
   /* Sign-in (unauthenticated) light-blue topology.
      Single source of truth for the Login page. */
   --auth-bg: #e8f0f5; /* outer page background */
@@ -553,26 +555,26 @@
   --auth-accent-hover: #117575; /* sign-in button hover */
   --auth-link: #3f67d8; /* secondary accent / links */
   --card: #ffffff; /* cards, topbar controls, list rows */
-  --sidebar: #5c6672; /* slate gray-blue sidebar */
-  --sidebar-text: #f3f4f5;
-  --sidebar-muted: #c6ccd2;
+  --sidebar: #d8eaf7; /* light-blue sidebar (matches Login welcome panel) */
+  --sidebar-text: #142b4a; /* navy — dark text on light rail */
+  --sidebar-muted: #5c6f86; /* muted navy for inactive nav */
 
   /* Text */
-  --ink: #21201e; /* primary text */
-  --muted: #8a8f94; /* secondary text, icons */
-  --hairline: #eceae4; /* borders, dividers */
+  --ink: #142b4a; /* primary text (navy) */
+  --muted: #68778d; /* secondary text, icons */
+  --hairline: #d3e0ed; /* borders, dividers */
 
-  /* Accents */
-  --sage: #8fbca0; /* primary actions, healthy accents */
-  --sage-hover: #7fae92;
-  --sage-soft: #e7f1ea;
-  --indigo: #484c89; /* secondary accent cards, maintenance */
-  --indigo-soft: #e6e7f3;
+  /* Accents — teal primary + blue secondary (light-blue topology) */
+  --sage: #168c8c; /* primary actions (teal, = --auth-accent) */
+  --sage-hover: #117575;
+  --sage-soft: #d8ecec;
+  --indigo: #3f67d8; /* secondary accent / links (blue, = --auth-link) */
+  --indigo-soft: #e2eafb;
   --coral: #f25b3d; /* critical, alert pills */
   --coral-soft: #fde7e1;
   --sand: #efe3c0; /* tertiary accent, warnings-soft */
   --sand-deep: #c9a94e;
-  --charcoal: #2b2724; /* video/player chrome, donut dark segment */
+  --charcoal: #17293d; /* video/player chrome, donut dark segment (navy) */
 
   /* Status semantics (dot = 8px circle) */
   --status-healthy: #4e9c77;
@@ -581,10 +583,10 @@
   --status-warning-soft: #fbf3df;
   --status-critical: #f25b3d;
   --status-critical-soft: #fde7e1;
-  --status-maintenance: #484c89;
-  --status-maintenance-soft: #e6e7f3;
+  --status-maintenance: #3f67d8;
+  --status-maintenance-soft: #e2eafb;
   --status-unknown: #9aa1a9;
-  --status-unknown-soft: #f0f0ee;
+  --status-unknown-soft: #eef0f3;
 
   /* Radii */
   --radius-frame: 28px; /* app frame */

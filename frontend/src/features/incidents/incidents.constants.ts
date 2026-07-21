@@ -27,12 +27,12 @@ export const STATUS_CHIP: Record<IncidentStatus, string> = {
   DETECTED: 'bg-state-critical-soft text-state-critical',
   CONFIRMED: 'bg-state-critical-soft text-state-critical',
   ALERTED: 'bg-state-critical-soft text-state-critical',
-  ACKNOWLEDGED: 'bg-indigo-100 text-indigo-700',
-  ASSIGNED: 'bg-indigo-100 text-indigo-700',
-  INVESTIGATING: 'bg-sky-100 text-sky-700',
+  ACKNOWLEDGED: 'bg-sage-soft text-sage',
+  ASSIGNED: 'bg-sage-soft text-sage',
+  INVESTIGATING: 'bg-state-maintenance-soft text-state-maintenance',
   RESOLVED: 'bg-state-healthy-soft text-state-healthy',
   RECOVERY_VERIFIED: 'bg-state-healthy-soft text-state-healthy',
-  CLOSED: 'bg-gray-100 text-gray-600',
+  CLOSED: 'bg-surface text-muted',
 };
 
 export const SEVERITY_VARIANT: Record<IncidentSeverity, 'danger' | 'warning' | 'info'> = {

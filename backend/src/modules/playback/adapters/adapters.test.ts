@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   DahuaAdapter,
   HikvisionAdapter,
@@ -7,6 +7,7 @@ import {
 } from './index.js';
 import type { AdapterCamera } from './index.js';
 import { simRecordingSegments, vendorTimestamp } from './camera-playback.adapter.js';
+import * as cameraPlayback from './camera-playback.adapter.js';
 
 // CR-12 — vendor playback adapter layer: factory routing, SIM segment
 // synthesis, vendor URI shapes and proxy endpoint plumbing.
@@ -69,6 +70,10 @@ describe('vendor playback URIs', () => {
 
 describe('SIM recording segments', () => {
   it('synthesizes hour-aligned segments covering the range, deterministically', async () => {
+    // Force SIM mode for this case so it exercises hour-aligned synthesis regardless
+    // of the ambient .env. Production sets PLAYBACK_SIM_MODE=false and the real adapter
+    // correctly returns [] until the vendor recording-search query is implemented.
+    vi.spyOn(cameraPlayback, 'isSimMode').mockReturnValue(true);
     const adapter = getCameraPlaybackAdapter('HIKVISION');
     const segments = await adapter.listRecordingSegments(camera, start, end);
     // 10:30–11:00, 11:00–12:00, 12:00–12:15
@@ -90,11 +95,21 @@ describe('SIM recording segments', () => {
 });
 
 describe('proxy endpoints', () => {
-  it('always resolves MediaMTX endpoints for the session', () => {
+  it('resolves same-origin signed media endpoints and never leaks MediaMTX/creds', () => {
     const eps = getCameraPlaybackAdapter('DAHUA').buildProxyEndpoints(camera, 'sess-1');
     expect(eps.mediamtxPath).toContain('/playback/CAM-GGN-021/sess-1');
-    expect(eps.hlsUrl).toContain('/index.m3u8');
-    expect(eps.webrtcUrl).toContain('/whep');
-    expect(eps.rtspUrl).toContain(eps.mediamtxPath);
+    // Clean, same-origin /media/* paths. The HMAC token is NOT in the URL — it
+    // rides an HttpOnly, path-scoped cookie (set on session start) so it never
+    // lands in nginx/proxy access logs, Referer headers, or the browser history.
+    expect(eps.hlsUrl).toContain(`/media/hls/${eps.mediamtxPath}/index.m3u8`);
+    expect(eps.webrtcUrl).toContain(`/media/webrtc/${eps.mediamtxPath}/whep`);
+    // No token material (exp/sig) leaks into either browser-facing URL.
+    expect(eps.hlsUrl).not.toMatch(/[?&](?:exp|sig)=/);
+    expect(eps.webrtcUrl).not.toMatch(/[?&](?:exp|sig)=/);
+    // RTSP is never surfaced to the browser.
+    expect(eps.rtspUrl).toBe('');
+    // No MediaMTX localhost URL or camera credentials leak into the browser DTO.
+    expect(eps.hlsUrl).not.toMatch(/localhost|rtsp:|admin:secret/);
+    expect(eps.webrtcUrl).not.toMatch(/localhost|rtsp:|admin:secret/);
   });
 });

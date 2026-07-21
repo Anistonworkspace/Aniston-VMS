@@ -55,7 +55,7 @@ export function AnimatedModal({
             initial="hidden"
             animate="visible"
             exit="exit"
-            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+            className="fixed inset-0 z-40 bg-black/40"
             onClick={onClose}
           />
           {/* Panel */}
@@ -69,7 +69,7 @@ export function AnimatedModal({
               role="dialog"
               aria-modal="true"
               aria-labelledby={title ? "modal-title" : undefined}
-              className={`relative w-full ${sizeClasses[size]} rounded-2xl border border-white/30 bg-white/80 backdrop-blur-md shadow-glass p-6`}
+              className={`relative w-full ${sizeClasses[size]} rounded-2xl border border-hairline bg-card shadow-soft p-6`}
             >
               {/* Header */}
               {(title || description) && (
@@ -77,20 +77,20 @@ export function AnimatedModal({
                   {title && (
                     <h2
                       id="modal-title"
-                      className="font-sora text-lg font-semibold text-gray-900"
+                      className="font-heading text-lg font-semibold text-ink"
                     >
                       {title}
                     </h2>
                   )}
                   {description && (
-                    <p className="mt-1 text-sm text-gray-500">{description}</p>
+                    <p className="mt-1 text-sm text-muted">{description}</p>
                   )}
                 </div>
               )}
               {/* Close button */}
               <button
                 onClick={onClose}
-                className="absolute right-4 top-4 rounded-lg p-1.5 text-gray-400 transition hover:bg-gray-100 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                className="absolute right-4 top-4 rounded-lg p-1.5 text-muted transition hover:bg-surface hover:text-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-sage"
                 aria-label="Close"
               >
                 <X className="h-4 w-4" />

@@ -15,7 +15,7 @@ import {
 import { DELHI_NCR, OSM_RASTER_STYLE } from './mapStyle';
 
 const SELECT_CLASSES =
-  'h-9 w-full rounded-lg border border-gray-200 bg-white/70 px-3 text-sm text-gray-900 backdrop-blur-sm transition-colors hover:border-gray-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500';
+  'h-9 w-full rounded-lg border border-hairline bg-card px-3 text-sm text-ink transition-colors hover:border-sage focus:border-sage focus:outline-none focus:ring-2 focus:ring-sage';
 
 interface AddCameraModalProps {
   open: boolean;
@@ -89,7 +89,7 @@ export function AddCameraModal({ open, onClose, notify }: AddCameraModalProps): 
       attributionControl: false,
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
-    const marker = new maplibregl.Marker({ draggable: true, color: '#4f46e5' });
+    const marker = new maplibregl.Marker({ draggable: true, color: '#3f67d8' });
     const place = (lngLat: { lng: number; lat: number }): void => {
       setPin({ lat: +lngLat.lat.toFixed(6), lng: +lngLat.lng.toFixed(6) });
     };
@@ -196,7 +196,7 @@ export function AddCameraModal({ open, onClose, notify }: AddCameraModalProps): 
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <label className="block text-sm">
-                <span className="mb-1 block text-xs font-medium text-gray-600">Site *</span>
+                <span className="mb-1 block text-xs font-medium text-secondary">Site *</span>
                 <select
                   value={form.siteId}
                   onChange={(event) =>
@@ -218,7 +218,7 @@ export function AddCameraModal({ open, onClose, notify }: AddCameraModalProps): 
                 </select>
               </label>
               <label className="block text-sm">
-                <span className="mb-1 block text-xs font-medium text-gray-600">Router *</span>
+                <span className="mb-1 block text-xs font-medium text-secondary">Router *</span>
                 <select
                   value={form.routerId}
                   onChange={(event) =>
@@ -321,16 +321,16 @@ export function AddCameraModal({ open, onClose, notify }: AddCameraModalProps): 
           </div>
 
           <div className="space-y-2">
-            <span className="block text-xs font-medium text-gray-600">
+            <span className="block text-xs font-medium text-secondary">
               Map position * — click to drop the pin, drag to fine-tune
             </span>
             <div
               ref={mapContainerRef}
-              className="h-72 w-full overflow-hidden rounded-lg border border-gray-200"
+              className="h-72 w-full overflow-hidden rounded-lg border border-hairline"
               role="application"
               aria-label="Camera position picker"
             />
-            <p className="text-xs tabular-nums text-gray-500">
+            <p className="text-xs tabular-nums text-muted">
               {pin ? `Pinned at ${pin.lat}, ${pin.lng}` : 'No position pinned yet.'}
             </p>
 
@@ -339,15 +339,15 @@ export function AddCameraModal({ open, onClose, notify }: AddCameraModalProps): 
                 className={cn(
                   'rounded-lg border p-3 text-xs',
                   probe.success
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                    : 'border-red-200 bg-red-50 text-red-700'
+                    ? 'border-state-healthy/30 bg-state-healthy-soft text-state-healthy'
+                    : 'border-state-critical/30 bg-state-critical-soft text-state-critical'
                 )}
                 data-testid="probe-result"
               >
                 <p className="flex items-center gap-1.5 font-semibold">
                   {probe.success ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
                   {probe.success ? 'Stream reachable' : 'Probe failed'}
-                  {probe.simMode && <span className="font-normal text-gray-500">(sim mode)</span>}
+                  {probe.simMode && <span className="font-normal text-muted">(sim mode)</span>}
                 </p>
                 <p className="mt-1">
                   DESCRIBE: {probe.describe.success ? 'ok' : (probe.describe.errorCode ?? 'failed')}{' '}
@@ -361,7 +361,7 @@ export function AddCameraModal({ open, onClose, notify }: AddCameraModalProps): 
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t border-gray-100 pt-4">
+        <div className="flex items-center justify-end gap-2 border-t border-hairline pt-4">
           <Button
             variant="secondary"
             size="sm"

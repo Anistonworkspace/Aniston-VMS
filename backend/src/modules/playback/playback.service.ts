@@ -65,10 +65,10 @@ function toPublicSession(session: StreamSession, range?: PlaybackRange) {
   const urls = hasRange
     ? {
         ...endpoints,
-        // Synthetic VOD query params — a real MediaMTX/ffmpeg integration would
-        // use these bounds to serve the recorded range instead of the live feed.
+        // VOD range bounds appended to the same-origin HLS URL. The URL carries no
+        // auth token (that rides the HttpOnly media_auth cookie), so this is the
+        // only query string — use `?`. RTSP is never surfaced (rtspUrl === '').
         hlsUrl: `${endpoints.hlsUrl}?start=${encodeURIComponent(range.rangeStartAt!)}&end=${encodeURIComponent(range.rangeEndAt!)}`,
-        rtspUrl: `${endpoints.rtspUrl}?start=${encodeURIComponent(range.rangeStartAt!)}&end=${encodeURIComponent(range.rangeEndAt!)}`,
       }
     : endpoints;
   return {
@@ -146,7 +146,7 @@ export async function startSession(
 
   const id = randomUUID();
   const mediamtxPath = buildMediamtxPath(camera.cameraCode, input.kind, id);
-  await publishStream(mediamtxPath);
+  await publishStream(mediamtxPath, camera, input.kind);
 
   const now = new Date();
   const session = await prisma.streamSession.create({

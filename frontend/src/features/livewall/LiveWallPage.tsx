@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import type { FetchBaseQueryError } from '@reduxjs/toolkit/query/react';
 import { Bookmark, Save, Trash2, VideoOff, X } from 'lucide-react';
 import { Button, Input, ToastContainer } from '@/components/ui';
 import { useToast } from '@/hooks/useToast';
 import { useListCamerasQuery } from '@/features/cameras/cameras.api';
+import { useListZoneSummariesQuery } from '@/features/overview/overview.api';
 import { CameraStatusBadge } from '@/features/cameras/CameraStatusBadge';
 import { getApiErrorMessage } from '@/lib/apiError';
 import { cn } from '@/lib/utils';
@@ -24,7 +26,7 @@ import {
 import type { LayoutKind } from './livewall.types';
 
 const selectClass =
-  'h-9 rounded-lg border border-gray-200 bg-white/70 px-3 text-sm text-gray-900 backdrop-blur-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500';
+  'h-9 rounded-lg border border-hairline bg-card px-3 text-sm text-ink focus:border-sage focus:outline-none focus:ring-2 focus:ring-sage';
 
 /** Wall view: `focus` = one big player + side list (YouTube-style), `grid` = classic tiles. */
 type WallView = 'focus' | 'grid';
@@ -82,9 +84,38 @@ export function LiveWallPage(): JSX.Element {
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveName, setSaveName] = useState('');
 
+  const [searchParams, setSearchParams] = useSearchParams();
+  const zoneId = searchParams.get('zone') ?? '';
+
   // 100 = safe page size for the picker; walls reference at most 6 cameras.
-  const { data: cameras, isLoading: camerasLoading } = useListCamerasQuery({ page: 1, limit: 100 });
+  // When a zone is requested (e.g. "Open in Live Wall" from a zone card) the
+  // list is scoped to it — the backend ANDs the zone with the caller's RBAC
+  // scope, so an out-of-scope "?zone=" yields zero cameras, never a leak.
+  const { data: cameras, isLoading: camerasLoading } = useListCamerasQuery({
+    page: 1,
+    limit: 100,
+    zoneId: zoneId || undefined,
+  });
   const { data: layouts } = useListSavedLayoutsQuery();
+
+  // Resolve the requested zone's name for the filter chip.
+  const { data: zoneSummaries } = useListZoneSummariesQuery(undefined, { skip: !zoneId });
+  const activeZoneName = useMemo(
+    () => (zoneId ? (zoneSummaries?.find((zone) => zone.id === zoneId)?.name ?? null) : null),
+    [zoneSummaries, zoneId]
+  );
+
+  // Clearing the zone chip drops "?zone=" from the URL.
+  const clearZone = (): void => {
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev);
+        params.delete('zone');
+        return params;
+      },
+      { replace: true }
+    );
+  };
 
   const [createLayout, { isLoading: creating }] = useCreateSavedLayoutMutation();
   const [updateLayout, { isLoading: updating }] = useUpdateSavedLayoutMutation();
@@ -113,8 +144,11 @@ export function LiveWallPage(): JSX.Element {
     const items = cameras?.items ?? [];
     if (items.length === 0) return;
     autoFilledRef.current = true;
-    setCameraIds((ids) => (ids.length > 0 ? ids : items.slice(0, capacity).map((c) => c.id)));
-  }, [cameras, capacity]);
+    const fill = items.slice(0, capacity).map((c) => c.id);
+    // A specific zone was requested → show that zone's cameras, replacing any
+    // restored wall. Otherwise keep a restored wall and only fill an empty one.
+    setCameraIds((ids) => (zoneId ? fill : ids.length > 0 ? ids : fill));
+  }, [cameras, capacity, zoneId]);
 
   // Focus view: the focused camera plays big; fall back to the first tile when
   // the focused one was removed (or never chosen).
@@ -191,10 +225,21 @@ export function LiveWallPage(): JSX.Element {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="font-heading text-2xl font-semibold text-ink">Live Wall</h1>
-          <p className="mt-1 text-sm text-gray-500">
+          <p className="mt-1 text-sm text-muted">
             {cameraIds.length} of {capacity} cameras ·{' '}
             {view === 'focus' ? 'big player + side list' : 'tile grid'} · low-latency sub-streams
           </p>
+          {zoneId && (
+            <button
+              type="button"
+              onClick={clearZone}
+              aria-label="Clear zone filter"
+              className="mt-2 inline-flex h-7 items-center gap-1.5 rounded-full bg-sage/15 px-3 text-xs font-medium text-sage transition-colors hover:bg-sage/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage"
+            >
+              <span className="truncate max-w-[12rem]">Zone: {activeZoneName ?? 'selected'}</span>
+              <X size={13} />
+            </button>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {/* Grid kind */}
@@ -209,7 +254,7 @@ export function LiveWallPage(): JSX.Element {
               aria-pressed={view === 'focus'}
               className={cn(
                 'rounded-[10px] px-3 py-1.5 text-xs font-medium transition-colors',
-                view === 'focus' ? 'bg-card text-ink shadow-soft' : 'text-gray-500 hover:text-ink'
+                view === 'focus' ? 'bg-card text-ink shadow-soft' : 'text-muted hover:text-ink'
               )}
             >
               Focus
@@ -224,7 +269,7 @@ export function LiveWallPage(): JSX.Element {
                   'rounded-[10px] px-3 py-1.5 text-xs font-medium tabular-nums transition-colors',
                   view === 'grid' && kind === entry
                     ? 'bg-card text-ink shadow-soft'
-                    : 'text-gray-500 hover:text-ink'
+                    : 'text-muted hover:text-ink'
                 )}
               >
                 {KIND_LABEL[entry]}
@@ -334,8 +379,8 @@ export function LiveWallPage(): JSX.Element {
       {/* The wall */}
       {cameraIds.length === 0 ? (
         <div className="rounded-card bg-card p-12 text-center shadow-soft">
-          <VideoOff size={22} strokeWidth={1.5} className="mx-auto text-gray-300" />
-          <p className="mt-3 text-sm text-gray-500">
+          <VideoOff size={22} strokeWidth={1.5} className="mx-auto text-muted" />
+          <p className="mt-3 text-sm text-muted">
             The wall is empty — add cameras with the picker above, or load one of your saved
             layouts.
           </p>
@@ -352,7 +397,7 @@ export function LiveWallPage(): JSX.Element {
               />
             ) : (
               <div className="grid aspect-video place-items-center rounded-tile bg-charcoal/10">
-                <p className="text-xs text-gray-400">
+                <p className="text-xs text-muted">
                   {camerasLoading ? 'Loading…' : 'Camera unavailable'}
                 </p>
               </div>
@@ -363,7 +408,7 @@ export function LiveWallPage(): JSX.Element {
                   <h2 className="truncate font-heading text-lg font-semibold text-ink">
                     {mainCamera.name}
                   </h2>
-                  <p className="mt-0.5 text-xs text-gray-500">
+                  <p className="mt-0.5 text-xs text-muted">
                     <span className="tabular-nums">{mainCamera.cameraCode}</span>
                     {mainCamera.site?.name ? ` · ${mainCamera.site.name}` : ''} · Health{' '}
                     <span className="tabular-nums">{mainCamera.healthScore}</span>/100
@@ -376,11 +421,11 @@ export function LiveWallPage(): JSX.Element {
 
           {/* Side list — click a tile (or its details) to play it in the main player. */}
           <aside className="flex min-w-0 flex-col gap-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted">
               More cameras · {sideIds.length}
             </p>
             {sideIds.length === 0 && (
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-muted">
                 Add cameras with the picker above to build the side list.
               </p>
             )}
@@ -392,14 +437,14 @@ export function LiveWallPage(): JSX.Element {
                     key={id}
                     className="flex items-center justify-between gap-2 rounded-tile bg-charcoal/5 px-3 py-2"
                   >
-                    <p className="text-xs text-gray-400">
+                    <p className="text-xs text-muted">
                       {camerasLoading ? 'Loading…' : 'Camera unavailable'}
                     </p>
                     <button
                       type="button"
                       onClick={() => removeCamera(id)}
                       aria-label="Remove unavailable camera"
-                      className="rounded-full bg-black/10 p-1 text-gray-400 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                      className="rounded-full bg-charcoal/10 p-1 text-muted hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage"
                     >
                       <X size={14} />
                     </button>
@@ -414,7 +459,7 @@ export function LiveWallPage(): JSX.Element {
                       type="button"
                       onClick={() => setFocusedId(id)}
                       aria-label={`Play ${camera.name} in the main player`}
-                      className="absolute inset-0 z-10 rounded-tile transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                      className="absolute inset-0 z-10 rounded-tile transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage"
                     />
                   </div>
                   <button
@@ -422,14 +467,14 @@ export function LiveWallPage(): JSX.Element {
                     onClick={() => setFocusedId(id)}
                     className="min-w-0 flex-1 pt-0.5 text-left focus-visible:outline-none"
                   >
-                    <p className="truncate text-sm font-medium text-ink transition-colors group-hover:text-indigo-600">
+                    <p className="truncate text-sm font-medium text-ink transition-colors group-hover:text-sage">
                       {camera.name}
                     </p>
-                    <p className="mt-0.5 truncate text-xs text-gray-500">
+                    <p className="mt-0.5 truncate text-xs text-muted">
                       <span className="tabular-nums">{camera.cameraCode}</span>
                       {camera.site?.name ? ` · ${camera.site.name}` : ''}
                     </p>
-                    <p className="mt-1 text-[11px] text-gray-500">
+                    <p className="mt-1 text-[11px] text-muted">
                       Health <span className="tabular-nums">{camera.healthScore}</span>/100
                     </p>
                     <CameraStatusBadge status={camera.status} className="mt-1.5" />
@@ -450,14 +495,14 @@ export function LiveWallPage(): JSX.Element {
                 key={id}
                 className="relative grid aspect-video place-items-center rounded-tile bg-charcoal/10"
               >
-                <p className="text-xs text-gray-400">
+                <p className="text-xs text-muted">
                   {camerasLoading ? 'Loading…' : 'Camera unavailable'}
                 </p>
                 <button
                   type="button"
                   onClick={() => removeCamera(id)}
                   aria-label="Remove unavailable camera"
-                  className="absolute right-2 top-2 rounded-full bg-black/10 p-1 text-gray-400 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                  className="absolute right-2 top-2 rounded-full bg-charcoal/10 p-1 text-muted hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage"
                 >
                   <X size={14} />
                 </button>
@@ -467,9 +512,9 @@ export function LiveWallPage(): JSX.Element {
           {Array.from({ length: Math.max(0, capacity - cameraIds.length) }).map((_, index) => (
             <div
               key={`empty-${index}`}
-              className="grid aspect-video place-items-center rounded-tile border border-dashed border-gray-200"
+              className="grid aspect-video place-items-center rounded-tile border border-dashed border-hairline"
             >
-              <p className="text-xs text-gray-300">Empty slot</p>
+              <p className="text-xs text-muted">Empty slot</p>
             </div>
           ))}
         </div>

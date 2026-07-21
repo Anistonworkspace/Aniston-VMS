@@ -50,6 +50,12 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-devpassword123}@postgres:5432/${POSTGRES_DB:-aniston_vms}
       REDIS_URL: redis://redis:6379
+      # Server-side MediaMTX control-API endpoint. The backend must reach the
+      # mediamtx service by its compose hostname; the HLS/WebRTC/RTSP stream URLs
+      # are intentionally left at their localhost defaults because those are handed
+      # to the browser (host-mapped ports). Without this the backend hits its own
+      # localhost:9997 and every Live Wall publish/transcode registration fails.
+      MEDIAMTX_API_URL: http://mediamtx:9997
       NODE_ENV: production
       # Demo/dev stack only: headroom for Playwright E2E runs. The suite drives many
       # data-rich page loads (dashboard/zones/incidents/health) that each fan out to
@@ -84,15 +90,16 @@ services:
       backend:
         condition: service_healthy
 
-  # Optional camera simulator (MediaMTX only — the 6 ffmpeg test-pattern
-  # publishers live in simulator/docker-compose.sim.yml, not here, so this
-  # file's default `docker compose up` behavior is completely unaffected).
-  # Enable with: docker compose -f docker-compose.fullstack.yml --profile sim up -d
+  # MediaMTX RTSP relay + on-demand transcoder. Core playback infra, NOT an
+  # optional sim add-on: the Live Wall pulls each camera's sub-stream through here,
+  # and non-browser codecs (e.g. CAM-007's HEVC) are transcoded to H.264 on demand
+  # (see backend mediamtx.adapter.ts). It therefore starts with the stack — no
+  # 'sim' profile gate. The 6 ffmpeg test-pattern publishers stay optional and live
+  # separately in simulator/docker-compose.sim.yml.
   mediamtx:
-    image: bluenviron/mediamtx:latest
+    image: bluenviron/mediamtx:latest-ffmpeg
     container_name: aniston_vms_mediamtx
     restart: unless-stopped
-    profiles: ['sim']
     ports:
       - '127.0.0.1:8554:8554' # RTSP
       - '127.0.0.1:8888:8888' # HLS
@@ -100,6 +107,14 @@ services:
       - '127.0.0.1:9997:9997' # API
     volumes:
       - ../simulator/mediamtx.yml:/mediamtx.yml:ro
+    healthcheck:
+      # wget ships in the latest-ffmpeg image; the control API answers once the
+      # RTSP server is up, so a 200 here means the relay is ready to accept paths.
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:9997/v3/config/paths/list']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
 volumes:
   postgres_data:

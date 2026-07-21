@@ -163,7 +163,7 @@ function ZoneBody({ zone }: { zone: ZoneOverview }): JSX.Element {
         ) : (
           <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {zone.sites.map((site) => (
-              <div key={site.id} className="rounded-control border border-black/5 bg-canvas p-3">
+              <div key={site.id} className="rounded-control border border-hairline bg-canvas p-3">
                 <div className="flex items-center justify-between gap-2">
                   <p className="truncate font-medium text-ink">{site.name}</p>
                   <span className="shrink-0 text-xs tabular-nums text-muted">
@@ -207,7 +207,7 @@ function ZoneBody({ zone }: { zone: ZoneOverview }): JSX.Element {
           {zone.cameraList.length === 0 ? (
             <p className="mt-4 text-sm text-muted">No cameras in scope for this zone.</p>
           ) : (
-            <ul className="mt-2 divide-y divide-black/5">
+            <ul className="mt-2 divide-y divide-hairline">
               {zone.cameraList.map((cam) => (
                 <li key={cam.id}>
                   <Link
@@ -254,7 +254,7 @@ function ZoneBody({ zone }: { zone: ZoneOverview }): JSX.Element {
               No open incidents in this zone.
             </div>
           ) : (
-            <ul className="mt-2 divide-y divide-black/5">
+            <ul className="mt-2 divide-y divide-hairline">
               {zone.incidents.map((inc) => (
                 <li key={inc.id}>
                   <Link

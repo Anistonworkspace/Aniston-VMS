@@ -22,11 +22,11 @@ export const OSM_RASTER_STYLE: StyleSpecification = {
 /** [lng, lat] — Delhi NCR, the pilot fleet's home; used before any pin exists. */
 export const DELHI_NCR: [number, number] = [77.209, 28.6139];
 
-/** Pin fills matching the CameraStatusBadge palette (600-level tailwind hues). */
+/** Pin fills matching the CameraStatusBadge palette (semantic status tokens). */
 export const STATUS_PIN_COLORS: Record<CameraStatus, string> = {
-  HEALTHY: '#059669',
-  WARNING: '#d97706',
-  CRITICAL: '#dc2626',
-  MAINTENANCE: '#4f46e5',
-  UNKNOWN: '#6b7280',
+  HEALTHY: 'var(--status-healthy)',
+  WARNING: 'var(--status-warning)',
+  CRITICAL: 'var(--status-critical)',
+  MAINTENANCE: 'var(--status-maintenance)',
+  UNKNOWN: 'var(--status-unknown)',
 };

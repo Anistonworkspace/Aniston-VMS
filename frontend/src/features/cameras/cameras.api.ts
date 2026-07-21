@@ -57,6 +57,23 @@ export const camerasApi = api
         ],
       }),
 
+      // DELETE /cameras/:id — hard delete, ADMIN_ROLES only (server-enforced).
+      // Success-only invalidation: return [] when `error` is set so a failed
+      // delete leaves the cached list untouched and the camera stays on screen
+      // (req 7). RTK already skips invalidation for a rejected mutation, but
+      // branching on `error` makes the guarantee explicit and self-documenting
+      // rather than relying on that implicit behaviour.
+      deleteCamera: builder.mutation<void, string>({
+        query: (id) => ({ url: `/cameras/${id}`, method: 'DELETE' }),
+        invalidatesTags: (_result, error, id) =>
+          error
+            ? []
+            : [
+                { type: 'Camera' as const, id },
+                { type: 'Camera' as const, id: 'LIST' },
+              ],
+      }),
+
       // POST /cameras — CR-6 admin/engineer registration. Only the LIST tag is
       // invalidated: the new camera has no health/checks/snapshots rows yet.
       createCamera: builder.mutation<Camera, CreateCameraInput>({
@@ -147,6 +164,7 @@ export const {
   useTestCameraConnectionMutation,
   useListRoutersLiteQuery,
   useUpdateCameraMutation,
+  useDeleteCameraMutation,
   useGetCameraHealthQuery,
   useListCameraChecksQuery,
   useRunCameraCheckMutation,

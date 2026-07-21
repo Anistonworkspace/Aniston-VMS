@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Cctv, Wrench } from 'lucide-react';
+import { Cctv, Trash2, Wrench } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { listItem } from '@/lib/animations';
 import { timeAgo } from '@/features/overview/timeAgo';
@@ -18,9 +18,14 @@ const BAR: Record<CameraStatus, string> = {
 export function CameraCard({
   camera,
   onOpen,
+  selectable = false,
+  onSelect,
 }: {
   camera: Camera;
   onOpen: (id: string) => void;
+  /** In selection mode the card picks the camera for deletion instead of navigating. */
+  selectable?: boolean;
+  onSelect?: (camera: Camera) => void;
 }): JSX.Element {
   const score = Math.max(0, Math.min(100, camera.healthScore));
 
@@ -28,9 +33,22 @@ export function CameraCard({
     <motion.article variants={listItem}>
       <button
         type="button"
-        onClick={() => onOpen(camera.id)}
-        className="w-full rounded-card bg-card p-5 text-left shadow-soft transition-shadow duration-150 hover:shadow-soft-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage"
+        onClick={() => (selectable ? onSelect?.(camera) : onOpen(camera.id))}
+        aria-pressed={selectable ? false : undefined}
+        aria-label={selectable ? `Select ${camera.name} to delete` : undefined}
+        className={cn(
+          'relative w-full rounded-card bg-card p-5 text-left shadow-soft transition-shadow duration-150 hover:shadow-soft-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage',
+          selectable && 'ring-2 ring-coral/40 hover:ring-coral'
+        )}
       >
+        {selectable && (
+          <span
+            aria-hidden
+            className="pointer-events-none absolute -right-2 -top-2 z-10 grid h-6 w-6 place-items-center rounded-full border-2 border-coral bg-card shadow-soft"
+          >
+            <Trash2 size={12} className="text-coral" />
+          </span>
+        )}
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-tile bg-canvas text-ink">
@@ -40,7 +58,7 @@ export function CameraCard({
               <h3 className="truncate font-heading text-sm font-semibold text-ink">
                 {camera.name}
               </h3>
-              <p className="mt-0.5 truncate text-xs text-gray-500">
+              <p className="mt-0.5 truncate text-xs text-tertiary">
                 {camera.cameraCode}
                 {camera.site ? ` · ${camera.site.name}` : ''}
               </p>
@@ -49,7 +67,7 @@ export function CameraCard({
           <CameraStatusBadge status={camera.status} />
         </div>
 
-        <div className="mt-4 flex items-center justify-between gap-2 text-xs text-gray-500">
+        <div className="mt-4 flex items-center justify-between gap-2 text-xs text-tertiary">
           <span>
             Health <span className="font-semibold tabular-nums text-ink">{score}</span>/100
           </span>
@@ -64,7 +82,7 @@ export function CameraCard({
             </span>
           </span>
         </div>
-        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-gray-100">
+        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-canvas">
           <div
             className={cn('h-full rounded-full', BAR[camera.status] ?? BAR.UNKNOWN)}
             style={{ width: `${score}%` }}

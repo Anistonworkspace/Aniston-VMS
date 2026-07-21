@@ -45,8 +45,8 @@ export function IncidentsPanel({ filters, skip, onExport, exporting }: Incidents
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="font-sora text-lg font-semibold text-gray-900">Incidents</h2>
-          <p className="text-xs text-gray-500">
+          <h2 className="font-heading text-lg font-semibold text-ink">Incidents</h2>
+          <p className="text-xs text-muted">
             {data
               ? `${formatDateOnly(data.periodStart)} – ${formatDateOnly(data.periodEnd)} · generated ${formatTimestamp(data.generatedAt)}`
               : 'Detected incidents for the selected scope and date range.'}
@@ -77,7 +77,7 @@ export function IncidentsPanel({ filters, skip, onExport, exporting }: Incidents
       </div>
 
       {skip ? (
-        <Card className="py-10 text-center text-sm text-gray-500">
+        <Card className="py-10 text-center text-sm text-muted">
           Fix the date range above to run this report.
         </Card>
       ) : isLoading ? (
@@ -91,8 +91,8 @@ export function IncidentsPanel({ filters, skip, onExport, exporting }: Incidents
         </div>
       ) : isError ? (
         <Card className="flex flex-col items-center gap-3 py-10 text-center">
-          <AlertTriangle className="h-6 w-6 text-red-400" />
-          <p className="text-sm text-gray-600">{getApiErrorMessage(error)}</p>
+          <AlertTriangle className="h-6 w-6 text-state-critical" />
+          <p className="text-sm text-muted">{getApiErrorMessage(error)}</p>
           <Button
             variant="secondary"
             size="sm"
@@ -103,7 +103,7 @@ export function IncidentsPanel({ filters, skip, onExport, exporting }: Incidents
           </Button>
         </Card>
       ) : !data || data.rows.length === 0 ? (
-        <Card className="py-10 text-center text-sm text-gray-500">
+        <Card className="py-10 text-center text-sm text-muted">
           No incidents for the selected scope.
         </Card>
       ) : (
@@ -139,7 +139,7 @@ export function IncidentsPanel({ filters, skip, onExport, exporting }: Incidents
           <Card padding="none" className="overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
-                <thead className="bg-gray-50/80 text-xs uppercase tracking-wide text-gray-500">
+                <thead className="bg-surface/80 text-xs uppercase tracking-wide text-muted">
                   <tr>
                     <th className="px-4 py-3 font-medium">Incident</th>
                     <th className="px-4 py-3 font-medium">Camera / Site</th>
@@ -151,16 +151,16 @@ export function IncidentsPanel({ filters, skip, onExport, exporting }: Incidents
                     <th className="px-4 py-3 text-right font-medium">Downtime</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-hairline">
                   {data.rows.map((row) => (
-                    <tr key={row.incidentId} className="transition-colors hover:bg-gray-50/60">
+                    <tr key={row.incidentId} className="transition-colors hover:bg-surface/60">
                       <td className="px-4 py-3">
-                        <p className="font-medium text-gray-900">{row.incidentNumber}</p>
-                        <p className="text-xs text-gray-400">{row.type}</p>
+                        <p className="font-medium text-ink">{row.incidentNumber}</p>
+                        <p className="text-xs text-muted">{row.type}</p>
                       </td>
-                      <td className="px-4 py-3 text-gray-600">
+                      <td className="px-4 py-3 text-muted">
                         <p>{row.cameraName ?? '—'}</p>
-                        <p className="text-xs text-gray-400">
+                        <p className="text-xs text-muted">
                           {row.siteName} · {row.zoneName}
                         </p>
                       </td>
@@ -174,14 +174,14 @@ export function IncidentsPanel({ filters, skip, onExport, exporting }: Incidents
                           {INCIDENT_STATUS_LABEL[row.status]}
                         </Badge>
                       </td>
-                      <td className="px-4 py-3 text-gray-600">
+                      <td className="px-4 py-3 text-muted">
                         {row.diagnosis ? DIAGNOSIS_LABEL[row.diagnosis] : '—'}
                       </td>
-                      <td className="px-4 py-3 text-gray-600">
+                      <td className="px-4 py-3 text-muted">
                         {formatTimestamp(row.firstDetectedAt)}
                       </td>
-                      <td className="px-4 py-3 text-gray-600">{formatTimestamp(row.resolvedAt)}</td>
-                      <td className="px-4 py-3 text-right tabular-nums text-gray-600">
+                      <td className="px-4 py-3 text-muted">{formatTimestamp(row.resolvedAt)}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-muted">
                         {formatDurationShort(row.downtimeSeconds)}
                       </td>
                     </tr>

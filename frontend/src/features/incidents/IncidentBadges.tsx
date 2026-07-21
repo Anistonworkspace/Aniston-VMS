@@ -23,7 +23,7 @@ export function IncidentStatusChip({
     <span
       className={cn(
         'inline-flex shrink-0 items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
-        STATUS_CHIP[status] ?? 'bg-gray-100 text-gray-600',
+        STATUS_CHIP[status] ?? 'bg-surface text-muted',
         className
       )}
     >

@@ -4,11 +4,11 @@ import { cn } from '@/lib/utils';
 type StatTone = 'default' | 'success' | 'warning' | 'danger' | 'info';
 
 const iconToneMap: Record<StatTone, string> = {
-  default: 'bg-gray-100 text-gray-600',
-  success: 'bg-emerald-100 text-emerald-600',
-  warning: 'bg-amber-100 text-amber-600',
-  danger: 'bg-red-100 text-red-600',
-  info: 'bg-sky-100 text-sky-600',
+  default: 'bg-state-unknown-soft text-state-unknown',
+  success: 'bg-state-healthy-soft text-state-healthy',
+  warning: 'bg-state-warning-soft text-state-warning',
+  danger: 'bg-state-critical-soft text-state-critical',
+  info: 'bg-state-maintenance-soft text-state-maintenance',
 };
 
 interface StatCardProps {
@@ -34,9 +34,9 @@ export function StatCard({ label, value, icon, hint, tone = 'default' }: StatCar
         </div>
       )}
       <div className="min-w-0 flex-1">
-        <p className="truncate text-xs font-medium text-gray-500">{label}</p>
-        <p className="font-sora text-xl font-semibold text-gray-900">{value}</p>
-        {hint && <p className="mt-0.5 truncate text-xs text-gray-400">{hint}</p>}
+        <p className="truncate text-xs font-medium text-muted">{label}</p>
+        <p className="font-heading text-xl font-semibold text-ink">{value}</p>
+        {hint && <p className="mt-0.5 truncate text-xs text-muted">{hint}</p>}
       </div>
     </Card>
   );

@@ -32,16 +32,16 @@ export function GeneratedReportsPanel({ reports, onClear }: GeneratedReportsPane
       </CardHeader>
 
       {reports.length === 0 ? (
-        <p className="py-6 text-center text-sm text-gray-500">
+        <p className="py-6 text-center text-sm text-muted">
           No reports generated yet — use “Export XLSX” / “Export PDF” above.
         </p>
       ) : (
-        <ul className="divide-y divide-gray-100">
+        <ul className="divide-y divide-hairline">
           {reports.map((r) => {
             const FormatIcon = r.format === 'xlsx' ? FileSpreadsheet : FileText;
             return (
               <li key={r.id} className="flex items-center gap-3 py-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-500">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-hairline text-muted">
                   {r.status === 'PROCESSING' ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
@@ -49,20 +49,20 @@ export function GeneratedReportsPanel({ reports, onClear }: GeneratedReportsPane
                   )}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-gray-900">
+                  <p className="truncate text-sm font-medium text-ink">
                     {r.type === 'uptime' ? 'Uptime' : 'Incidents'} report ·{' '}
-                    <span className="uppercase text-gray-500">{r.format}</span>
+                    <span className="uppercase text-muted">{r.format}</span>
                   </p>
-                  <p className="truncate text-xs text-gray-500">{r.filtersSummary}</p>
+                  <p className="truncate text-xs text-muted">{r.filtersSummary}</p>
                   {r.status === 'FAILED' && r.errorMessage && (
-                    <p className="truncate text-xs text-red-500">{r.errorMessage}</p>
+                    <p className="truncate text-xs text-state-critical">{r.errorMessage}</p>
                   )}
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1.5">
                   <Badge variant={GENERATED_REPORT_STATUS_BADGE_VARIANT[r.status]} size="sm">
                     {GENERATED_REPORT_STATUS_LABEL[r.status]}
                   </Badge>
-                  <span className="text-xs text-gray-400">{formatTimestamp(r.requestedAt)}</span>
+                  <span className="text-xs text-muted">{formatTimestamp(r.requestedAt)}</span>
                 </div>
                 {r.status === 'READY' && r.downloadUrl && (
                   <Button

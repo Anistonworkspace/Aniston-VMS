@@ -136,8 +136,8 @@ export function ClipsPage(): JSX.Element {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="font-sora text-2xl font-semibold text-gray-900">Clips</h1>
-          <p className="mt-1 text-sm text-gray-500">
+          <h1 className="font-heading text-2xl font-semibold text-primary">Clips</h1>
+          <p className="mt-1 text-sm text-tertiary">
             Export short clips from recorded footage. Downloads expire after {CLIP_RETENTION_DAYS}{' '}
             days.
           </p>
@@ -194,7 +194,7 @@ export function ClipsPage(): JSX.Element {
       </div>
 
       {/* List */}
-      <div className="rounded-2xl border border-white/30 bg-white/60 backdrop-blur-md shadow-glass">
+      <div className="rounded-2xl border border-hairline bg-card shadow-soft">
         {isLoading && (
           <div className="p-4">
             <SkeletonTable rows={6} />
@@ -203,7 +203,7 @@ export function ClipsPage(): JSX.Element {
 
         {isError && (
           <div className="flex flex-col items-center gap-3 py-16 text-center">
-            <p className="text-sm text-red-600">{getApiErrorMessage(error)}</p>
+            <p className="text-sm text-negative">{getApiErrorMessage(error)}</p>
             <Button variant="secondary" size="sm" onClick={() => refetch()}>
               Try again
             </Button>
@@ -212,9 +212,9 @@ export function ClipsPage(): JSX.Element {
 
         {!isLoading && !isError && (clips ?? []).length === 0 && (
           <div className="flex flex-col items-center gap-2 py-16 text-center">
-            <Film className="h-8 w-8 text-gray-300" />
-            <p className="text-sm font-medium text-gray-700">No clips yet</p>
-            <p className="text-xs text-gray-500">
+            <Film className="h-8 w-8 text-muted" />
+            <p className="text-sm font-medium text-secondary">No clips yet</p>
+            <p className="text-xs text-tertiary">
               {canExport
                 ? 'Queue your first export with “New clip”.'
                 : 'Operators can export clips from recorded footage.'}
@@ -226,7 +226,7 @@ export function ClipsPage(): JSX.Element {
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead>
-                <tr className="text-xs uppercase tracking-wide text-gray-500">
+                <tr className="text-xs uppercase tracking-wide text-tertiary">
                   <th className="px-4 py-3 font-medium">Camera</th>
                   <th className="px-4 py-3 font-medium">Window</th>
                   <th className="px-4 py-3 font-medium">Size</th>
@@ -241,32 +241,32 @@ export function ClipsPage(): JSX.Element {
                   return (
                     <tr
                       key={clip.id}
-                      className="border-t border-gray-100/80 transition-colors hover:bg-white/50"
+                      className="border-t border-hairline transition-colors hover:bg-surface"
                     >
                       <td className="px-4 py-3">
-                        <p className="text-sm font-medium text-gray-900">
+                        <p className="text-sm font-medium text-ink">
                           {camera?.name ?? 'Unknown camera'}
                         </p>
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-tertiary">
                           {camera?.cameraCode ?? clip.cameraId.slice(0, 8)}
                         </p>
                       </td>
                       <td className="whitespace-nowrap px-4 py-3">
-                        <p className="text-sm text-gray-700">
+                        <p className="text-sm text-secondary">
                           {formatWindow(clip.startAt, clip.endAt)}
                         </p>
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-tertiary">
                           {durationMinutes(clip.startAt, clip.endAt)} min
                         </p>
                       </td>
-                      <td className="px-4 py-3 text-sm tabular-nums text-gray-700">
+                      <td className="px-4 py-3 text-sm tabular-nums text-secondary">
                         {formatBytes(clip.sizeBytes)}
                       </td>
                       <td className="px-4 py-3">
                         <ClipStatusBadge status={clip.status} />
                         {clip.status === 'FAILED' && clip.error && (
                           <p
-                            className="mt-1 max-w-[16rem] truncate text-xs text-red-500"
+                            className="mt-1 max-w-[16rem] truncate text-xs text-negative"
                             title={clip.error}
                           >
                             {clip.error}
@@ -275,13 +275,13 @@ export function ClipsPage(): JSX.Element {
                         {clip.incidentId && (
                           <Link
                             to={`/incidents/${clip.incidentId}`}
-                            className="mt-1 block text-xs text-indigo-600 hover:underline"
+                            className="mt-1 block text-xs text-indigo hover:underline"
                           >
                             View incident
                           </Link>
                         )}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-xs text-gray-500">
+                      <td className="whitespace-nowrap px-4 py-3 text-xs text-tertiary">
                         {timeAgo(clip.createdAt)}
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -289,13 +289,13 @@ export function ClipsPage(): JSX.Element {
                           <a
                             href={clip.downloadUrl}
                             download
-                            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/40 bg-white/70 px-3.5 text-sm font-medium text-gray-800 shadow-glass backdrop-blur-sm transition-colors hover:bg-white/90"
+                            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-hairline bg-card px-3.5 text-sm font-medium text-ink shadow-soft transition-colors hover:bg-surface"
                           >
                             <Download className="h-3.5 w-3.5" />
                             Download
                           </a>
                         ) : (
-                          <span className="text-xs text-gray-400">—</span>
+                          <span className="text-xs text-muted">—</span>
                         )}
                       </td>
                     </tr>

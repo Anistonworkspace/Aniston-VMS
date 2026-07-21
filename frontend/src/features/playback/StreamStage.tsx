@@ -115,7 +115,7 @@ export function StreamStage({ camera, kind, playbackRange }: StreamStageProps) {
 
   if (needsRange && !playbackRange) {
     return (
-      <div className="flex aspect-video w-full items-center justify-center rounded-2xl border border-dashed border-gray-300 bg-gray-50 text-sm text-gray-400">
+      <div className="flex aspect-video w-full items-center justify-center rounded-2xl border border-dashed border-hairline bg-surface text-sm text-muted">
         <Rewind className="mr-2 h-4 w-4" />
         Select a range on the recording timeline below to start playback
       </div>
@@ -128,7 +128,7 @@ export function StreamStage({ camera, kind, playbackRange }: StreamStageProps) {
 
   if (startError) {
     return (
-      <div className="flex aspect-video w-full flex-col items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 text-center text-sm text-red-600">
+      <div className="flex aspect-video w-full flex-col items-center justify-center gap-2 rounded-2xl border border-state-critical/30 bg-state-critical-soft px-4 text-center text-sm text-state-critical">
         <AlertTriangle className="h-5 w-5" />
         {startError}
       </div>
@@ -139,14 +139,14 @@ export function StreamStage({ camera, kind, playbackRange }: StreamStageProps) {
 
   return (
     <div className="space-y-2">
-      <div className="relative aspect-video w-full overflow-hidden rounded-2xl bg-gray-900">
+      <div className="relative aspect-video w-full overflow-hidden rounded-2xl bg-charcoal">
         {session.simMode || videoFailed ? (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-gray-300">
-            <Video className="h-10 w-10 text-gray-500" />
-            <p className="text-sm font-medium text-gray-200">
+          <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-white/70">
+            <Video className="h-10 w-10 text-white/40" />
+            <p className="text-sm font-medium text-white">
               Simulated feed — no live media server connected
             </p>
-            <p className="max-w-sm text-center text-xs text-gray-500">
+            <p className="max-w-sm text-center text-xs text-white/60">
               {camera.cameraCode} · {session.mediamtxPath}
             </p>
           </div>
@@ -177,13 +177,13 @@ export function StreamStage({ camera, kind, playbackRange }: StreamStageProps) {
           )}
         </div>
         <div className="absolute right-3 top-3">
-          <Badge variant="default" size="sm" className="bg-black/50 text-gray-200">
+          <Badge variant="default" size="sm" className="bg-charcoal/50 text-white">
             <RadioTower className="mr-1 h-3 w-3" />
             {camera.cameraCode}
           </Badge>
         </div>
       </div>
-      <p className={cn('text-xs text-gray-400')}>
+      <p className={cn('text-xs text-muted')}>
         Session {session.id.slice(0, 8)} · started{' '}
         {new Date(session.startedAt).toLocaleTimeString()}
       </p>

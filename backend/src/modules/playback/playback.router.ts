@@ -14,6 +14,7 @@ import {
   startSessionBodySchema,
 } from './playback.schemas.js';
 import * as playbackService from './playback.service.js';
+import { setMediaAuthCookies, clearMediaAuthCookies } from './media-auth.router.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Playback / live-view session API (mounted at /api):
@@ -44,6 +45,9 @@ playbackRouter.post(
       entityId: data.id,
       newValue: { cameraId: body.cameraId, kind: body.kind },
     });
+    // Mint the HttpOnly media-auth cookie so the browser can fetch every HLS/WHEP
+    // child request under this session's path prefix (see media-auth.router.ts).
+    setMediaAuthCookies(res, data.mediamtxPath);
     res.status(201).json({ success: true, data });
   })
 );
@@ -64,6 +68,8 @@ playbackRouter.get(
   validateRequest({ params: sessionIdParamsSchema }),
   asyncHandler(async (req, res) => {
     const data = await playbackService.getSession(authUser(req), req.params.id);
+    // Refresh the cookie on poll/reconnect so a live view never expires mid-play.
+    if (!data.endedAt) setMediaAuthCookies(res, data.mediamtxPath);
     res.json({ success: true, data });
   })
 );
@@ -98,6 +104,9 @@ playbackRouter.post(
       entityId: req.params.id,
       newValue: { reason: body.reason ?? null },
     });
+    // Best-effort cookie clear; the DB endedAt check in /api/media/authorize is
+    // the authoritative gate (a stale cookie can no longer authorize a dead session).
+    clearMediaAuthCookies(res, data.mediamtxPath);
     res.json({ success: true, data });
   })
 );

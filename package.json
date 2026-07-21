@@ -26,6 +26,7 @@
     "db:migrate": "prisma migrate dev --schema=prisma/schema.prisma",
     "db:push": "prisma db push --schema=prisma/schema.prisma",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed:admin": "tsx prisma/seed-admin.ts",
     "db:studio": "prisma studio --schema=prisma/schema.prisma",
     "demo:media": "node scripts/import-demo-media.mjs",
     "demo": "npm run db:seed && npm run demo:media",

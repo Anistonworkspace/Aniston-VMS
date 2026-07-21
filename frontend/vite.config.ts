@@ -55,6 +55,20 @@ export default defineConfig({
     proxy: {
       '/api': { target: 'http://localhost:4000', changeOrigin: true },
       '/socket.io': { target: 'http://localhost:4000', ws: true, changeOrigin: true },
+      // Dev media proxy — same-origin /media/* → local MediaMTX (HLS 8888,
+      // WebRTC 8889). Production uses nginx with auth_request (frontend/nginx.conf);
+      // this dev shortcut does not enforce the media token.
+      '/media/hls': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/media\/hls/, ''),
+      },
+      '/media/webrtc': {
+        target: 'http://localhost:8889',
+        changeOrigin: true,
+        ws: true,
+        rewrite: (p) => p.replace(/^\/media\/webrtc/, ''),
+      },
     },
   },
   build: {

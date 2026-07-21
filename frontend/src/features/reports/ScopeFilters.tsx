@@ -162,13 +162,13 @@ export function ScopeFilters({
         )}
       </div>
       {rangeError && (
-        <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-red-500">
+        <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-state-critical">
           <AlertTriangle className="h-3.5 w-3.5" />
           {rangeError}
         </p>
       )}
       {!rangeError && rangeWarning && (
-        <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-amber-500">
+        <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-state-warning">
           <AlertTriangle className="h-3.5 w-3.5" />
           {rangeWarning}
         </p>

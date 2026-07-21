@@ -32,7 +32,7 @@ function formatDowntime(seconds: number): string {
 function Detail({ label, value }: { label: string; value?: string }): JSX.Element {
   return (
     <div>
-      <dt className="text-xs text-gray-500">{label}</dt>
+      <dt className="text-xs text-muted">{label}</dt>
       <dd className="mt-0.5 text-sm text-ink">{value || '—'}</dd>
     </div>
   );
@@ -58,12 +58,12 @@ function EvidenceTile({
             className="h-full w-full object-cover"
           />
         ) : (
-          <div className="grid h-full w-full place-items-center text-gray-400">
+          <div className="grid h-full w-full place-items-center text-muted">
             <ImageOff size={20} strokeWidth={1.5} />
           </div>
         )}
       </div>
-      <figcaption className="mt-1.5 text-xs text-gray-500">
+      <figcaption className="mt-1.5 text-xs text-muted">
         {label}
         {evidence ? ` · ${timeAgo(evidence.capturedAt)}` : ' · not captured'}
       </figcaption>
@@ -72,7 +72,7 @@ function EvidenceTile({
 }
 
 const textareaClass =
-  'w-full rounded-lg border border-gray-200 bg-white/70 p-3 text-sm text-gray-900 backdrop-blur-sm placeholder:text-gray-400 transition-colors hover:border-gray-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500';
+  'w-full rounded-lg border border-hairline bg-card p-3 text-sm text-ink placeholder:text-muted transition-colors hover:border-hairline focus:border-sage focus:outline-none focus:ring-2 focus:ring-sage';
 
 export interface IncidentDetailDrawerProps {
   incidentId: string | null;
@@ -223,7 +223,7 @@ export function IncidentDetailDrawer({
               <SeverityBadge severity={incident.severity} />
               <IncidentStatusChip status={incident.status} />
             </div>
-            <p className="mt-0.5 truncate text-xs text-gray-500">{prettyEnum(incident.type)}</p>
+            <p className="mt-0.5 truncate text-xs text-muted">{prettyEnum(incident.type)}</p>
           </div>
         ) : (
           <Skeleton variant="line" width="50%" />
@@ -232,7 +232,7 @@ export function IncidentDetailDrawer({
     >
       {error ? (
         <div className="rounded-card bg-card p-8 text-center shadow-soft">
-          <p className="text-sm text-gray-600">{getApiErrorMessage(error)}</p>
+          <p className="text-sm text-muted">{getApiErrorMessage(error)}</p>
           <Button variant="secondary" size="sm" className="mt-4" onClick={() => refetch()}>
             Try again
           </Button>
@@ -314,7 +314,7 @@ export function IncidentDetailDrawer({
                 value={assigneeId}
                 onChange={(event) => setAssigneeId(event.target.value)}
                 aria-label="Choose assignee"
-                className="h-9 min-w-0 flex-1 rounded-lg border border-gray-200 bg-white/70 px-3 text-sm text-gray-900 backdrop-blur-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="h-9 min-w-0 flex-1 rounded-lg border border-hairline bg-card px-3 text-sm text-ink focus:border-sage focus:outline-none focus:ring-2 focus:ring-sage"
               >
                 <option value="">Assign to…</option>
                 {users.items.map((candidate) => (
@@ -351,7 +351,7 @@ export function IncidentDetailDrawer({
               <div className="w-full space-y-1.5">
                 <label
                   htmlFor="resolution-notes"
-                  className="block text-sm font-medium text-gray-700"
+                  className="block text-sm font-medium text-muted"
                 >
                   Resolution notes
                 </label>
@@ -431,20 +431,20 @@ export function IncidentDetailDrawer({
                 <li key={event.id} className="relative flex gap-3 pb-4 last:pb-0">
                   {index < incident.events.length - 1 && (
                     <span
-                      className="absolute left-[5px] top-4 h-full w-px bg-gray-200"
+                      className="absolute left-[5px] top-4 h-full w-px bg-hairline"
                       aria-hidden
                     />
                   )}
                   <span
                     className={cn(
                       'relative mt-1.5 h-[11px] w-[11px] shrink-0 rounded-full border-2 border-card',
-                      event.actor === 'system' ? 'bg-gray-300' : 'bg-indigo-400'
+                      event.actor === 'system' ? 'bg-hairline' : 'bg-sage'
                     )}
                     aria-hidden
                   />
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-ink">{prettyEnum(event.event)}</p>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-muted">
                       {event.actor === 'system' || !event.actor ? 'System' : event.actor} ·{' '}
                       {timeAgo(event.createdAt)}
                     </p>
@@ -467,10 +467,10 @@ export function IncidentDetailDrawer({
                     className="flex items-center gap-2.5 rounded-lg bg-card px-3 py-2 text-xs shadow-soft"
                   >
                     <span className="font-medium text-ink">{prettyEnum(notification.channel)}</span>
-                    <span className="min-w-0 flex-1 truncate text-gray-500">
+                    <span className="min-w-0 flex-1 truncate text-muted">
                       {notification.recipient}
                     </span>
-                    <span className="shrink-0 text-gray-400">
+                    <span className="shrink-0 text-muted">
                       {prettyEnum(notification.status)} · {timeAgo(notification.createdAt)}
                     </span>
                   </li>

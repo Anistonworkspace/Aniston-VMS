@@ -46,22 +46,22 @@ export function CameraPicker({ value, onChange }: CameraPickerProps) {
         <button
           type="button"
           className={cn(
-            'inline-flex h-9 min-w-[220px] items-center justify-between gap-2 rounded-lg border border-gray-200',
-            'bg-white/70 px-3.5 text-sm text-gray-900 shadow-sm backdrop-blur-sm hover:border-gray-300'
+            'inline-flex h-9 min-w-[220px] items-center justify-between gap-2 rounded-lg border border-hairline',
+            'bg-card px-3.5 text-sm text-ink shadow-sm hover:border-hairline'
           )}
         >
           <span className="inline-flex items-center gap-2 truncate">
-            <Video className="h-4 w-4 text-gray-400" />
+            <Video className="h-4 w-4 text-muted" />
             {value ? (
               <span className="truncate">
                 <span className="font-medium">{value.cameraCode}</span>
-                <span className="ml-1.5 text-gray-500">{value.name}</span>
+                <span className="ml-1.5 text-muted">{value.name}</span>
               </span>
             ) : (
-              <span className="text-gray-400">Select a camera…</span>
+              <span className="text-muted">Select a camera…</span>
             )}
           </span>
-          <ChevronDown className="h-4 w-4 shrink-0 text-gray-400" />
+          <ChevronDown className="h-4 w-4 shrink-0 text-muted" />
         </button>
       }
     >
@@ -81,7 +81,7 @@ export function CameraPicker({ value, onChange }: CameraPickerProps) {
               ))}
             </div>
           ) : isError ? (
-            <p className="px-2 py-3 text-sm text-red-500">{getApiErrorMessage(error)}</p>
+            <p className="px-2 py-3 text-sm text-coral">{getApiErrorMessage(error)}</p>
           ) : data && data.items.length > 0 ? (
             <ul className="space-y-0.5">
               {data.items.map((camera) => {
@@ -95,13 +95,13 @@ export function CameraPicker({ value, onChange }: CameraPickerProps) {
                       className={cn(
                         'flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors',
                         selected
-                          ? 'bg-indigo-50 text-indigo-700'
-                          : 'hover:bg-gray-100/70 text-gray-800'
+                          ? 'bg-sage-soft text-sage'
+                          : 'hover:bg-surface text-ink'
                       )}
                     >
                       <span className="min-w-0 truncate">
                         <span className="font-medium">{camera.cameraCode}</span>
-                        <span className="ml-1.5 text-gray-500">{camera.name}</span>
+                        <span className="ml-1.5 text-muted">{camera.name}</span>
                       </span>
                       <Badge variant={badge.variant} size="sm" className="shrink-0">
                         {badge.label}
@@ -110,10 +110,10 @@ export function CameraPicker({ value, onChange }: CameraPickerProps) {
                   </li>
                 );
               })}
-              {isFetching && <li className="px-2.5 py-1 text-xs text-gray-400">Refreshing…</li>}
+              {isFetching && <li className="px-2.5 py-1 text-xs text-muted">Refreshing…</li>}
             </ul>
           ) : (
-            <p className="px-2 py-3 text-sm text-gray-500">No cameras match “{debounced}”.</p>
+            <p className="px-2 py-3 text-sm text-muted">No cameras match “{debounced}”.</p>
           )}
         </div>
       </div>

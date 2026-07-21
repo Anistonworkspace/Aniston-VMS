@@ -81,7 +81,7 @@ export function QualityTrendPanel({ cameras }: { cameras: CameraHealthRow[] }): 
               disabled={cameras.length === 0}
             />
           </div>
-          <div className="flex rounded-lg border border-gray-200 bg-white/70 p-0.5">
+          <div className="flex rounded-lg border border-hairline bg-card/70 p-0.5">
             {QUALITY_RANGE_OPTIONS.map((option) => (
               <button
                 key={option.hours}
@@ -90,8 +90,8 @@ export function QualityTrendPanel({ cameras }: { cameras: CameraHealthRow[] }): 
                 className={cn(
                   'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
                   hours === option.hours
-                    ? 'bg-indigo-600 text-white'
-                    : 'text-gray-600 hover:bg-gray-100'
+                    ? 'bg-indigo text-white'
+                    : 'text-muted hover:bg-hairline'
                 )}
               >
                 {option.label}
@@ -102,13 +102,13 @@ export function QualityTrendPanel({ cameras }: { cameras: CameraHealthRow[] }): 
       </CardHeader>
 
       {!cameraId ? (
-        <p className="py-10 text-center text-sm text-gray-500">No cameras in scope.</p>
+        <p className="py-10 text-center text-sm text-muted">No cameras in scope.</p>
       ) : error ? (
-        <p className="py-10 text-center text-sm text-red-600">{getApiErrorMessage(error)}</p>
+        <p className="py-10 text-center text-sm text-state-critical">{getApiErrorMessage(error)}</p>
       ) : isFetching && points.length === 0 ? (
         <Skeleton className="h-64 w-full rounded-xl" />
       ) : points.length === 0 ? (
-        <p className="py-10 text-center text-sm text-gray-500">
+        <p className="py-10 text-center text-sm text-muted">
           No quality samples recorded for this window yet.
         </p>
       ) : (
@@ -116,11 +116,11 @@ export function QualityTrendPanel({ cameras }: { cameras: CameraHealthRow[] }): 
           <div className="h-72 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={points} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <CartesianGrid strokeDasharray="3 3" stroke="#d3e0ed" />
                 <XAxis
                   dataKey="hour"
                   tickFormatter={(value: string) => tickFmt.format(new Date(value))}
-                  tick={{ fontSize: 11, fill: '#9ca3af' }}
+                  tick={{ fontSize: 11, fill: '#68778d' }}
                   minTickGap={24}
                 />
                 <YAxis
@@ -128,14 +128,14 @@ export function QualityTrendPanel({ cameras }: { cameras: CameraHealthRow[] }): 
                   domain={[0, 100]}
                   unit="%"
                   width={44}
-                  tick={{ fontSize: 11, fill: '#9ca3af' }}
+                  tick={{ fontSize: 11, fill: '#68778d' }}
                 />
                 <YAxis
                   yAxisId="ms"
                   orientation="right"
                   unit="ms"
                   width={52}
-                  tick={{ fontSize: 11, fill: '#9ca3af' }}
+                  tick={{ fontSize: 11, fill: '#68778d' }}
                 />
                 <Tooltip labelFormatter={(value) => dayHourFmt.format(new Date(String(value)))} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
@@ -144,8 +144,8 @@ export function QualityTrendPanel({ cameras }: { cameras: CameraHealthRow[] }): 
                   type="monotone"
                   dataKey="successPct"
                   name="Success rate"
-                  stroke="#6366f1"
-                  fill="#6366f1"
+                  stroke="#168c8c"
+                  fill="#168c8c"
                   fillOpacity={0.12}
                   strokeWidth={2}
                   dot={false}
@@ -155,7 +155,7 @@ export function QualityTrendPanel({ cameras }: { cameras: CameraHealthRow[] }): 
                   type="monotone"
                   dataKey="latencyMs"
                   name="Median latency"
-                  stroke="#f59e0b"
+                  stroke="#e2a93b"
                   strokeWidth={1.5}
                   dot={false}
                 />
@@ -164,7 +164,7 @@ export function QualityTrendPanel({ cameras }: { cameras: CameraHealthRow[] }): 
                   type="monotone"
                   dataKey="jitterMs"
                   name="Jitter"
-                  stroke="#94a3b8"
+                  stroke="#68778d"
                   strokeWidth={1.5}
                   strokeDasharray="4 3"
                   dot={false}
@@ -173,7 +173,7 @@ export function QualityTrendPanel({ cameras }: { cameras: CameraHealthRow[] }): 
             </ResponsiveContainer>
           </div>
           {minSignal !== null && (
-            <p className="mt-2 text-xs text-gray-500">
+            <p className="mt-2 text-xs text-muted">
               Weakest SIM signal in window: {minSignal} dBm
             </p>
           )}

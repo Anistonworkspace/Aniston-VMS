@@ -34,7 +34,7 @@ import { AccountMenu } from './AccountMenu';
 // "Add camera" card (admin) or platform-health chip.
 const ITEM_BASE =
   'flex w-full items-center gap-2.5 rounded-control px-3 py-1.5 text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage';
-const ITEM_INACTIVE = 'text-sidebar-muted hover:bg-white/5 hover:text-sidebar-text';
+const ITEM_INACTIVE = 'text-sidebar-muted hover:bg-white/60 hover:text-sidebar-text';
 
 const ZONE_DOT: Record<ZoneState, string> = {
   healthy: 'bg-state-healthy',
@@ -61,7 +61,7 @@ export function Sidebar(): JSX.Element {
         <span className="grid h-7 w-7 place-items-center rounded-full bg-sage">
           <Cctv size={16} strokeWidth={1.5} className="text-white" />
         </span>
-        <span className="font-heading text-md font-semibold text-white">Aniston VMS</span>
+        <span className="font-heading text-md font-semibold text-ink">Aniston VMS</span>
       </div>
 
       {/* Nav */}
@@ -72,7 +72,7 @@ export function Sidebar(): JSX.Element {
         <NavLink
           to="/"
           className={({ isActive }) =>
-            cn(ITEM_BASE, isActive ? 'bg-white/10 text-white' : ITEM_INACTIVE)
+            cn(ITEM_BASE, isActive ? 'bg-white text-sage shadow-soft' : ITEM_INACTIVE)
           }
         >
           <LayoutDashboard size={18} strokeWidth={1.5} />
@@ -81,7 +81,7 @@ export function Sidebar(): JSX.Element {
         <NavLink
           to="/live"
           className={({ isActive }) =>
-            cn(ITEM_BASE, isActive ? 'bg-white/10 text-white' : ITEM_INACTIVE)
+            cn(ITEM_BASE, isActive ? 'bg-white text-sage shadow-soft' : ITEM_INACTIVE)
           }
         >
           <MonitorPlay size={18} strokeWidth={1.5} />
@@ -90,7 +90,7 @@ export function Sidebar(): JSX.Element {
         <NavLink
           to="/cameras"
           className={({ isActive }) =>
-            cn(ITEM_BASE, isActive ? 'bg-white/10 text-white' : ITEM_INACTIVE)
+            cn(ITEM_BASE, isActive ? 'bg-white text-sage shadow-soft' : ITEM_INACTIVE)
           }
         >
           <Cctv size={18} strokeWidth={1.5} />
@@ -99,7 +99,7 @@ export function Sidebar(): JSX.Element {
         <NavLink
           to="/incidents"
           className={({ isActive }) =>
-            cn(ITEM_BASE, isActive ? 'bg-white/10 text-white' : ITEM_INACTIVE)
+            cn(ITEM_BASE, isActive ? 'bg-white text-sage shadow-soft' : ITEM_INACTIVE)
           }
         >
           <AlertTriangle size={18} strokeWidth={1.5} />
@@ -130,14 +130,14 @@ export function Sidebar(): JSX.Element {
             {zonesLoading &&
               [0, 1, 2].map((i) => (
                 <li key={i} className="px-3 py-1">
-                  <Skeleton variant="line" width="70%" height={10} className="bg-white/10" />
+                  <Skeleton variant="line" width="70%" height={10} className="bg-white/60" />
                 </li>
               ))}
             {zones?.map((zone) => (
               <li key={zone.id}>
                 <Link
                   to={`/zones/${zone.id}`}
-                  className="flex w-full items-center gap-2.5 rounded-control px-3 py-1 text-sm text-sidebar-muted transition-colors duration-150 hover:bg-white/5 hover:text-sidebar-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage"
+                  className="flex w-full items-center gap-2.5 rounded-control px-3 py-1 text-sm text-sidebar-muted transition-colors duration-150 hover:bg-white/60 hover:text-sidebar-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage"
                 >
                   <span
                     className={cn('h-2 w-2 shrink-0 rounded-full', ZONE_DOT[zone.state])}
@@ -153,7 +153,7 @@ export function Sidebar(): JSX.Element {
         <NavLink
           to="/analytics"
           className={({ isActive }) =>
-            cn(ITEM_BASE, isActive ? 'bg-white/10 text-white' : ITEM_INACTIVE)
+            cn(ITEM_BASE, isActive ? 'bg-white text-sage shadow-soft' : ITEM_INACTIVE)
           }
         >
           <BarChart3 size={18} strokeWidth={1.5} />
@@ -162,7 +162,7 @@ export function Sidebar(): JSX.Element {
         <NavLink
           to="/clips"
           className={({ isActive }) =>
-            cn(ITEM_BASE, isActive ? 'bg-white/10 text-white' : ITEM_INACTIVE)
+            cn(ITEM_BASE, isActive ? 'bg-white text-sage shadow-soft' : ITEM_INACTIVE)
           }
         >
           <Film size={18} strokeWidth={1.5} />
@@ -171,7 +171,7 @@ export function Sidebar(): JSX.Element {
         <NavLink
           to="/reports"
           className={({ isActive }) =>
-            cn(ITEM_BASE, isActive ? 'bg-white/10 text-white' : ITEM_INACTIVE)
+            cn(ITEM_BASE, isActive ? 'bg-white text-sage shadow-soft' : ITEM_INACTIVE)
           }
         >
           <FileText size={18} strokeWidth={1.5} />
@@ -181,7 +181,7 @@ export function Sidebar(): JSX.Element {
           <NavLink
             to="/admin"
             className={({ isActive }) =>
-              cn(ITEM_BASE, isActive ? 'bg-white/10 text-white' : ITEM_INACTIVE)
+              cn(ITEM_BASE, isActive ? 'bg-white text-sage shadow-soft' : ITEM_INACTIVE)
             }
           >
             <ShieldCheck size={18} strokeWidth={1.5} />
@@ -191,7 +191,7 @@ export function Sidebar(): JSX.Element {
         <NavLink
           to="/settings"
           className={({ isActive }) =>
-            cn(ITEM_BASE, isActive ? 'bg-white/10 text-white' : ITEM_INACTIVE)
+            cn(ITEM_BASE, isActive ? 'bg-white text-sage shadow-soft' : ITEM_INACTIVE)
           }
         >
           <Settings size={18} strokeWidth={1.5} />
@@ -203,7 +203,7 @@ export function Sidebar(): JSX.Element {
           CR-1: no add-camera card in the sidebar; the profile block lives here
           so it is reachable from every page. */}
       <div className="space-y-2 px-4 pb-6">
-        <div className="flex items-center gap-2 rounded-tile bg-white/10 p-3 text-xs text-sidebar-muted">
+        <div className="flex items-center gap-2 rounded-tile bg-white/60 p-3 text-xs text-sidebar-muted">
           <HeartPulse
             size={16}
             strokeWidth={1.5}

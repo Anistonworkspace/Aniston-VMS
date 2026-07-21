@@ -62,7 +62,7 @@ export function ClipList({ cameraId }: ClipListProps) {
 
   if (isError) {
     return (
-      <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-6 text-center text-sm text-red-600">
+      <div className="rounded-xl border border-state-critical/30 bg-state-critical-soft px-4 py-6 text-center text-sm text-state-critical">
         {getApiErrorMessage(error)}
       </div>
     );
@@ -70,7 +70,7 @@ export function ClipList({ cameraId }: ClipListProps) {
 
   if (!data || data.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-8 text-center text-sm text-gray-400">
+      <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-hairline bg-surface px-4 py-8 text-center text-sm text-muted">
         <FileVideo className="h-6 w-6" />
         No clips yet — select a range on the timeline above and request an export.
       </div>
@@ -84,14 +84,14 @@ export function ClipList({ cameraId }: ClipListProps) {
         return (
           <li
             key={clip.id}
-            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white/70 px-4 py-3"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-hairline bg-card px-4 py-3"
           >
             <div className="min-w-0 space-y-0.5">
-              <p className="truncate text-sm font-medium text-gray-800">
+              <p className="truncate text-sm font-medium text-ink">
                 {new Date(clip.startAt).toLocaleString()} →{' '}
                 {new Date(clip.endAt).toLocaleTimeString()}
               </p>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted">
                 {formatBytes(clip.sizeBytes)} · requested{' '}
                 {new Date(clip.createdAt).toLocaleString()}
                 {clip.incidentId && ` · incident ${clip.incidentId.slice(0, 8)}`}
@@ -116,7 +116,7 @@ export function ClipList({ cameraId }: ClipListProps) {
               {clip.status === 'DONE' && clip.downloadUrl && (
                 <a
                   href={clip.downloadUrl}
-                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 shadow-sm hover:border-gray-300"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-hairline bg-card px-3 text-xs font-medium text-ink shadow-sm hover:border-hairline"
                 >
                   <Download className="h-3.5 w-3.5" />
                   Download

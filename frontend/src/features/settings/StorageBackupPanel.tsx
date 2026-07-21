@@ -34,10 +34,10 @@ interface PanelProps {
 }
 
 const STATUS_PILL: Record<BackupStatus, string> = {
-  QUEUED: 'bg-amber-50 text-amber-700',
-  RUNNING: 'bg-indigo-50 text-indigo-700',
-  DONE: 'bg-emerald-50 text-emerald-700',
-  FAILED: 'bg-red-50 text-red-600',
+  QUEUED: 'bg-state-warning-soft text-state-warning',
+  RUNNING: 'bg-indigo text-indigo',
+  DONE: 'bg-state-success-soft text-state-success',
+  FAILED: 'bg-state-danger-soft text-state-danger',
 };
 
 function fmtBytes(bytes: number | null): string {
@@ -191,7 +191,7 @@ export function StorageBackupPanel({ toast }: PanelProps) {
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead>
-                  <tr className="border-b border-gray-100 text-xs uppercase tracking-wide text-gray-400">
+                  <tr className="border-b border-hairline text-xs uppercase tracking-wide text-muted">
                     <th className="py-2 pr-4 font-medium">Scope</th>
                     <th className="py-2 pr-4 font-medium">Type</th>
                     <th className="py-2 pr-4 font-medium">Clips</th>
@@ -201,10 +201,10 @@ export function StorageBackupPanel({ toast }: PanelProps) {
                 </thead>
                 <tbody>
                   {(policies ?? []).map((p) => (
-                    <tr key={p.id} className="border-b border-gray-50 last:border-0">
-                      <td className="py-2 pr-4 font-medium text-gray-800">{p.scopeName}</td>
+                    <tr key={p.id} className="border-b border-hairline last:border-0">
+                      <td className="py-2 pr-4 font-medium text-ink">{p.scopeName}</td>
                       <td className="py-2 pr-4">
-                        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                        <span className="rounded-full bg-surface px-2 py-0.5 text-xs font-medium text-muted">
                           {p.scopeType}
                         </span>
                       </td>
@@ -222,14 +222,14 @@ export function StorageBackupPanel({ toast }: PanelProps) {
                           disabled={savingPolicy}
                         />
                       </td>
-                      <td className="py-2 text-xs text-gray-500">
+                      <td className="py-2 text-xs text-muted">
                         {new Date(p.updatedAt).toLocaleDateString()}
                       </td>
                     </tr>
                   ))}
                   {(policies ?? []).length === 0 && (
                     <tr>
-                      <td colSpan={5} className="py-4 text-center text-sm text-gray-400">
+                      <td colSpan={5} className="py-4 text-center text-sm text-muted">
                         No storage policies yet — defaults apply everywhere.
                       </td>
                     </tr>
@@ -298,7 +298,7 @@ export function StorageBackupPanel({ toast }: PanelProps) {
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead>
-                  <tr className="border-b border-gray-100 text-xs uppercase tracking-wide text-gray-400">
+                  <tr className="border-b border-hairline text-xs uppercase tracking-wide text-muted">
                     <th className="py-2 pr-4 font-medium">Requested</th>
                     <th className="py-2 pr-4 font-medium">Scope</th>
                     <th className="py-2 pr-4 font-medium">Range</th>
@@ -310,14 +310,14 @@ export function StorageBackupPanel({ toast }: PanelProps) {
                 </thead>
                 <tbody>
                   {backups.map((b) => (
-                    <tr key={b.id} className="border-b border-gray-50 last:border-0">
-                      <td className="py-2 pr-4 text-xs text-gray-500">
+                    <tr key={b.id} className="border-b border-hairline last:border-0">
+                      <td className="py-2 pr-4 text-xs text-muted">
                         {new Date(b.createdAt).toLocaleString()}
                       </td>
-                      <td className="py-2 pr-4 font-medium text-gray-800">
+                      <td className="py-2 pr-4 font-medium text-ink">
                         {scopeNames.get(`${b.scopeType}:${b.scopeId}`) ?? b.scopeType}
                       </td>
-                      <td className="py-2 pr-4 text-xs text-gray-500">
+                      <td className="py-2 pr-4 text-xs text-muted">
                         {new Date(b.rangeStart).toLocaleDateString()} –{' '}
                         {new Date(b.rangeEnd).toLocaleDateString()}
                       </td>
@@ -332,26 +332,26 @@ export function StorageBackupPanel({ toast }: PanelProps) {
                           {b.status}
                         </span>
                       </td>
-                      <td className="py-2 pr-4 text-gray-700">{fmtBytes(b.sizeBytes)}</td>
-                      <td className="py-2 pr-4 text-xs text-gray-500">{b.requesterName ?? '—'}</td>
+                      <td className="py-2 pr-4 text-muted">{fmtBytes(b.sizeBytes)}</td>
+                      <td className="py-2 pr-4 text-xs text-muted">{b.requesterName ?? '—'}</td>
                       <td className="py-2">
                         {b.downloadUrl ? (
                           <a
                             href={b.downloadUrl}
-                            className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-700"
+                            className="inline-flex items-center gap-1 text-xs font-medium text-sage hover:text-sage"
                             download
                           >
                             <Download className="h-3.5 w-3.5" /> Download
                           </a>
                         ) : (
-                          <span className="text-xs text-gray-400">—</span>
+                          <span className="text-xs text-muted">—</span>
                         )}
                       </td>
                     </tr>
                   ))}
                   {backups.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="py-4 text-center text-sm text-gray-400">
+                      <td colSpan={7} className="py-4 text-center text-sm text-muted">
                         No backups yet.
                       </td>
                     </tr>

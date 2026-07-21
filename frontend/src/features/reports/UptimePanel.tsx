@@ -34,8 +34,8 @@ export function UptimePanel({ filters, skip, onExport, exporting }: UptimePanelP
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="font-sora text-lg font-semibold text-gray-900">Camera uptime</h2>
-          <p className="text-xs text-gray-500">
+          <h2 className="font-heading text-lg font-semibold text-ink">Camera uptime</h2>
+          <p className="text-xs text-muted">
             {data
               ? `${formatDateOnly(data.periodStart)} – ${formatDateOnly(data.periodEnd)} · generated ${formatTimestamp(data.generatedAt)}`
               : 'Percentage of the reporting window each camera was reachable.'}
@@ -66,7 +66,7 @@ export function UptimePanel({ filters, skip, onExport, exporting }: UptimePanelP
       </div>
 
       {skip ? (
-        <Card className="py-10 text-center text-sm text-gray-500">
+        <Card className="py-10 text-center text-sm text-muted">
           Fix the date range above to run this report.
         </Card>
       ) : isLoading ? (
@@ -80,8 +80,8 @@ export function UptimePanel({ filters, skip, onExport, exporting }: UptimePanelP
         </div>
       ) : isError ? (
         <Card className="flex flex-col items-center gap-3 py-10 text-center">
-          <AlertTriangle className="h-6 w-6 text-red-400" />
-          <p className="text-sm text-gray-600">{getApiErrorMessage(error)}</p>
+          <AlertTriangle className="h-6 w-6 text-state-critical" />
+          <p className="text-sm text-muted">{getApiErrorMessage(error)}</p>
           <Button
             variant="secondary"
             size="sm"
@@ -92,7 +92,7 @@ export function UptimePanel({ filters, skip, onExport, exporting }: UptimePanelP
           </Button>
         </Card>
       ) : !data || data.rows.length === 0 ? (
-        <Card className="py-10 text-center text-sm text-gray-500">
+        <Card className="py-10 text-center text-sm text-muted">
           No camera uptime data for the selected scope.
         </Card>
       ) : (
@@ -125,7 +125,7 @@ export function UptimePanel({ filters, skip, onExport, exporting }: UptimePanelP
           <Card padding="none" className="overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
-                <thead className="bg-gray-50/80 text-xs uppercase tracking-wide text-gray-500">
+                <thead className="bg-surface/80 text-xs uppercase tracking-wide text-muted">
                   <tr>
                     <th className="px-4 py-3 font-medium">Camera</th>
                     <th className="px-4 py-3 font-medium">Site</th>
@@ -136,20 +136,20 @@ export function UptimePanel({ filters, skip, onExport, exporting }: UptimePanelP
                     <th className="px-4 py-3 text-center font-medium">SLA</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-hairline">
                   {data.rows.map((row) => (
-                    <tr key={row.cameraId} className="transition-colors hover:bg-gray-50/60">
+                    <tr key={row.cameraId} className="transition-colors hover:bg-surface/60">
                       <td className="px-4 py-3">
-                        <p className="font-medium text-gray-900">{row.cameraName}</p>
-                        <p className="text-xs text-gray-400">{row.cameraCode}</p>
+                        <p className="font-medium text-ink">{row.cameraName}</p>
+                        <p className="text-xs text-muted">{row.cameraCode}</p>
                       </td>
-                      <td className="px-4 py-3 text-gray-600">{row.siteName}</td>
-                      <td className="px-4 py-3 text-gray-600">{row.zoneName}</td>
-                      <td className="px-4 py-3 text-gray-600">{row.regionName}</td>
-                      <td className="px-4 py-3 text-right font-medium tabular-nums text-gray-900">
+                      <td className="px-4 py-3 text-muted">{row.siteName}</td>
+                      <td className="px-4 py-3 text-muted">{row.zoneName}</td>
+                      <td className="px-4 py-3 text-muted">{row.regionName}</td>
+                      <td className="px-4 py-3 text-right font-medium tabular-nums text-ink">
                         {formatPercent(row.uptimePercent)}
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-gray-600">
+                      <td className="px-4 py-3 text-right tabular-nums text-muted">
                         {formatDurationShort(row.downtimeSeconds)}
                       </td>
                       <td className="px-4 py-3 text-center">

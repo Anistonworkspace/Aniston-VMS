@@ -29,7 +29,7 @@ export function ClipExportForm({ cameraId, range }: ClipExportFormProps) {
 
   if (!isOperatorPlusRole(currentUser?.role)) {
     return (
-      <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-500">
+      <div className="flex items-center gap-2 rounded-xl border border-hairline bg-surface px-4 py-3 text-sm text-muted">
         <ShieldAlert className="h-4 w-4 shrink-0" />
         Monitoring Operator role or higher is required to export clips.
       </div>
@@ -69,20 +69,20 @@ export function ClipExportForm({ cameraId, range }: ClipExportFormProps) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex flex-wrap items-end gap-3 rounded-xl border border-gray-200 bg-white/70 p-4"
+      className="flex flex-wrap items-end gap-3 rounded-xl border border-hairline bg-card p-4"
     >
       <div className="min-w-0 flex-1 space-y-1">
-        <p className="text-sm font-medium text-gray-800">Export clip</p>
+        <p className="text-sm font-medium text-ink">Export clip</p>
         {range ? (
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-muted">
             {new Date(range.startAt).toLocaleString()} → {new Date(range.endAt).toLocaleString()} ·{' '}
             {durationMinutes.toFixed(1)} min
           </p>
         ) : (
-          <p className="text-xs text-gray-400">Select a range on the timeline above first.</p>
+          <p className="text-xs text-muted">Select a range on the timeline above first.</p>
         )}
         {tooLong && (
-          <p className="text-xs font-medium text-red-500">
+          <p className="text-xs font-medium text-coral">
             Range exceeds the {CLIP_EXPORT_MAX_DURATION_MINUTES_DEFAULT}-minute export limit.
           </p>
         )}

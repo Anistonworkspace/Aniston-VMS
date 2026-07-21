@@ -13,6 +13,10 @@ export interface AccessTokenPayload {
   email: string;
 }
 
+// Pin the signing/verification algorithm to HS256 so a forged token cannot
+// downgrade to `alg:none` or trick us into an RS/HS confusion attack.
+const JWT_ALG = 'HS256' as const;
+
 const DURATION_RE = /^(\d+)(ms|s|m|h|d)$/;
 const UNIT_MS = { ms: 1, s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000 } as const;
 
@@ -25,13 +29,14 @@ export function parseDuration(spec: string): number {
 
 export function signAccessToken(payload: AccessTokenPayload): string {
   return jwt.sign(payload, env.JWT_SECRET, {
+    algorithm: JWT_ALG,
     expiresIn: Math.floor(parseDuration(env.JWT_ACCESS_TTL) / 1000),
   });
 }
 
 export function verifyAccessToken(token: string): AccessTokenPayload {
   try {
-    const decoded = jwt.verify(token, env.JWT_SECRET);
+    const decoded = jwt.verify(token, env.JWT_SECRET, { algorithms: [JWT_ALG] });
     if (typeof decoded === 'string' || typeof decoded.sub !== 'string') {
       throw new Error('malformed payload');
     }

@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 import { Bell, Search } from 'lucide-react';
 import { Skeleton } from '@/components/ui';
 import {
@@ -12,6 +13,7 @@ const ICON_BUTTON =
   'grid h-11 w-11 place-items-center rounded-control border border-hairline bg-card text-muted transition-colors duration-150 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage';
 
 export function Topbar(): JSX.Element {
+  const navigate = useNavigate();
   const { data: health, isLoading } = useGetHealthSummaryQuery();
   const { data: incidents } = useListRecentIncidentsQuery();
 
@@ -60,6 +62,7 @@ export function Topbar(): JSX.Element {
         </button>
         <button
           type="button"
+          onClick={() => navigate('/live')}
           className="h-11 rounded-control bg-sage px-5 text-sm font-medium text-white transition-colors duration-150 hover:bg-sage-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-offset-2"
         >
           Open Live Wall

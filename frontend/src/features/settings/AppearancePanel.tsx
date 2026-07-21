@@ -43,10 +43,10 @@ export function AppearancePanel({ toast }: PanelProps) {
                 }}
                 className={cn(
                   'flex flex-col items-center gap-2 rounded-xl border px-4 py-4 text-sm font-medium transition-colors',
-                  'focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500',
+                  'focus:outline-none focus-visible:ring-2 focus-visible:ring-sage',
                   active
-                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                    : 'border-gray-200 bg-white/60 text-gray-600 hover:border-gray-300'
+                    ? 'border-sage bg-sage-soft text-sage'
+                    : 'border-hairline bg-card text-muted hover:border-hairline'
                 )}
                 aria-pressed={active}
               >
@@ -65,7 +65,7 @@ export function AppearancePanel({ toast }: PanelProps) {
             <CardDescription>Adjust density and motion to your preference.</CardDescription>
           </div>
         </CardHeader>
-        <div className="divide-y divide-gray-100">
+        <div className="divide-y divide-hairline">
           <div className="py-3 first:pt-0 last:pb-0">
             <Switch
               checked={prefs.density === 'compact'}

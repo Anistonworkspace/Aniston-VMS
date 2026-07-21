@@ -27,8 +27,8 @@ export function Switch({
     >
       {(label || description) && (
         <span className="min-w-0">
-          {label && <span className="block text-sm font-medium text-gray-800">{label}</span>}
-          {description && <span className="mt-0.5 block text-xs text-gray-500">{description}</span>}
+          {label && <span className="block text-sm font-medium text-ink">{label}</span>}
+          {description && <span className="mt-0.5 block text-xs text-muted">{description}</span>}
         </span>
       )}
       <button
@@ -39,8 +39,8 @@ export function Switch({
         onClick={() => !disabled && onChange(!checked)}
         className={cn(
           'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors',
-          'focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1',
-          checked ? 'bg-indigo-600' : 'bg-gray-200',
+          'focus:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-offset-1',
+          checked ? 'bg-sage' : 'bg-hairline',
           disabled && 'cursor-not-allowed'
         )}
       >

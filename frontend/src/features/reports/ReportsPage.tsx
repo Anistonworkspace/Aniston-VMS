@@ -110,8 +110,8 @@ export function ReportsPage() {
   return (
     <div className="space-y-6 p-6">
       <div>
-        <h1 className="font-sora text-2xl font-semibold text-gray-900">Reports</h1>
-        <p className="mt-1 text-sm text-gray-500">
+        <h1 className="font-heading text-2xl font-semibold text-ink">Reports</h1>
+        <p className="mt-1 text-sm text-muted">
           Camera uptime and incident reporting across your fleet, exportable to XLSX or PDF.
         </p>
       </div>
@@ -133,7 +133,7 @@ export function ReportsPage() {
       <div
         role="tablist"
         aria-label="Report type"
-        className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white/70 p-1 backdrop-blur-sm"
+        className="inline-flex items-center gap-1 rounded-lg border border-hairline bg-card p-1"
       >
         {TABS.map((tab) => (
           <button
@@ -145,8 +145,8 @@ export function ReportsPage() {
             className={cn(
               'rounded-md px-4 py-1.5 text-sm font-medium transition-colors',
               activeTab === tab.id
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-gray-600 hover:bg-gray-100'
+                ? 'bg-primary text-white shadow-sm'
+                : 'text-muted hover:bg-surface'
             )}
           >
             {tab.label}

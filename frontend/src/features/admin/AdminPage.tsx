@@ -55,9 +55,9 @@ export function AdminPage(): JSX.Element {
   if (!activeTab) {
     return (
       <div className="rounded-card bg-card p-10 text-center shadow-soft">
-        <ShieldCheck size={28} strokeWidth={1.5} className="mx-auto text-gray-300" />
+        <ShieldCheck size={28} strokeWidth={1.5} className="mx-auto text-muted" />
         <p className="mt-3 text-sm font-medium text-ink">No administrative access</p>
-        <p className="mt-1 text-sm text-gray-500">
+        <p className="mt-1 text-sm text-muted">
           Your role does not include any administration capabilities.
         </p>
       </div>
@@ -69,7 +69,7 @@ export function AdminPage(): JSX.Element {
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-ink">Administration</h1>
-          <p className="mt-1 text-sm text-gray-500">
+          <p className="mt-1 text-sm text-muted">
             Users &amp; access scopes, escalation rules, alert delivery and the compliance trail.
           </p>
         </div>
@@ -82,10 +82,10 @@ export function AdminPage(): JSX.Element {
               aria-selected={activeTab === id}
               onClick={() => setSelected(id)}
               className={cn(
-                'flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400',
+                'flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage',
                 activeTab === id
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'bg-white/70 text-gray-600 hover:bg-white hover:text-gray-900'
+                  ? 'bg-sage text-white shadow-sm'
+                  : 'bg-card text-secondary hover:bg-card hover:text-ink'
               )}
             >
               <Icon size={15} strokeWidth={1.75} />

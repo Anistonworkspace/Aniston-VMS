@@ -4,6 +4,7 @@ import { prisma } from '../../lib/prisma.js';
 import { redis } from '../../lib/redis.js';
 import { logger } from '../../lib/logger.js';
 import { getUserScope, zoneScopeWhere } from '../../lib/scope.js';
+import { auditWithinTx } from '../../lib/audit.js';
 import { ConflictError, NotFoundError, ValidationError } from '../../middleware/errorHandler.js';
 import { INCIDENT_RULES, type IncidentRule, OPEN_STATUS_LIST } from './incident.constants.js';
 import { type AlertContext, dispatchIncidentAlerts } from './notification.service.js';
@@ -356,15 +357,26 @@ function emitIncidentUpdate(inc: Incident): void {
 export async function ackIncident(id: string, user: ActorUser): Promise<Incident> {
   const inc = await mustGetOpen(id);
   if (inc.acknowledgedAt) throw new ConflictError('Incident already acknowledged');
-  const [updated] = await prisma.$transaction([
-    prisma.incident.update({
+  const updated = await prisma.$transaction(async (tx) => {
+    const u = await tx.incident.update({
       where: { id },
       data: { status: 'ACKNOWLEDGED', acknowledgedAt: new Date(), acknowledgedBy: user.id },
-    }),
-    prisma.incidentEvent.create({
+    });
+    await tx.incidentEvent.create({
       data: { incidentId: id, actor: user.email, event: 'ACKNOWLEDGED' },
-    }),
-  ]);
+    });
+    await auditWithinTx(tx, {
+      userId: user.id,
+      action: 'incident.acknowledge',
+      entityType: 'incident',
+      entityId: id,
+      siteId: inc.siteId,
+      zoneId: inc.zoneId,
+      oldValue: { status: inc.status },
+      newValue: { status: u.status },
+    });
+    return u;
+  });
   emitIncidentUpdate(updated);
   return updated;
 }
@@ -381,8 +393,8 @@ export async function assignIncident(
   });
   if (!assignee) throw new ValidationError('Assignee not found');
   const now = new Date();
-  const [updated] = await prisma.$transaction([
-    prisma.incident.update({
+  const updated = await prisma.$transaction(async (tx) => {
+    const u = await tx.incident.update({
       where: { id },
       data: {
         status: 'ASSIGNED',
@@ -390,16 +402,27 @@ export async function assignIncident(
         // Assigning implies the pager was heard — ack if nobody did yet.
         ...(inc.acknowledgedAt ? {} : { acknowledgedAt: now, acknowledgedBy: user.id }),
       },
-    }),
-    prisma.incidentEvent.create({
+    });
+    await tx.incidentEvent.create({
       data: {
         incidentId: id,
         actor: user.email,
         event: 'ASSIGNED',
         detail: { assignee: assignee.email },
       },
-    }),
-  ]);
+    });
+    await auditWithinTx(tx, {
+      userId: user.id,
+      action: 'incident.assign',
+      entityType: 'incident',
+      entityId: id,
+      siteId: inc.siteId,
+      zoneId: inc.zoneId,
+      oldValue: { status: inc.status, assignedToId: inc.assignedToId },
+      newValue: { status: u.status, assignedToId },
+    });
+    return u;
+  });
   emitIncidentUpdate(updated);
   return updated;
 }
@@ -409,12 +432,23 @@ export async function markInvestigating(id: string, user: ActorUser): Promise<In
   if (inc.status !== 'ACKNOWLEDGED' && inc.status !== 'ASSIGNED') {
     throw new ConflictError(`Cannot start investigating from ${inc.status}`);
   }
-  const [updated] = await prisma.$transaction([
-    prisma.incident.update({ where: { id }, data: { status: 'INVESTIGATING' } }),
-    prisma.incidentEvent.create({
+  const updated = await prisma.$transaction(async (tx) => {
+    const u = await tx.incident.update({ where: { id }, data: { status: 'INVESTIGATING' } });
+    await tx.incidentEvent.create({
       data: { incidentId: id, actor: user.email, event: 'INVESTIGATING' },
-    }),
-  ]);
+    });
+    await auditWithinTx(tx, {
+      userId: user.id,
+      action: 'incident.investigate',
+      entityType: 'incident',
+      entityId: id,
+      siteId: inc.siteId,
+      zoneId: inc.zoneId,
+      oldValue: { status: inc.status },
+      newValue: { status: u.status },
+    });
+    return u;
+  });
   emitIncidentUpdate(updated);
   return updated;
 }
@@ -437,8 +471,8 @@ export async function resolveIncident(
     0,
     Math.round((now.getTime() - inc.firstDetectedAt.getTime()) / 1000)
   );
-  const [updated] = await prisma.$transaction([
-    prisma.incident.update({
+  const updated = await prisma.$transaction(async (tx) => {
+    const u = await tx.incident.update({
       where: { id },
       data: {
         status: 'RESOLVED',
@@ -449,16 +483,27 @@ export async function resolveIncident(
         correctiveAction: input.correctiveAction ?? null,
         spareParts: input.spareParts ?? null,
       },
-    }),
-    prisma.incidentEvent.create({
+    });
+    await tx.incidentEvent.create({
       data: {
         incidentId: id,
         actor: user.email,
         event: 'RESOLVED',
         detail: { auto: false, downtimeSeconds, rootCause: input.rootCause },
       },
-    }),
-  ]);
+    });
+    await auditWithinTx(tx, {
+      userId: user.id,
+      action: 'incident.resolve',
+      entityType: 'incident',
+      entityId: id,
+      siteId: inc.siteId,
+      zoneId: inc.zoneId,
+      oldValue: { status: inc.status },
+      newValue: { status: u.status, downtimeSeconds, rootCause: input.rootCause },
+    });
+    return u;
+  });
   emitIncidentUpdate(updated);
   return updated;
 }
@@ -469,13 +514,24 @@ export async function closeIncident(id: string, user: ActorUser): Promise<Incide
   if (inc.status !== 'RESOLVED' && inc.status !== 'RECOVERY_VERIFIED') {
     throw new ConflictError(`Only resolved incidents can be closed (current: ${inc.status})`);
   }
-  const [updated] = await prisma.$transaction([
-    prisma.incident.update({
+  const updated = await prisma.$transaction(async (tx) => {
+    const u = await tx.incident.update({
       where: { id },
       data: { status: 'CLOSED', closedAt: new Date() },
-    }),
-    prisma.incidentEvent.create({ data: { incidentId: id, actor: user.email, event: 'CLOSED' } }),
-  ]);
+    });
+    await tx.incidentEvent.create({ data: { incidentId: id, actor: user.email, event: 'CLOSED' } });
+    await auditWithinTx(tx, {
+      userId: user.id,
+      action: 'incident.close',
+      entityType: 'incident',
+      entityId: id,
+      siteId: inc.siteId,
+      zoneId: inc.zoneId,
+      oldValue: { status: inc.status },
+      newValue: { status: u.status },
+    });
+    return u;
+  });
   emitIncidentUpdate(updated);
   return updated;
 }

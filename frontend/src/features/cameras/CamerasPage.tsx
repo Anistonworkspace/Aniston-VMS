@@ -10,10 +10,12 @@ import {
   Plus,
   RefreshCw,
   Search,
+  X,
 } from 'lucide-react';
 import { Button, Input, SkeletonCard, ToastContainer } from '@/components/ui';
 import { useGetCurrentUserQuery } from '@/features/auth/auth.api';
 import { isCameraWriteRole } from '@/features/auth/auth.types';
+import { useListZoneSummariesQuery } from '@/features/overview/overview.api';
 import { useToast } from '@/hooks/useToast';
 import { getApiErrorMessage } from '@/lib/apiError';
 import { cn } from '@/lib/utils';
@@ -60,6 +62,9 @@ export function CamerasPage(): JSX.Element {
   // Status is URL-derived so dashboard KPI tiles can deep-link into a filtered
   // grid (e.g. "/cameras?status=CRITICAL") and in-page changes stay shareable.
   const status = parseStatusParam(searchParams.get('status'));
+  // Zone is URL-derived too so dashboard zone cards can deep-link into a
+  // zone-filtered fleet ("/cameras?zone=<id>") and the filter stays shareable.
+  const zoneId = searchParams.get('zone') ?? '';
   const [siteId, setSiteId] = useState('');
   const [page, setPage] = useState(1);
 
@@ -85,11 +90,23 @@ export function CamerasPage(): JSX.Element {
     );
   };
 
-  // Reset to the first page whenever the active status filter changes, including
-  // when it is driven externally by a KPI-tile link rather than an in-page click.
+  // Clearing the zone chip drops "?zone=" from the URL; other filters are kept.
+  const clearZone = (): void => {
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev);
+        params.delete('zone');
+        return params;
+      },
+      { replace: true }
+    );
+  };
+
+  // Reset to the first page whenever the active status or zone filter changes,
+  // including when driven externally by a dashboard deep-link rather than a click.
   useEffect(() => {
     setPage(1);
-  }, [status]);
+  }, [status, zoneId]);
 
   // Debounce free-text search so we don't hit GET /cameras on every keystroke.
   useEffect(() => {
@@ -106,13 +123,23 @@ export function CamerasPage(): JSX.Element {
       limit: PAGE_SIZE,
       q: q || undefined,
       siteId: siteId || undefined,
+      zoneId: zoneId || undefined,
       status: status || undefined,
     }),
-    [page, q, siteId, status]
+    [page, q, siteId, zoneId, status]
   );
 
   const { data, isLoading, isFetching, error, refetch } = useListCamerasQuery(query);
   const { data: sites } = useListSitesLiteQuery();
+
+  // Resolve the active zone's name for the filter chip. The list is already
+  // scoped to the caller, so an out-of-scope "?zone=" simply yields no name
+  // (and the backend returns zero cameras — never a cross-scope leak).
+  const { data: zones } = useListZoneSummariesQuery();
+  const activeZoneName = useMemo(
+    () => (zoneId ? (zones?.find((zone) => zone.id === zoneId)?.name ?? null) : null),
+    [zones, zoneId]
+  );
 
   // The map ignores pagination — it plots the whole filtered fleet (capped at
   // 200 pins) so every site cluster is visible at once.
@@ -131,7 +158,7 @@ export function CamerasPage(): JSX.Element {
       >
         <div>
           <h1 className="font-heading text-2xl font-semibold text-ink">Cameras</h1>
-          <p className="mt-1 text-sm text-gray-500">
+          <p className="mt-1 text-sm text-tertiary">
             {data
               ? `${data.total} camera${data.total === 1 ? '' : 's'} in your scope`
               : 'Fleet health at a glance'}
@@ -171,7 +198,7 @@ export function CamerasPage(): JSX.Element {
             setPage(1);
           }}
           aria-label="Filter by site"
-          className="h-9 rounded-lg border border-gray-200 bg-white/70 px-3 text-sm text-gray-900 backdrop-blur-sm transition-colors hover:border-gray-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          className="h-9 rounded-lg border border-hairline bg-card px-3 text-sm text-ink transition-colors hover:border-hairline focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
         >
           <option value="">All sites</option>
           {(sites?.items ?? []).map((site) => (
@@ -180,6 +207,19 @@ export function CamerasPage(): JSX.Element {
             </option>
           ))}
         </select>
+        {zoneId && (
+          <button
+            type="button"
+            onClick={clearZone}
+            aria-label="Clear zone filter"
+            className="inline-flex h-9 items-center gap-1.5 rounded-full bg-sage/15 px-3 text-xs font-medium text-sage transition-colors hover:bg-sage/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage"
+          >
+            <span className="truncate max-w-[12rem]">
+              Zone: {activeZoneName ?? 'selected'}
+            </span>
+            <X size={13} />
+          </button>
+        )}
         <div
           className="flex flex-wrap items-center gap-1.5"
           role="group"
@@ -195,7 +235,7 @@ export function CamerasPage(): JSX.Element {
                 'rounded-full px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage',
                 status === filter.value
                   ? 'bg-ink text-white'
-                  : 'bg-card text-gray-600 shadow-soft hover:text-ink'
+                  : 'bg-card text-tertiary shadow-soft hover:text-ink'
               )}
             >
               {filter.label}
@@ -220,7 +260,7 @@ export function CamerasPage(): JSX.Element {
               onClick={() => setView(option.value)}
               className={cn(
                 'flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage',
-                view === option.value ? 'bg-ink text-white' : 'text-gray-600 hover:text-ink'
+                view === option.value ? 'bg-ink text-white' : 'text-tertiary hover:text-ink'
               )}
             >
               {option.icon}
@@ -242,7 +282,7 @@ export function CamerasPage(): JSX.Element {
           variants={pageChild}
           className="rounded-card bg-card p-10 text-center shadow-soft"
         >
-          <p className="text-sm text-gray-600">{getApiErrorMessage(error)}</p>
+          <p className="text-sm text-tertiary">{getApiErrorMessage(error)}</p>
           <Button variant="secondary" size="sm" className="mt-4" onClick={() => refetch()}>
             Try again
           </Button>
@@ -255,7 +295,7 @@ export function CamerasPage(): JSX.Element {
         </div>
       ) : data && data.items.length > 0 ? (
         <motion.div
-          key={`${page}-${q}-${siteId}-${status}`}
+          key={`${page}-${q}-${siteId}-${zoneId}-${status}`}
           variants={listContainer}
           initial="hidden"
           animate="visible"
@@ -274,9 +314,9 @@ export function CamerasPage(): JSX.Element {
           variants={pageChild}
           className="rounded-card bg-card p-10 text-center shadow-soft"
         >
-          <Cctv size={28} strokeWidth={1.5} className="mx-auto text-gray-400" />
+          <Cctv size={28} strokeWidth={1.5} className="mx-auto text-muted" />
           <p className="mt-3 text-sm font-medium text-ink">No cameras match these filters</p>
-          <p className="mt-1 text-xs text-gray-500">
+          <p className="mt-1 text-xs text-tertiary">
             Try clearing the search or switching the site/status filters.
           </p>
         </motion.div>
@@ -293,7 +333,7 @@ export function CamerasPage(): JSX.Element {
           >
             Prev
           </Button>
-          <span className="text-xs tabular-nums text-gray-500">
+          <span className="text-xs tabular-nums text-tertiary">
             Page {data.page} of {totalPages}
           </span>
           <Button

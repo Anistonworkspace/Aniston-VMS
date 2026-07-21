@@ -128,7 +128,7 @@ function PolicyModal({
           onChange={(event) => setZoneId(event.target.value)}
           hint="Leave on Default to make this the fallback policy."
         />
-        {formError && <p className="text-sm text-red-600">{formError}</p>}
+        {formError && <p className="text-sm text-coral">{formError}</p>}
         <div className="flex justify-end gap-2 pt-1">
           <Button type="button" variant="secondary" size="sm" onClick={onClose}>
             Cancel
@@ -230,22 +230,22 @@ function StepModal({ policyId, step, onClose, onSuccess, onError }: StepModalPro
           required
         />
         <fieldset>
-          <legend className="mb-1.5 block text-sm font-medium text-gray-700">Channels</legend>
+          <legend className="mb-1.5 block text-sm font-medium text-secondary">Channels</legend>
           <div className="flex gap-4">
             {ALERT_CHANNELS.map((channel) => (
-              <label key={channel} className="flex items-center gap-2 text-sm text-gray-700">
+              <label key={channel} className="flex items-center gap-2 text-sm text-secondary">
                 <input
                   type="checkbox"
                   checked={channels.includes(channel)}
                   onChange={() => toggleChannel(channel)}
-                  className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  className="h-4 w-4 rounded border-hairline text-sage focus:ring-sage"
                 />
                 {channel}
               </label>
             ))}
           </div>
         </fieldset>
-        {formError && <p className="text-sm text-red-600">{formError}</p>}
+        {formError && <p className="text-sm text-coral">{formError}</p>}
         <div className="flex justify-end gap-2 pt-1">
           <Button type="button" variant="secondary" size="sm" onClick={onClose}>
             Cancel
@@ -392,7 +392,7 @@ function RecipientModal({
           hint="1–10 — matched against step recipient tiers."
           required
         />
-        {formError && <p className="text-sm text-red-600">{formError}</p>}
+        {formError && <p className="text-sm text-coral">{formError}</p>}
         <div className="flex justify-end gap-2 pt-1">
           <Button type="button" variant="secondary" size="sm" onClick={onClose}>
             Cancel
@@ -530,7 +530,7 @@ export function EscalationTab(): JSX.Element {
         <div className="flex flex-wrap items-end gap-3">
           <div>
             <h2 className="text-lg font-semibold text-ink">Escalation policies</h2>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-muted">
               Per-zone step ladders that drive unacknowledged-incident escalation.
             </p>
           </div>
@@ -563,7 +563,7 @@ export function EscalationTab(): JSX.Element {
         )}
         {policiesError && (
           <div className="rounded-card bg-card p-10 text-center shadow-soft">
-            <p className="text-sm text-gray-600">{getApiErrorMessage(policiesErr)}</p>
+            <p className="text-sm text-secondary">{getApiErrorMessage(policiesErr)}</p>
             <Button
               className="mt-4"
               variant="secondary"
@@ -580,12 +580,12 @@ export function EscalationTab(): JSX.Element {
         {policies && (
           <div className="rounded-card bg-card shadow-soft">
             {policies.items.length === 0 && (
-              <p className="px-4 py-10 text-center text-sm text-gray-500">
+              <p className="px-4 py-10 text-center text-sm text-muted">
                 No escalation policies yet — incidents fall through to defaults.
               </p>
             )}
             {policies.items.map((policy) => (
-              <div key={policy.id} className="border-b border-gray-50 last:border-b-0">
+              <div key={policy.id} className="border-b border-hairline last:border-b-0">
                 <div className="flex items-center gap-3 px-4 py-3">
                   <button
                     type="button"
@@ -593,7 +593,7 @@ export function EscalationTab(): JSX.Element {
                     onClick={() =>
                       setExpandedPolicyId((current) => (current === policy.id ? null : policy.id))
                     }
-                    className="grid h-7 w-7 place-items-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                    className="grid h-7 w-7 place-items-center rounded-full text-muted transition-colors hover:bg-surface hover:text-secondary"
                   >
                     <ChevronDown
                       size={16}
@@ -605,7 +605,7 @@ export function EscalationTab(): JSX.Element {
                   </button>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-ink">{policy.name}</p>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-muted">
                       {policy.steps.length} step{policy.steps.length === 1 ? '' : 's'}
                     </p>
                   </div>
@@ -638,17 +638,17 @@ export function EscalationTab(): JSX.Element {
                   </Button>
                 </div>
                 {expandedPolicyId === policy.id && (
-                  <div className="bg-gray-50/60 px-4 py-3 pl-14">
+                  <div className="bg-surface px-4 py-3 pl-14">
                     {policy.steps.length === 0 && (
-                      <p className="text-xs text-gray-500">No steps — add the first tier.</p>
+                      <p className="text-xs text-muted">No steps — add the first tier.</p>
                     )}
                     <ul className="space-y-1.5">
                       {policy.steps.map((step) => (
                         <li
                           key={step.id}
-                          className="flex items-center gap-3 rounded-lg bg-white/80 px-3 py-2"
+                          className="flex items-center gap-3 rounded-lg bg-surface px-3 py-2"
                         >
-                          <span className="w-24 text-xs font-medium tabular-nums text-gray-600">
+                          <span className="w-24 text-xs font-medium tabular-nums text-secondary">
                             +{step.afterMinutes} min
                           </span>
                           <span className="text-sm text-ink">{step.recipientLevel}</span>
@@ -692,7 +692,7 @@ export function EscalationTab(): JSX.Element {
                 >
                   Previous
                 </Button>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-muted">
                   Page {policies.page} of {policyTotalPages}
                 </p>
                 <Button
@@ -716,7 +716,7 @@ export function EscalationTab(): JSX.Element {
         <div className="flex flex-wrap items-end gap-3">
           <div>
             <h2 className="text-lg font-semibold text-ink">Zone alert recipients</h2>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-muted">
               Who gets notified per zone, severity and channel — matched by escalation level.
             </p>
           </div>
@@ -777,7 +777,7 @@ export function EscalationTab(): JSX.Element {
         )}
         {recipientsError && (
           <div className="rounded-card bg-card p-10 text-center shadow-soft">
-            <p className="text-sm text-gray-600">{getApiErrorMessage(recipientsErr)}</p>
+            <p className="text-sm text-secondary">{getApiErrorMessage(recipientsErr)}</p>
             <Button
               className="mt-4"
               variant="secondary"
@@ -794,7 +794,7 @@ export function EscalationTab(): JSX.Element {
         {recipients && (
           <div className="overflow-x-auto rounded-card bg-card shadow-soft">
             <table className="w-full min-w-[720px] text-sm">
-              <thead className="border-b border-gray-100 text-left text-xs uppercase tracking-wide text-gray-500">
+              <thead className="border-b border-hairline text-left text-xs uppercase tracking-wide text-muted">
                 <tr>
                   <th className="px-4 py-3 font-medium">Zone</th>
                   <th className="px-4 py-3 font-medium">Severity</th>
@@ -807,7 +807,7 @@ export function EscalationTab(): JSX.Element {
               <tbody>
                 {recipients.items.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-500">
+                    <td colSpan={6} className="px-4 py-10 text-center text-sm text-muted">
                       No alert recipients match the current filters.
                     </td>
                   </tr>
@@ -815,7 +815,7 @@ export function EscalationTab(): JSX.Element {
                 {recipients.items.map((row) => (
                   <tr
                     key={row.id}
-                    className="border-b border-gray-50 transition-colors last:border-b-0 hover:bg-gray-50/60"
+                    className="border-b border-hairline transition-colors last:border-b-0 hover:bg-surface"
                   >
                     <td className="px-4 py-3 font-medium text-ink">{row.zone.name}</td>
                     <td className="px-4 py-3">
@@ -828,8 +828,8 @@ export function EscalationTab(): JSX.Element {
                         {row.channel}
                       </Badge>
                     </td>
-                    <td className="px-4 py-3 text-gray-600">{row.recipient}</td>
-                    <td className="px-4 py-3 tabular-nums text-gray-600">L{row.escalationLevel}</td>
+                    <td className="px-4 py-3 text-secondary">{row.recipient}</td>
+                    <td className="px-4 py-3 tabular-nums text-secondary">L{row.escalationLevel}</td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-1">
                         <Button
@@ -864,7 +864,7 @@ export function EscalationTab(): JSX.Element {
                 >
                   Previous
                 </Button>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-muted">
                   Page {recipients.page} of {recipientTotalPages}
                 </p>
                 <Button

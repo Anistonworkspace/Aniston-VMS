@@ -19,6 +19,7 @@ import { hierarchyRouter } from './modules/hierarchy/hierarchy.router.js';
 import { cameraRouter } from './modules/cameras/camera.router.js';
 import { clipRouter } from './modules/clips/clip.router.js';
 import { playbackRouter } from './modules/playback/playback.router.js';
+import { mediaAuthRouter } from './modules/playback/media-auth.router.js';
 import { layoutRouter } from './modules/layouts/layout.router.js';
 import { maintenanceRouter } from './modules/maintenance/maintenance.router.js';
 import { reportRouter } from './modules/reports/reports.router.js';
@@ -83,6 +84,7 @@ export function createApp(): Express {
   app.use('/api', hierarchyRouter);
   app.use('/api/cameras', cameraRouter);
   app.use('/api', clipRouter);
+  app.use('/api', mediaAuthRouter); // public: reverse-proxy media authorization (token-gated, no user JWT)
   app.use('/api', playbackRouter);
   app.use('/api', layoutRouter);
   app.use('/api', maintenanceRouter);

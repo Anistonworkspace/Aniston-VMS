@@ -14,11 +14,11 @@ export const DIAGNOSIS_LABEL: Record<DiagnosisCode, string> = {
 
 /** Distribution-bar colours for the root-cause panel (severity-ish ordering). */
 export const DIAGNOSIS_BAR_CLASS: Record<DiagnosisCode, string> = {
-  SITE_INTERNET_DOWN: 'bg-red-400',
-  CAMERA_OFFLINE: 'bg-red-300',
-  SIM_SIGNAL_ISSUE: 'bg-amber-400',
-  NETWORK_UNSTABLE: 'bg-amber-300',
-  STREAM_DEGRADED: 'bg-sky-400',
-  IMAGE_PROBLEM: 'bg-purple-400',
-  CONFIG_ERROR: 'bg-gray-400',
+  SITE_INTERNET_DOWN: 'bg-state-critical',
+  CAMERA_OFFLINE: 'bg-state-critical/70',
+  SIM_SIGNAL_ISSUE: 'bg-state-warning',
+  NETWORK_UNSTABLE: 'bg-state-warning/70',
+  STREAM_DEGRADED: 'bg-state-maintenance',
+  IMAGE_PROBLEM: 'bg-indigo',
+  CONFIG_ERROR: 'bg-state-unknown',
 };

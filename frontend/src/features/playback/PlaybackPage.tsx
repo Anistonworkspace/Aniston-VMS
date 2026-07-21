@@ -35,8 +35,8 @@ export function PlaybackPage(): JSX.Element {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="font-sora text-2xl font-semibold text-gray-900">Playback &amp; Clips</h1>
-          <p className="mt-0.5 text-sm text-gray-500">
+          <h1 className="font-heading text-2xl font-semibold text-ink">Playback &amp; Clips</h1>
+          <p className="mt-0.5 text-sm text-muted">
             Watch a camera live, scrub its recorded history, and export clips for the record.
           </p>
         </div>
@@ -44,7 +44,7 @@ export function PlaybackPage(): JSX.Element {
       </div>
 
       {!camera ? (
-        <Card className="flex flex-col items-center gap-2 py-16 text-center text-gray-400">
+        <Card className="flex flex-col items-center gap-2 py-16 text-center text-muted">
           <Video className="h-8 w-8" />
           <p className="text-sm">
             Select a camera above to start watching or browse its recordings.
@@ -62,7 +62,7 @@ export function PlaybackPage(): JSX.Element {
                   {mode === 'playback' ? 'Playback of a selected recorded range' : 'Live stream'}
                 </CardDescription>
               </div>
-              <div className="inline-flex rounded-lg border border-gray-200 bg-white/70 p-0.5 text-sm">
+              <div className="inline-flex rounded-lg border border-hairline bg-card p-0.5 text-sm">
                 <button
                   type="button"
                   onClick={() => {
@@ -71,7 +71,7 @@ export function PlaybackPage(): JSX.Element {
                   }}
                   className={cn(
                     'inline-flex items-center gap-1.5 rounded-md px-3 py-1 font-medium transition-colors',
-                    mode === 'live' ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-100'
+                    mode === 'live' ? 'bg-indigo text-white' : 'text-muted hover:bg-surface'
                   )}
                 >
                   <Radio className="h-3.5 w-3.5" />
@@ -84,8 +84,8 @@ export function PlaybackPage(): JSX.Element {
                   className={cn(
                     'inline-flex items-center gap-1.5 rounded-md px-3 py-1 font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40',
                     mode === 'playback'
-                      ? 'bg-indigo-600 text-white'
-                      : 'text-gray-600 hover:bg-gray-100'
+                      ? 'bg-indigo text-white'
+                      : 'text-muted hover:bg-surface'
                   )}
                 >
                   <Rewind className="h-3.5 w-3.5" />

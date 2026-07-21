@@ -231,12 +231,16 @@ model AuditLog {
   oldValue   Json?    @map("old_value")
   newValue   Json?    @map("new_value")
   ipAddress  String   @map("ip_address")
+  siteId     String?  @map("site_id")
+  zoneId     String?  @map("zone_id")
   createdAt  DateTime @default(now()) @map("created_at") // append-only: no updated_at
 
   user User? @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@index([entityType, entityId])
   @@index([createdAt])
+  @@index([siteId])
+  @@index([zoneId])
   @@map("audit_logs")
 }
 

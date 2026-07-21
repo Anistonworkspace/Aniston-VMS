@@ -130,42 +130,42 @@ export function SystemCapacityPanel({ toast }: PanelProps) {
         ) : (
           <div className="space-y-5">
             <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-xl border border-gray-100 bg-white/70 p-4">
-                <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-gray-400">
+              <div className="rounded-xl border border-hairline bg-card p-4">
+                <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted">
                   <Activity className="h-3.5 w-3.5" /> Live sessions
                 </div>
-                <p className="mt-1.5 font-sora text-xl font-semibold text-gray-900">
+                <p className="mt-1.5 font-heading text-xl font-semibold text-ink">
                   {capacity.live.activeGlobal}
-                  <span className="text-sm font-normal text-gray-400">
+                  <span className="text-sm font-normal text-muted">
                     {' '}
                     / {capacity.caps.maxLiveSessionsGlobal}
                   </span>
                 </p>
-                <p className="mt-0.5 text-xs text-gray-500">
+                <p className="mt-0.5 text-xs text-muted">
                   {capacity.caps.maxLiveSessionsPerSite} per site ·{' '}
                   {capacity.caps.perCameraStreamCap} per camera
                 </p>
               </div>
-              <div className="rounded-xl border border-gray-100 bg-white/70 p-4">
-                <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-gray-400">
+              <div className="rounded-xl border border-hairline bg-card p-4">
+                <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted">
                   <HardDrive className="h-3.5 w-3.5" /> Est. storage / day
                 </div>
-                <p className="mt-1.5 font-sora text-xl font-semibold text-gray-900">
+                <p className="mt-1.5 font-heading text-xl font-semibold text-ink">
                   {capacity.storage.estimatedDailyGb} GB
                 </p>
-                <p className="mt-0.5 text-xs text-gray-500">
+                <p className="mt-0.5 text-xs text-muted">
                   {capacity.storage.cameraCount} cameras · quality{' '}
                   {capacity.storage.compressionQuality}%
                 </p>
               </div>
-              <div className="rounded-xl border border-gray-100 bg-white/70 p-4">
-                <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-gray-400">
+              <div className="rounded-xl border border-hairline bg-card p-4">
+                <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted">
                   <Database className="h-3.5 w-3.5" /> Retained footprint
                 </div>
-                <p className="mt-1.5 font-sora text-xl font-semibold text-gray-900">
+                <p className="mt-1.5 font-heading text-xl font-semibold text-ink">
                   {capacity.storage.estimatedRetainedGb} GB
                 </p>
-                <p className="mt-0.5 text-xs text-gray-500">
+                <p className="mt-0.5 text-xs text-muted">
                   at {capacity.storage.retentionDays}-day retention
                 </p>
               </div>
@@ -174,7 +174,7 @@ export function SystemCapacityPanel({ toast }: PanelProps) {
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead>
-                  <tr className="border-b border-gray-100 text-xs uppercase tracking-wide text-gray-400">
+                  <tr className="border-b border-hairline text-xs uppercase tracking-wide text-muted">
                     <th className="py-2 pr-4 font-medium">Site</th>
                     <th className="py-2 pr-4 font-medium">Zone</th>
                     <th className="py-2 pr-4 font-medium">Cameras</th>
@@ -184,23 +184,23 @@ export function SystemCapacityPanel({ toast }: PanelProps) {
                 </thead>
                 <tbody>
                   {capacity.perSite.map((row) => (
-                    <tr key={row.siteId} className="border-b border-gray-50 last:border-0">
-                      <td className="py-2 pr-4 font-medium text-gray-800">{row.siteName}</td>
-                      <td className="py-2 pr-4 text-gray-500">{row.zoneName}</td>
-                      <td className="py-2 pr-4 text-gray-700">{row.cameraCount}</td>
-                      <td className="py-2 pr-4 text-gray-700">
+                    <tr key={row.siteId} className="border-b border-hairline last:border-0">
+                      <td className="py-2 pr-4 font-medium text-ink">{row.siteName}</td>
+                      <td className="py-2 pr-4 text-muted">{row.zoneName}</td>
+                      <td className="py-2 pr-4 text-muted">{row.cameraCount}</td>
+                      <td className="py-2 pr-4 text-muted">
                         {row.activeLiveSessions}
-                        <span className="text-gray-400">
+                        <span className="text-muted">
                           {' '}
                           / {capacity.caps.maxLiveSessionsPerSite}
                         </span>
                       </td>
-                      <td className="py-2 text-gray-700">{row.estimatedDailyGb}</td>
+                      <td className="py-2 text-muted">{row.estimatedDailyGb}</td>
                     </tr>
                   ))}
                   {capacity.perSite.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="py-4 text-center text-sm text-gray-400">
+                      <td colSpan={5} className="py-4 text-center text-sm text-muted">
                         No sites yet.
                       </td>
                     </tr>

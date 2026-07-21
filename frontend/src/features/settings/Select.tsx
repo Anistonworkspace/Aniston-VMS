@@ -27,7 +27,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
     return (
       <div className="w-full space-y-1.5">
         {label && (
-          <label htmlFor={selectId} className="block text-sm font-medium text-gray-700">
+          <label htmlFor={selectId} className="block text-sm font-medium text-muted">
             {label}
           </label>
         )}
@@ -36,13 +36,13 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
             ref={ref}
             id={selectId}
             className={cn(
-              'w-full appearance-none rounded-lg border bg-white/70 backdrop-blur-sm text-sm text-gray-900',
+              'w-full appearance-none rounded-lg border bg-card text-sm text-ink',
               'py-2 pl-3.5 pr-9 transition-colors',
-              'focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500',
-              'disabled:cursor-not-allowed disabled:bg-gray-100/50 disabled:text-gray-400',
+              'focus:outline-none focus:ring-2 focus:ring-sage focus:border-sage',
+              'disabled:cursor-not-allowed disabled:bg-surface disabled:text-muted',
               error
-                ? 'border-red-400 focus:ring-red-400 focus:border-red-400'
-                : 'border-gray-200 hover:border-gray-300',
+                ? 'border-coral focus:ring-coral focus:border-coral'
+                : 'border-hairline hover:border-hairline',
               className
             )}
             aria-invalid={!!error}
@@ -60,15 +60,15 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
               </option>
             ))}
           </select>
-          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
         </div>
         {error && (
-          <p id={`${selectId}-error`} className="text-xs text-red-500">
+          <p id={`${selectId}-error`} className="text-xs text-coral">
             {error}
           </p>
         )}
         {!error && hint && (
-          <p id={`${selectId}-hint`} className="text-xs text-gray-500">
+          <p id={`${selectId}-hint`} className="text-xs text-muted">
             {hint}
           </p>
         )}

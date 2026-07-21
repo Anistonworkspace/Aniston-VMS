@@ -8,25 +8,13 @@ import type {
   ZoneOverview,
   ZoneSummary,
 } from '@/types/vms';
-import { mockHealthSummary, mockLatestEvidence, mockRecentIncidents } from '@/mocks/vms-fixtures';
-
-// MOCK: Stage 1 has no backend — every endpoint below resolves from
-// src/mocks/vms-fixtures.ts via queryFn (with a small latency so loading
-// skeletons are visible). Swap each queryFn for `query: () => ({ url: … })`
-// when the real API ships; hooks, tags and consumers stay unchanged.
-const MOCK_LATENCY_MS = 400;
-
-async function fromFixture<T>(data: T): Promise<{ data: T }> {
-  await new Promise((resolve) => setTimeout(resolve, MOCK_LATENCY_MS));
-  return { data };
-}
 
 // NOTE on endpoint names: every feature api injects into the single shared
 // `api` from @/app/api, and RTK Query keeps the FIRST endpoint registered
 // under a given name (`overrideExisting: false`), silently ignoring later
 // ones. Endpoint names here must therefore NOT collide with real endpoints
 // (e.g. auth.api `getCurrentUser`, settings.api `listZones`) — a collision
-// makes real pages receive mock-fixture shapes and crash.
+// makes one page silently shadow another endpoint's shape and crash.
 export const overviewApi = api
   .enhanceEndpoints({ addTagTypes: ['Zone', 'Incident', 'Health', 'Evidence', 'Dashboard'] })
   .injectEndpoints({
@@ -65,13 +53,18 @@ export const overviewApi = api
         providesTags: (_result, _err, zoneId) => [{ type: 'Zone' as const, id: zoneId }],
       }),
 
+      // CR-2 overview widgets — REAL scope-aware backend endpoints in
+      // backend/src/modules/dashboard/dashboard.widgets.ts. Envelope
+      // { success, data } unwrapped; hooks, tags and consumers unchanged.
       getHealthSummary: builder.query<HealthSummary, void>({
-        queryFn: () => fromFixture(mockHealthSummary),
+        query: () => '/dashboard/health-summary',
+        transformResponse: unwrapEnvelope<HealthSummary>,
         providesTags: [{ type: 'Health' as const, id: 'SUMMARY' }],
       }),
 
       listRecentIncidents: builder.query<IncidentSummary[], void>({
-        queryFn: () => fromFixture(mockRecentIncidents),
+        query: () => '/dashboard/recent-incidents',
+        transformResponse: unwrapEnvelope<IncidentSummary[]>,
         providesTags: (result) =>
           result
             ? [
@@ -81,8 +74,9 @@ export const overviewApi = api
             : [{ type: 'Incident' as const, id: 'LIST' }],
       }),
 
-      getLatestEvidence: builder.query<EvidenceSnapshot, void>({
-        queryFn: () => fromFixture(mockLatestEvidence),
+      getLatestEvidence: builder.query<EvidenceSnapshot | null, void>({
+        query: () => '/dashboard/latest-evidence',
+        transformResponse: unwrapEnvelope<EvidenceSnapshot | null>,
         providesTags: [{ type: 'Evidence' as const, id: 'LATEST' }],
       }),
 

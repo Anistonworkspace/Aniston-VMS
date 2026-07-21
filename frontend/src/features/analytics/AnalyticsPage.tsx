@@ -23,8 +23,8 @@ export function AnalyticsPage(): JSX.Element {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="font-sora text-2xl font-semibold text-gray-900">Analytics</h1>
-          <p className="mt-1 text-sm text-gray-500">
+          <h1 className="font-heading text-2xl font-semibold text-ink">Analytics</h1>
+          <p className="mt-1 text-sm text-muted">
             Fleet health, root-cause diagnosis and connection quality trends
           </p>
         </div>
@@ -55,7 +55,7 @@ export function AnalyticsPage(): JSX.Element {
         </div>
       ) : error ? (
         <Card className="py-10 text-center">
-          <p className="text-sm text-red-600">{getApiErrorMessage(error)}</p>
+          <p className="text-sm text-state-critical">{getApiErrorMessage(error)}</p>
           <Button
             variant="secondary"
             size="sm"

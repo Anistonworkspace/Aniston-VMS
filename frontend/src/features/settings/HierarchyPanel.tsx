@@ -94,7 +94,7 @@ function RowShell({
   return (
     <div
       className={cn(
-        'group flex items-center justify-between gap-3 rounded-lg py-2 pr-2 transition-colors hover:bg-white/60',
+        'group flex items-center justify-between gap-3 rounded-lg py-2 pr-2 transition-colors hover:bg-surface',
         depthPad
       )}
     >
@@ -103,7 +103,7 @@ function RowShell({
           <button
             type="button"
             onClick={onToggle}
-            className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-muted hover:bg-surface hover:text-muted"
             aria-label={expanded ? 'Collapse' : 'Expand'}
           >
             {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
@@ -114,9 +114,9 @@ function RowShell({
         <span className={cn('grid h-7 w-7 shrink-0 place-items-center rounded-lg', iconTone)}>
           <Icon className="h-3.5 w-3.5" />
         </span>
-        <span className="truncate text-sm font-medium text-gray-800">{title}</span>
+        <span className="truncate text-sm font-medium text-ink">{title}</span>
         {badge}
-        {meta && <span className="shrink-0 text-xs text-gray-400">{meta}</span>}
+        {meta && <span className="shrink-0 text-xs text-muted">{meta}</span>}
       </div>
       <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
         {actions}
@@ -150,8 +150,8 @@ function ActionButton({
         type="button"
         onClick={onClick}
         className={cn(
-          'grid h-7 w-7 place-items-center rounded-md text-gray-400 hover:bg-gray-100',
-          danger ? 'hover:text-red-600' : 'hover:text-gray-700'
+          'grid h-7 w-7 place-items-center rounded-md text-muted hover:bg-surface',
+          danger ? 'hover:text-coral' : 'hover:text-muted'
         )}
         aria-label={label}
       >
@@ -179,7 +179,7 @@ function RouterRow({
     <RowShell
       depth={3}
       icon={RouterIcon}
-      iconTone="bg-purple-100 text-purple-600"
+      iconTone="bg-sage-soft text-sage"
       expandable={false}
       title={router.serialNumber}
       badge={
@@ -237,7 +237,7 @@ function SiteRow({
       <RowShell
         depth={2}
         icon={Building2}
-        iconTone="bg-emerald-100 text-emerald-600"
+        iconTone="bg-state-success-soft text-state-success"
         expandable
         expanded={expanded}
         onToggle={() => setExpanded((v) => !v)}
@@ -266,9 +266,9 @@ function SiteRow({
       {expanded && (
         <div className="pb-1">
           {isLoading && <SkeletonTable rows={2} />}
-          {error && <p className="pl-[4.5rem] text-xs text-red-500">{getApiErrorMessage(error)}</p>}
+          {error && <p className="pl-[4.5rem] text-xs text-coral">{getApiErrorMessage(error)}</p>}
           {!isLoading && !error && routers?.items.length === 0 && (
-            <p className="pl-[4.5rem] py-1.5 text-xs text-gray-400">No routers yet.</p>
+            <p className="pl-[4.5rem] py-1.5 text-xs text-muted">No routers yet.</p>
           )}
           {routers?.items.map((r) => (
             <RouterRow
@@ -320,7 +320,7 @@ function ZoneRow({
       <RowShell
         depth={1}
         icon={MapPin}
-        iconTone="bg-sky-100 text-sky-600"
+        iconTone="bg-state-info-soft text-state-info"
         expandable
         expanded={expanded}
         onToggle={() => setExpanded((v) => !v)}
@@ -349,9 +349,9 @@ function ZoneRow({
       {expanded && (
         <div className="pb-1">
           {isLoading && <SkeletonTable rows={2} />}
-          {error && <p className="pl-14 text-xs text-red-500">{getApiErrorMessage(error)}</p>}
+          {error && <p className="pl-14 text-xs text-coral">{getApiErrorMessage(error)}</p>}
           {!isLoading && !error && sites?.items.length === 0 && (
-            <p className="pl-14 py-1.5 text-xs text-gray-400">No sites yet.</p>
+            <p className="pl-14 py-1.5 text-xs text-muted">No sites yet.</p>
           )}
           {sites?.items.map((s) => (
             <SiteRow
@@ -405,11 +405,11 @@ function RegionRow({
   } = useListZonesQuery({ regionId: region.id, limit: CHILD_LIST_LIMIT }, { skip: !expanded });
 
   return (
-    <div className="border-b border-gray-100 last:border-b-0">
+    <div className="border-b border-hairline last:border-b-0">
       <RowShell
         depth={0}
         icon={Globe2}
-        iconTone="bg-indigo-100 text-indigo-600"
+        iconTone="bg-indigo text-indigo"
         expandable
         expanded={expanded}
         onToggle={() => setExpanded((v) => !v)}
@@ -442,9 +442,9 @@ function RegionRow({
       {expanded && (
         <div className="pb-1">
           {isLoading && <SkeletonTable rows={2} />}
-          {error && <p className="pl-7 text-xs text-red-500">{getApiErrorMessage(error)}</p>}
+          {error && <p className="pl-7 text-xs text-coral">{getApiErrorMessage(error)}</p>}
           {!isLoading && !error && zones?.items.length === 0 && (
-            <p className="pl-7 py-1.5 text-xs text-gray-400">No zones yet.</p>
+            <p className="pl-7 py-1.5 text-xs text-muted">No zones yet.</p>
           )}
           {zones?.items.map((z) => (
             <ZoneRow
@@ -541,16 +541,16 @@ export function HierarchyPanel({ toast }: PanelProps) {
         </CardHeader>
 
         {!canManage && !canRouter && (
-          <div className="mb-4 flex items-start gap-2 rounded-xl border border-sky-200 bg-sky-50/70 px-4 py-3 text-sm text-sky-800">
+          <div className="mb-4 flex items-start gap-2 rounded-xl border border-state-info bg-state-info-soft px-4 py-3 text-sm text-state-info">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>You have read-only access to the site hierarchy.</span>
           </div>
         )}
 
         {isLoading && <SkeletonTable rows={5} />}
-        {error && <p className="text-sm text-red-500">{getApiErrorMessage(error)}</p>}
+        {error && <p className="text-sm text-coral">{getApiErrorMessage(error)}</p>}
         {!isLoading && !error && regions?.items.length === 0 && (
-          <p className="py-6 text-center text-sm text-gray-400">
+          <p className="py-6 text-center text-sm text-muted">
             No regions have been created yet.
           </p>
         )}

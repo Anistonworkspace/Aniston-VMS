@@ -81,15 +81,15 @@ export function SettingsPage() {
       className="mx-auto max-w-5xl space-y-6 p-6"
     >
       <motion.div variants={pageChild}>
-        <h1 className="font-sora text-2xl font-semibold text-gray-900">Settings</h1>
-        <p className="mt-1 text-sm text-gray-500">
+        <h1 className="font-heading text-2xl font-semibold text-ink">Settings</h1>
+        <p className="mt-1 text-sm text-muted">
           Manage your profile, security, appearance and site hierarchy.
         </p>
       </motion.div>
 
       <motion.div
         variants={pageChild}
-        className="flex flex-wrap gap-1.5 rounded-2xl border border-white/30 bg-white/60 p-1.5 shadow-glass backdrop-blur-md"
+        className="flex flex-wrap gap-1.5 rounded-2xl border border-hairline bg-card p-1.5 shadow-soft"
         role="tablist"
         aria-label="Settings sections"
       >
@@ -105,14 +105,14 @@ export function SettingsPage() {
               onClick={() => setActiveTab(tab.id)}
               className={cn(
                 'relative inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-medium transition-colors',
-                'focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500',
-                active ? 'text-white' : 'text-gray-600 hover:bg-white/70 hover:text-gray-900'
+                'focus:outline-none focus-visible:ring-2 focus-visible:ring-sage',
+                active ? 'text-white' : 'text-muted hover:bg-card hover:text-ink'
               )}
             >
               {active && (
                 <motion.span
                   layoutId="settings-tab-pill"
-                  className="absolute inset-0 rounded-xl bg-indigo-600 shadow-sm"
+                  className="absolute inset-0 rounded-xl bg-sage shadow-sm"
                   transition={{ type: 'spring', stiffness: 500, damping: 40 }}
                 />
               )}
@@ -123,7 +123,7 @@ export function SettingsPage() {
         })}
       </motion.div>
 
-      <motion.div variants={pageChild} className="text-xs uppercase tracking-wide text-gray-400">
+      <motion.div variants={pageChild} className="text-xs uppercase tracking-wide text-muted">
         {visibleTabs.find((t) => t.id === activeTab)?.description}
       </motion.div>
 

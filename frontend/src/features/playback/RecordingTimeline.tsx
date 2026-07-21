@@ -95,7 +95,7 @@ export function RecordingTimeline({
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <span className="min-w-[9rem] text-center text-sm font-medium text-gray-800">
+          <span className="min-w-[9rem] text-center text-sm font-medium text-ink">
             {format(day, 'EEE, dd MMM yyyy')}
           </span>
           <Button
@@ -113,7 +113,7 @@ export function RecordingTimeline({
             </Button>
           )}
         </div>
-        <div className="inline-flex rounded-lg border border-gray-200 bg-white/70 p-0.5 text-sm">
+        <div className="inline-flex rounded-lg border border-hairline bg-card p-0.5 text-sm">
           {(['MAIN', 'SUB'] as const).map((t) => (
             <button
               key={t}
@@ -121,7 +121,7 @@ export function RecordingTimeline({
               onClick={() => onTrackChange(t)}
               className={cn(
                 'rounded-md px-3 py-1 font-medium transition-colors',
-                track === t ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-100'
+                track === t ? 'bg-indigo text-white' : 'text-muted hover:bg-surface'
               )}
             >
               {t === 'MAIN' ? 'Main stream' : 'Sub stream'}
@@ -133,7 +133,7 @@ export function RecordingTimeline({
       {isLoading ? (
         <Skeleton height={64} className="w-full rounded-xl" />
       ) : isError ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-6 text-center text-sm text-red-600">
+        <div className="rounded-xl border border-state-critical/30 bg-state-critical-soft px-4 py-6 text-center text-sm text-state-critical">
           {getApiErrorMessage(error)}
         </div>
       ) : (
@@ -144,7 +144,7 @@ export function RecordingTimeline({
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
-            className="relative h-16 w-full cursor-crosshair select-none overflow-hidden rounded-xl border border-gray-200 bg-gray-50"
+            className="relative h-16 w-full cursor-crosshair select-none overflow-hidden rounded-xl border border-hairline bg-surface"
           >
             {segments && segments.length > 0 ? (
               segments.map((segment: RecordingSegment) => {
@@ -154,20 +154,20 @@ export function RecordingTimeline({
                   <div
                     key={segment.id}
                     title={`${format(new Date(segment.startAt), 'HH:mm:ss')} – ${format(new Date(segment.endAt), 'HH:mm:ss')}`}
-                    className="absolute top-2 h-12 rounded-sm bg-emerald-400/80"
+                    className="absolute top-2 h-12 rounded-sm bg-sage/80"
                     style={{ left: `${s}%`, width: `${Math.max(0.3, e - s)}%` }}
                   />
                 );
               })
             ) : (
-              <div className="flex h-full items-center justify-center gap-2 text-sm text-gray-400">
+              <div className="flex h-full items-center justify-center gap-2 text-sm text-muted">
                 <Film className="h-4 w-4" />
                 No recordings for this day
               </div>
             )}
             {selection && (
               <div
-                className="absolute top-0 h-full border-x-2 border-indigo-600 bg-indigo-500/20"
+                className="absolute top-0 h-full border-x-2 border-indigo bg-indigo/20"
                 style={{
                   left: `${pct(new Date(selection.startAt).getTime(), dayStart.getTime())}%`,
                   width: `${Math.max(
@@ -179,7 +179,7 @@ export function RecordingTimeline({
               />
             )}
           </div>
-          <div className="flex justify-between px-0.5 text-[10px] text-gray-400">
+          <div className="flex justify-between px-0.5 text-[10px] text-muted">
             {hourMarks
               .filter((h) => h % 3 === 0)
               .map((h) => (
@@ -190,7 +190,7 @@ export function RecordingTimeline({
       )}
 
       {selection && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-indigo-50 px-3 py-2 text-sm text-indigo-800">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-indigo-soft px-3 py-2 text-sm text-indigo">
           <span>
             Selected: {format(new Date(selection.startAt), 'HH:mm:ss')} –{' '}
             {format(new Date(selection.endAt), 'HH:mm:ss')}

@@ -51,13 +51,13 @@ function PipelineRow({ stage }: { stage: PipelineStage }): JSX.Element {
         ) : ok === false ? (
           <XCircle size={17} strokeWidth={1.5} className="shrink-0 text-state-critical" />
         ) : (
-          <Circle size={17} strokeWidth={1.5} className="shrink-0 text-gray-300" />
+          <Circle size={17} strokeWidth={1.5} className="shrink-0 text-muted" />
         )}
         <span className="flex-1 text-sm font-medium text-ink">
           {STAGE_LABELS[stage.checkType] ?? prettyEnum(stage.checkType)}
         </span>
         {typeof stage.responseTimeMs === 'number' && (
-          <span className="text-xs tabular-nums text-gray-500">{stage.responseTimeMs} ms</span>
+          <span className="text-xs tabular-nums text-muted">{stage.responseTimeMs} ms</span>
         )}
       </div>
       {ok === false && (stage.errorMessage ?? stage.errorCode) && (
@@ -69,7 +69,7 @@ function PipelineRow({ stage }: { stage: PipelineStage }): JSX.Element {
       {ok === true &&
         stage.checkType === 'VIDEO_VALIDATION' &&
         (stage.codec ?? stage.resolution) && (
-          <p className="mt-1.5 pl-8 text-xs text-gray-500">
+          <p className="mt-1.5 pl-8 text-xs text-muted">
             {[
               stage.codec,
               stage.resolution,
@@ -81,7 +81,7 @@ function PipelineRow({ stage }: { stage: PipelineStage }): JSX.Element {
           </p>
         )}
       {ok == null && (
-        <p className="mt-1.5 pl-8 text-xs text-gray-400">No result yet — run a diagnostic.</p>
+        <p className="mt-1.5 pl-8 text-xs text-muted">No result yet — run a diagnostic.</p>
       )}
     </li>
   );
@@ -90,7 +90,7 @@ function PipelineRow({ stage }: { stage: PipelineStage }): JSX.Element {
 function Detail({ label, value }: { label: string; value?: string }): JSX.Element {
   return (
     <div>
-      <dt className="text-xs text-gray-500">{label}</dt>
+      <dt className="text-xs text-muted">{label}</dt>
       <dd className="mt-0.5 text-sm text-ink">{value || '—'}</dd>
     </div>
   );
@@ -232,7 +232,7 @@ export function CameraDetailDrawer({
                     aria-label="Cancel rename"
                     disabled={saving}
                     onClick={() => setEditingName(false)}
-                    className="shrink-0 rounded-md p-1 text-gray-500 hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage disabled:opacity-50"
+                    className="shrink-0 rounded-md p-1 text-muted hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage disabled:opacity-50"
                   >
                     <X size={16} strokeWidth={2} />
                   </button>
@@ -247,7 +247,7 @@ export function CameraDetailDrawer({
                       type="button"
                       aria-label="Rename camera"
                       onClick={startRename}
-                      className="shrink-0 rounded-md p-1 text-gray-400 hover:bg-card hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage"
+                      className="shrink-0 rounded-md p-1 text-muted hover:bg-card hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage"
                     >
                       <Pencil size={14} strokeWidth={1.75} />
                     </button>
@@ -256,7 +256,7 @@ export function CameraDetailDrawer({
                 </>
               )}
             </div>
-            <p className="mt-0.5 truncate text-xs text-gray-500">
+            <p className="mt-0.5 truncate text-xs text-muted">
               {health.cameraCode}
               {health.site ? ` · ${health.site.name}` : ''}
             </p>
@@ -268,7 +268,7 @@ export function CameraDetailDrawer({
     >
       {error ? (
         <div className="rounded-card bg-card p-8 text-center shadow-soft">
-          <p className="text-sm text-gray-600">{getApiErrorMessage(error)}</p>
+          <p className="text-sm text-secondary">{getApiErrorMessage(error)}</p>
           <Button variant="secondary" size="sm" className="mt-4" onClick={() => refetch()}>
             Try again
           </Button>
@@ -283,14 +283,14 @@ export function CameraDetailDrawer({
         <div className="space-y-6">
           <section className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+              <p className="text-xs font-medium uppercase tracking-wide text-secondary">
                 Health score
               </p>
               <p className="font-heading text-3xl font-semibold text-ink">
                 {health.healthScore}
-                <span className="text-base font-normal text-gray-400"> /100</span>
+                <span className="text-base font-normal text-muted"> /100</span>
               </p>
-              <p className="mt-0.5 text-xs text-gray-500">
+              <p className="mt-0.5 text-xs text-muted">
                 {health.lastHealthyAt
                   ? `Last healthy ${timeAgo(health.lastHealthyAt)}`
                   : 'Never seen healthy'}
@@ -347,7 +347,7 @@ export function CameraDetailDrawer({
 
           <section>
             <h3 className="text-sm font-semibold text-ink">Connection pipeline</h3>
-            <p className="mt-0.5 text-xs text-gray-500">
+            <p className="mt-0.5 text-xs text-muted">
               Latest result per stage, router → stream.
             </p>
             <ol className="mt-3 space-y-2">
@@ -383,7 +383,7 @@ export function CameraDetailDrawer({
                 ))}
               </div>
             ) : (
-              <p className="mt-2 text-xs text-gray-500">
+              <p className="mt-2 text-xs text-muted">
                 No snapshots captured in the last 24 hours.
               </p>
             )}
@@ -451,11 +451,11 @@ export function CameraDetailDrawer({
                       {STAGE_LABELS[check.checkType] ?? prettyEnum(check.checkType)}
                     </span>
                     {!check.success && check.errorMessage && (
-                      <span className="min-w-0 flex-1 truncate text-gray-500">
+                      <span className="min-w-0 flex-1 truncate text-muted">
                         {check.errorMessage}
                       </span>
                     )}
-                    <span className="ml-auto shrink-0 tabular-nums text-gray-400">
+                    <span className="ml-auto shrink-0 tabular-nums text-muted">
                       {typeof check.responseTimeMs === 'number'
                         ? `${check.responseTimeMs} ms · `
                         : ''}
@@ -465,7 +465,7 @@ export function CameraDetailDrawer({
                 ))}
               </ul>
             ) : (
-              <p className="mt-2 text-xs text-gray-500">No checks recorded in the last 24 hours.</p>
+              <p className="mt-2 text-xs text-muted">No checks recorded in the last 24 hours.</p>
             )}
           </section>
         </div>

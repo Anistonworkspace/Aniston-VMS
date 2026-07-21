@@ -22,6 +22,9 @@ export const referenceImageIdParamsSchema = z.object({
 
 export const cameraListQuerySchema = PaginationSchema.extend({
   siteId: z.string().uuid().optional(),
+  // Filter by the owning zone (camera → site → zone). Lets dashboard zone cards
+  // deep-link into a pre-filtered fleet grid via "/cameras?zone=<id>".
+  zoneId: z.string().uuid().optional(),
   routerId: z.string().uuid().optional(),
   status: cameraStatusEnum.optional(),
   q: z.string().max(200).trim().optional(),

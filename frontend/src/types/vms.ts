@@ -117,6 +117,8 @@ export interface EvidenceSnapshot {
   zoneName: string;
   siteName: string;
   capturedAt: string;
+  /** Signed, short-lived thumbnail URL (GET /api/snapshots/:id/file?variant=thumb). */
+  imageUrl: string;
 }
 
 // ── CR-2 dashboard overview (real backend: GET /api/dashboard/overview) ──

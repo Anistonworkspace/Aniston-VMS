@@ -110,8 +110,8 @@ export function NewClipModal({ open, onClose, cameras, notify }: NewClipModalPro
             required
           />
         </div>
-        {formError && <p className="text-xs text-red-500">{formError}</p>}
-        <p className="text-xs text-gray-500">
+        {formError && <p className="text-xs text-negative">{formError}</p>}
+        <p className="text-xs text-tertiary">
           Windows are capped at {CLIP_MAX_DURATION_MINUTES} minutes (server-configured) and must
           cover footage that has already been recorded.
         </p>

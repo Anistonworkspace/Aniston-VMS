@@ -23,7 +23,7 @@ export function RootCausePanel({ rows }: { rows: CameraHealthRow[] }): JSX.Eleme
       </CardHeader>
 
       {entries.length === 0 ? (
-        <p className="py-6 text-center text-sm text-gray-500">
+        <p className="py-6 text-center text-sm text-muted">
           No diagnosed faults — fleet looks clean.
         </p>
       ) : (
@@ -31,10 +31,10 @@ export function RootCausePanel({ rows }: { rows: CameraHealthRow[] }): JSX.Eleme
           {entries.map(([code, count]) => (
             <li key={code}>
               <div className="mb-1 flex items-center justify-between gap-2 text-xs">
-                <span className="truncate font-medium text-gray-700">{DIAGNOSIS_LABEL[code]}</span>
-                <span className="shrink-0 tabular-nums text-gray-500">{count}</span>
+                <span className="truncate font-medium text-ink">{DIAGNOSIS_LABEL[code]}</span>
+                <span className="shrink-0 tabular-nums text-muted">{count}</span>
               </div>
-              <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+              <div className="h-2 w-full overflow-hidden rounded-full bg-hairline">
                 <div
                   className={cn('h-full rounded-full', DIAGNOSIS_BAR_CLASS[code])}
                   style={{ width: `${(count / max) * 100}%` }}
@@ -46,22 +46,22 @@ export function RootCausePanel({ rows }: { rows: CameraHealthRow[] }): JSX.Eleme
       )}
 
       {needsCleaning.length > 0 && (
-        <div className="mt-4 border-t border-gray-100 pt-3">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
+        <div className="mt-4 border-t border-hairline pt-3">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
             Needs cleaning
           </p>
           <ul className="space-y-1.5">
             {needsCleaning.slice(0, MAX_CLEANING_ROWS).map((camera) => (
               <li key={camera.id} className="flex items-baseline justify-between gap-2 text-sm">
-                <span className="truncate text-gray-800">{camera.name}</span>
-                <span className="shrink-0 text-xs text-gray-400">
+                <span className="truncate text-ink">{camera.name}</span>
+                <span className="shrink-0 text-xs text-muted">
                   {camera.cameraCode} · {camera.site.name}
                 </span>
               </li>
             ))}
           </ul>
           {needsCleaning.length > MAX_CLEANING_ROWS && (
-            <p className="mt-1.5 text-xs text-gray-400">
+            <p className="mt-1.5 text-xs text-muted">
               +{needsCleaning.length - MAX_CLEANING_ROWS} more
             </p>
           )}

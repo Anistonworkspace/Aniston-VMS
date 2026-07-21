@@ -15,17 +15,17 @@ export interface ToastItem {
 }
 
 const iconMap = {
-  success: <CheckCircle className="h-5 w-5 text-emerald-500" />,
-  error:   <XCircle     className="h-5 w-5 text-red-500" />,
-  warning: <AlertTriangle className="h-5 w-5 text-amber-500" />,
-  info:    <Info        className="h-5 w-5 text-sky-500" />,
+  success: <CheckCircle className="h-5 w-5 text-state-healthy" />,
+  error:   <XCircle     className="h-5 w-5 text-coral" />,
+  warning: <AlertTriangle className="h-5 w-5 text-state-warning" />,
+  info:    <Info        className="h-5 w-5 text-state-maintenance" />,
 };
 
 const borderMap: Record<ToastVariant, string> = {
-  success: "border-l-emerald-500",
-  error:   "border-l-red-500",
-  warning: "border-l-amber-500",
-  info:    "border-l-sky-500",
+  success: "border-l-state-healthy",
+  error:   "border-l-coral",
+  warning: "border-l-state-warning",
+  info:    "border-l-state-maintenance",
 };
 
 interface SingleToastProps {
@@ -51,20 +51,20 @@ function SingleToast({ toast, onDismiss }: SingleToastProps) {
       animate="visible"
       exit="exit"
       className={cn(
-        "flex w-80 items-start gap-3 rounded-xl border-l-4 bg-white/90 backdrop-blur-md px-4 py-3 shadow-glass",
+        "flex w-80 items-start gap-3 rounded-xl border-l-4 bg-card px-4 py-3 shadow-soft",
         borderMap[toast.variant]
       )}
     >
       <div className="mt-0.5 shrink-0">{iconMap[toast.variant]}</div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-gray-900">{toast.title}</p>
+        <p className="text-sm font-medium text-ink">{toast.title}</p>
         {toast.description && (
-          <p className="mt-0.5 text-xs text-gray-500">{toast.description}</p>
+          <p className="mt-0.5 text-xs text-muted">{toast.description}</p>
         )}
       </div>
       <button
         onClick={() => onDismiss(toast.id)}
-        className="mt-0.5 shrink-0 text-gray-400 hover:text-gray-600"
+        className="mt-0.5 shrink-0 text-muted hover:text-secondary"
         aria-label="Dismiss"
       >
         <X className="h-4 w-4" />

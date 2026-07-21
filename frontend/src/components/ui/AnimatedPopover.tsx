@@ -50,7 +50,7 @@ export function AnimatedPopover({
             initial="hidden"
             animate="visible"
             exit="exit"
-            className={`absolute z-50 min-w-max rounded-xl border border-white/30 bg-white/80 backdrop-blur-md shadow-glass ${placementClasses[placement]} ${className}`}
+            className={`absolute z-50 min-w-max rounded-xl border border-hairline bg-card shadow-soft ${placementClasses[placement]} ${className}`}
           >
             {children}
           </motion.div>

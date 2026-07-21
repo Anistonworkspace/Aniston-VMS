@@ -157,6 +157,7 @@ export default {
         // Aniston VMS shadow — docs/04-uiux-brief.md §2
         soft: 'var(--shadow-soft)',
         'soft-hover': 'var(--shadow-soft-hover)',
+        card: 'var(--shadow-soft)',
       },
       transitionTimingFunction: {
         // Canonical Boilerplate Design System easing curves

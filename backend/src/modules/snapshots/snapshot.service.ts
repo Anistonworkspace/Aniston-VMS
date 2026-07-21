@@ -7,6 +7,7 @@ import { prisma } from '../../lib/prisma.js';
 import { logger } from '../../lib/logger.js';
 import { canAccessCamera, getUserScope } from '../../lib/scope.js';
 import { ForbiddenError, NotFoundError, ValidationError } from '../../middleware/errorHandler.js';
+import { captureFrameFromCamera, generateSyntheticFrame } from './frame-capture.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Stage 3 snapshot engine (docs/06-implementation-plan.md):
@@ -19,26 +20,10 @@ import { ForbiddenError, NotFoundError, ValidationError } from '../../middleware
 //   • Files are served through HMAC-signed URLs only — no public paths.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Analysis-scores version tag. The image-quality scores below are still a
+// simulated analytics layer (Stage 5 swaps in OpenCV); the IMAGE itself is now
+// captured for real via ./frame-capture.
 const ANALYSIS_VERSION = 'sim-1.0';
-
-// Minimal valid 1×1 baseline JPEG. In sim mode every "capture" writes this stub
-// with a COM segment carrying capture metadata, so files are unique, valid
-// JPEGs without shelling out to ffmpeg. Stage 5 replaces this with real frames.
-const BASE_JPEG = Buffer.from(
-  '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AVN//2Q==',
-  'base64'
-);
-
-function simJpeg(meta: string): Buffer {
-  const text = Buffer.from(meta, 'utf8');
-  const com = Buffer.alloc(4 + text.length);
-  com[0] = 0xff;
-  com[1] = 0xfe; // COM marker
-  com.writeUInt16BE(text.length + 2, 2);
-  text.copy(com, 4);
-  // Insert the comment right after SOI so the file stays a valid JPEG.
-  return Buffer.concat([BASE_JPEG.subarray(0, 2), com, BASE_JPEG.subarray(2)]);
-}
 
 /** Deterministic [0,1) pseudo-random from a seed string (stable across runs). */
 function rand(seed: string): number {
@@ -124,11 +109,18 @@ export async function captureSnapshot(
   const scores = computeScores(camera, at);
   const originalKey = keyFor(camera.id, at, kind, false);
   const thumbnailKey = keyFor(camera.id, at, kind, true);
-  const meta = `aniston-vms ${camera.cameraCode} ${kind} ${at.toISOString()} ${ANALYSIS_VERSION}`;
+
+  // Produce the actual image FIRST. captureFrameFromCamera throws
+  // SnapshotCaptureError on any capture/validation failure — before any file or
+  // DB write — so a failed grab surfaces as an honest error and leaves NO
+  // snapshot row and NO lastSnapshotAt update behind (no fake-success record).
+  const frame = env.SNAPSHOT_SIM_MODE
+    ? generateSyntheticFrame(camera, kind, at)
+    : await captureFrameFromCamera(camera);
 
   await fs.mkdir(path.dirname(absPath(originalKey)), { recursive: true });
-  await fs.writeFile(absPath(originalKey), simJpeg(meta));
-  await fs.writeFile(absPath(thumbnailKey), simJpeg(`${meta} thumb`));
+  await fs.writeFile(absPath(originalKey), frame.original);
+  await fs.writeFile(absPath(thumbnailKey), frame.thumbnail);
 
   const snapshot = await prisma.snapshot.create({
     data: {

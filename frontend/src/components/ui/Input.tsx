@@ -18,14 +18,14 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         {label && (
           <label
             htmlFor={inputId}
-            className="block text-sm font-medium text-gray-700"
+            className="block text-sm font-medium text-secondary"
           >
             {label}
           </label>
         )}
         <div className="relative flex items-center">
           {leftAddon && (
-            <div className="absolute left-3 flex items-center text-gray-400">
+            <div className="absolute left-3 flex items-center text-muted">
               {leftAddon}
             </div>
           )}
@@ -33,13 +33,13 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             ref={ref}
             id={inputId}
             className={cn(
-              "w-full rounded-lg border bg-white/70 backdrop-blur-sm text-sm text-gray-900",
-              "placeholder:text-gray-400 transition-colors",
-              "focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500",
-              "disabled:cursor-not-allowed disabled:bg-gray-100/50 disabled:text-gray-400",
+              "w-full rounded-lg border bg-card text-sm text-ink",
+              "placeholder:text-muted transition-colors",
+              "focus:outline-none focus:ring-2 focus:ring-sage focus:border-sage",
+              "disabled:cursor-not-allowed disabled:bg-surface disabled:text-muted",
               error
-                ? "border-red-400 focus:ring-red-400 focus:border-red-400"
-                : "border-gray-200 hover:border-gray-300",
+                ? "border-coral focus:ring-coral focus:border-coral"
+                : "border-hairline hover:border-sage/50",
               leftAddon ? "pl-9" : "pl-3.5",
               rightAddon ? "pr-9" : "pr-3.5",
               "py-2",
@@ -52,18 +52,18 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             {...props}
           />
           {rightAddon && (
-            <div className="absolute right-3 flex items-center text-gray-400">
+            <div className="absolute right-3 flex items-center text-muted">
               {rightAddon}
             </div>
           )}
         </div>
         {error && (
-          <p id={`${inputId}-error`} className="text-xs text-red-500">
+          <p id={`${inputId}-error`} className="text-xs text-coral">
             {error}
           </p>
         )}
         {!error && hint && (
-          <p id={`${inputId}-hint`} className="text-xs text-gray-500">
+          <p id={`${inputId}-hint`} className="text-xs text-muted">
             {hint}
           </p>
         )}

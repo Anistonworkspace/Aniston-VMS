@@ -18,7 +18,7 @@ const paddingMap = {
 export const Card = forwardRef<HTMLDivElement, CardProps>(
   ({ hoverable = false, padding = "md", className, children, ...props }, ref) => {
     const base = cn(
-      "rounded-2xl border border-white/30 bg-white/60 backdrop-blur-md shadow-glass",
+      "rounded-2xl border border-hairline bg-card shadow-soft",
       paddingMap[padding],
       className
     );
@@ -58,7 +58,7 @@ export function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDiv
 export function CardTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
   return (
     <h3
-      className={cn("font-sora text-base font-semibold text-gray-900", className)}
+      className={cn("font-heading text-base font-semibold text-ink", className)}
       {...props}
     />
   );
@@ -66,14 +66,14 @@ export function CardTitle({ className, ...props }: React.HTMLAttributes<HTMLHead
 
 export function CardDescription({ className, ...props }: React.HTMLAttributes<HTMLParagraphElement>) {
   return (
-    <p className={cn("text-sm text-gray-500", className)} {...props} />
+    <p className={cn("text-sm text-muted", className)} {...props} />
   );
 }
 
 export function CardFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn("mt-4 flex items-center justify-end gap-2 pt-4 border-t border-gray-100", className)}
+      className={cn("mt-4 flex items-center justify-end gap-2 pt-4 border-t border-hairline", className)}
       {...props}
     />
   );

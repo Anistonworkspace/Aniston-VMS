@@ -258,13 +258,19 @@ export function ffprobeStream(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      // ffprobe binary missing — treat as skipped-success so environments
-      // without ffmpeg don't mark every camera CRITICAL (logged upstream).
+      // Fail closed. A missing/broken ffprobe binary must NEVER be reported as a
+      // successful probe: real stream validation is mandatory, so ENOENT (binary
+      // not installed) is a hard failure, not a skip. The runtime image ships
+      // ffmpeg (backend/Dockerfile); this guard protects against a future image
+      // regression silently turning Test Connection into a false green.
+      const missing = err.code === 'ENOENT';
       resolve({
-        success: err.code === 'ENOENT',
+        success: false,
         responseTimeMs: elapsed(),
-        errorCode: err.code === 'ENOENT' ? 'FFPROBE_MISSING' : 'FFPROBE_ERROR',
-        errorMessage: err.message,
+        errorCode: missing ? 'FFPROBE_MISSING' : 'FFPROBE_ERROR',
+        errorMessage: missing
+          ? 'ffprobe binary not found — video stream could not be validated'
+          : err.message,
       });
     });
     proc.once('close', (code) => {

@@ -56,7 +56,7 @@ export function AuditLogTab(): JSX.Element {
     <section className="space-y-4">
       <div>
         <h2 className="text-lg font-semibold text-ink">Audit log</h2>
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-muted">
           Append-only cross-zone compliance trail — expand a row to inspect the value diff.
         </p>
       </div>
@@ -144,7 +144,7 @@ export function AuditLogTab(): JSX.Element {
       )}
       {isError && (
         <div className="rounded-card bg-card p-10 text-center shadow-soft">
-          <p className="text-sm text-gray-600">{getApiErrorMessage(error)}</p>
+          <p className="text-sm text-secondary">{getApiErrorMessage(error)}</p>
           <Button
             className="mt-4"
             variant="secondary"
@@ -161,7 +161,7 @@ export function AuditLogTab(): JSX.Element {
       {data && (
         <div className="overflow-x-auto rounded-card bg-card shadow-soft">
           <table className="w-full min-w-[860px] text-sm">
-            <thead className="border-b border-gray-100 text-left text-xs uppercase tracking-wide text-gray-500">
+            <thead className="border-b border-hairline text-left text-xs uppercase tracking-wide text-muted">
               <tr>
                 <th className="w-10 px-2 py-3" />
                 <th className="px-4 py-3 font-medium">Time</th>
@@ -174,14 +174,14 @@ export function AuditLogTab(): JSX.Element {
             <tbody>
               {data.items.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-500">
+                  <td colSpan={6} className="px-4 py-10 text-center text-sm text-muted">
                     No audit events match the current filters.
                   </td>
                 </tr>
               )}
               {data.items.map((row) => (
                 <Fragment key={row.id}>
-                  <tr className="border-b border-gray-50 transition-colors last:border-b-0 hover:bg-gray-50/60">
+                  <tr className="border-b border-hairline transition-colors last:border-b-0 hover:bg-surface">
                     <td className="px-2 py-3">
                       <button
                         type="button"
@@ -189,7 +189,7 @@ export function AuditLogTab(): JSX.Element {
                         onClick={() =>
                           setExpandedId((current) => (current === row.id ? null : row.id))
                         }
-                        className="grid h-7 w-7 place-items-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                        className="grid h-7 w-7 place-items-center rounded-full text-muted transition-colors hover:bg-surface hover:text-secondary"
                       >
                         <ChevronDown
                           size={15}
@@ -200,60 +200,60 @@ export function AuditLogTab(): JSX.Element {
                         />
                       </button>
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-gray-600">
+                    <td className="whitespace-nowrap px-4 py-3 text-secondary">
                       {formatDateTime(row.createdAt)}
                     </td>
                     <td className="px-4 py-3">
                       {row.user ? (
                         <>
                           <p className="font-medium text-ink">{row.user.name}</p>
-                          <p className="text-xs text-gray-500">{row.user.email}</p>
+                          <p className="text-xs text-muted">{row.user.email}</p>
                         </>
                       ) : (
-                        <span className="text-gray-400">System</span>
+                        <span className="text-muted">System</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-gray-700">{row.action}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-secondary">{row.action}</td>
                     <td className="px-4 py-3">
                       <Badge variant="default" size="sm">
                         {row.entityType}
                       </Badge>
                       <span
-                        className="ml-2 inline-block max-w-[160px] truncate align-middle font-mono text-xs text-gray-500"
+                        className="ml-2 inline-block max-w-[160px] truncate align-middle font-mono text-xs text-muted"
                         title={row.entityId}
                       >
                         {row.entityId}
                       </span>
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-gray-500">
+                    <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-muted">
                       {row.ipAddress}
                     </td>
                   </tr>
                   {expandedId === row.id && (
-                    <tr key={`${row.id}-detail`} className="bg-gray-50/60">
+                    <tr key={`${row.id}-detail`} className="bg-surface">
                       <td colSpan={6} className="px-6 py-4">
                         {row.oldValue == null && row.newValue == null ? (
-                          <p className="text-xs text-gray-500">
+                          <p className="text-xs text-muted">
                             No value diff was recorded for this event.
                           </p>
                         ) : (
                           <div className="grid gap-3 md:grid-cols-2">
                             {row.oldValue != null && (
                               <div>
-                                <p className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">
+                                <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted">
                                   Old value
                                 </p>
-                                <pre className="max-h-56 overflow-auto rounded-lg bg-gray-900/95 p-3 text-xs text-gray-100">
+                                <pre className="max-h-56 overflow-auto rounded-lg bg-charcoal p-3 text-xs text-white">
                                   {JSON.stringify(row.oldValue, null, 2)}
                                 </pre>
                               </div>
                             )}
                             {row.newValue != null && (
                               <div>
-                                <p className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">
+                                <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted">
                                   New value
                                 </p>
-                                <pre className="max-h-56 overflow-auto rounded-lg bg-gray-900/95 p-3 text-xs text-gray-100">
+                                <pre className="max-h-56 overflow-auto rounded-lg bg-charcoal p-3 text-xs text-white">
                                   {JSON.stringify(row.newValue, null, 2)}
                                 </pre>
                               </div>
@@ -277,7 +277,7 @@ export function AuditLogTab(): JSX.Element {
               >
                 Previous
               </Button>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted">
                 Page {data.page} of {totalPages} · {data.total} events
               </p>
               <Button

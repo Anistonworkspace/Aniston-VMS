@@ -63,6 +63,8 @@ export interface CameraListQuery {
   page?: number;
   limit?: number;
   siteId?: string;
+  /** Filter to one zone (camera → site → zone). Powers "/cameras?zone=<id>" deep-links. */
+  zoneId?: string;
   routerId?: string;
   status?: CameraStatus;
   q?: string;

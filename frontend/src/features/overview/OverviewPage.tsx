@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   AlertTriangle,
@@ -28,9 +29,11 @@ import {
   useGetDashboardOverviewQuery,
   useGetHealthSummaryQuery,
   useGetLatestEvidenceQuery,
-  useListRecentIncidentsQuery,
   useListZoneSummariesQuery,
 } from './overview.api';
+import { useListIncidentsQuery } from '@/features/incidents/incidents.api';
+import { IncidentDetailModal } from './IncidentDetailModal';
+import { rangeFromISO, type IncidentRange } from './incidentRange';
 
 // Overview ("/") — signature dashboard layout, docs/04-uiux-brief.md §6–7:
 // hero left · CR-2 KPI row right · zone-cards row · donut + incidents ·
@@ -227,7 +230,7 @@ function WidgetCard({
       ) : isEmpty ? (
         <p className="mt-4 text-sm text-muted">{emptyText}</p>
       ) : (
-        <ul className="mt-2 divide-y divide-black/5">{children}</ul>
+        <ul className="mt-2 divide-y divide-hairline">{children}</ul>
       )}
     </article>
   );
@@ -272,28 +275,36 @@ function MissingSnapshotRow({ cam }: { cam: MissingSnapshot }): JSX.Element {
   );
 }
 
-function EvidenceCard({ evidence }: { evidence?: EvidenceSnapshot }): JSX.Element {
+function EvidenceCard({ evidence }: { evidence?: EvidenceSnapshot | null }): JSX.Element {
   return (
     <article className="relative h-52 overflow-hidden rounded-card bg-charcoal shadow-soft">
-      {/* MOCK: abstract art stands in for the newest snapshot until Stage 2 */}
-      <svg
-        viewBox="0 0 200 200"
-        preserveAspectRatio="xMidYMid slice"
-        className="absolute inset-0 h-full w-full"
-        aria-hidden
-      >
-        <circle cx="150" cy="42" r="55" className="fill-coral" />
-        <rect
-          x="-24"
-          y="86"
-          width="130"
-          height="130"
-          rx="28"
-          transform="rotate(-18 40 160)"
-          className="fill-indigo"
+      {evidence ? (
+        // Real newest EVIDENCE snapshot via its signed, short-lived thumbnail URL.
+        <img
+          src={evidence.imageUrl}
+          alt={`Latest evidence from ${evidence.cameraLabel}`}
+          className="absolute inset-0 h-full w-full object-cover"
         />
-        <path d="M120 200 L200 120 L200 200 Z" className="fill-sand" />
-      </svg>
+      ) : (
+        <svg
+          viewBox="0 0 200 200"
+          preserveAspectRatio="xMidYMid slice"
+          className="absolute inset-0 h-full w-full"
+          aria-hidden
+        >
+          <circle cx="150" cy="42" r="55" className="fill-coral" />
+          <rect
+            x="-24"
+            y="86"
+            width="130"
+            height="130"
+            rx="28"
+            transform="rotate(-18 40 160)"
+            className="fill-indigo"
+          />
+          <path d="M120 200 L200 120 L200 200 Z" className="fill-sand" />
+        </svg>
+      )}
       <div className="absolute inset-0 bg-gradient-to-t from-charcoal via-transparent to-transparent" />
       <div className="absolute inset-x-4 bottom-4">
         <h3 className="font-heading text-base font-semibold text-white">Latest evidence</h3>
@@ -326,12 +337,17 @@ export function OverviewPage(): JSX.Element {
     isError: zonesError,
     refetch: refetchZones,
   } = useListZoneSummariesQuery();
+  const [range, setRange] = useState<IncidentRange>('24h');
+  const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
+  // Recompute the `from` bound only when the range changes so RTK Query keeps a
+  // stable cache key instead of refetching on every render tick.
+  const incidentsFrom = useMemo(() => rangeFromISO(range), [range]);
   const {
     data: incidents,
     isLoading: incidentsLoading,
     isError: incidentsError,
     refetch: refetchIncidents,
-  } = useListRecentIncidentsQuery();
+  } = useListIncidentsQuery({ from: incidentsFrom, limit: 8 });
   const { data: evidence } = useGetLatestEvidenceQuery();
 
   const featuredZones = zones
@@ -417,8 +433,16 @@ export function OverviewPage(): JSX.Element {
           isLoading={incidentsLoading}
           isError={incidentsError}
           onRetry={() => void refetchIncidents()}
+          range={range}
+          onRangeChange={setRange}
+          onSelect={setSelectedIncidentId}
         />
       </div>
+
+      <IncidentDetailModal
+        incidentId={selectedIncidentId}
+        onClose={() => setSelectedIncidentId(null)}
+      />
 
       {/* Row 3 — CR-2 widgets: worst connections · missing snapshots */}
       <div className="col-span-12 xl:col-span-6">

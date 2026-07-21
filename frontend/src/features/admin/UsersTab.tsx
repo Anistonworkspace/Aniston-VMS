@@ -184,7 +184,7 @@ function UserModal({ user, onClose, onSuccess, onError }: UserModalProps): JSX.E
             onChange={(event) => setActiveState(event.target.value)}
           />
         )}
-        {formError && <p className="text-sm text-red-600">{formError}</p>}
+        {formError && <p className="text-sm text-coral">{formError}</p>}
         <div className="flex justify-end gap-2 pt-1">
           <Button type="button" variant="secondary" size="sm" onClick={onClose}>
             Cancel
@@ -282,13 +282,13 @@ function ScopesDrawer({
   return (
     <Drawer open onClose={onClose} title={`Access scopes — ${user.name}`}>
       <div className="space-y-5">
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-muted">
           Scopes restrict which regions, zones and sites this account can see. An{' '}
           <span className="font-medium text-ink">ALL</span> scope grants unrestricted visibility.
         </p>
 
         {canWrite && (
-          <div className="space-y-3 rounded-lg border border-gray-100 bg-white/60 p-4">
+          <div className="space-y-3 rounded-lg border border-hairline bg-card p-4">
             <div className="grid gap-3 sm:grid-cols-2">
               <Select
                 label="Scope type"
@@ -322,12 +322,12 @@ function ScopesDrawer({
           </div>
         )}
         {!canWrite && (
-          <p className="text-xs text-gray-400">Scope changes require the SUPER_ADMIN role.</p>
+          <p className="text-xs text-muted">Scope changes require the SUPER_ADMIN role.</p>
         )}
 
         {isLoading && <SkeletonTable rows={3} />}
         {!isLoading && (scopes?.length ?? 0) === 0 && (
-          <p className="rounded-lg bg-gray-50 p-4 text-sm text-gray-500">
+          <p className="rounded-lg bg-surface p-4 text-sm text-muted">
             No scopes — this account currently has no explicit access restrictions configured.
           </p>
         )}
@@ -335,13 +335,13 @@ function ScopesDrawer({
           {scopes?.map((scope) => (
             <li
               key={scope.id}
-              className="flex items-center gap-3 rounded-lg border border-gray-100 bg-white/60 px-4 py-2.5"
+              className="flex items-center gap-3 rounded-lg border border-hairline bg-card px-4 py-2.5"
             >
               <Badge variant={scope.scopeType === 'ALL' ? 'purple' : 'primary'} size="sm">
                 {scope.scopeType}
               </Badge>
               <span className="min-w-0 flex-1 truncate text-sm text-ink">{nameFor(scope)}</span>
-              <span className="text-xs text-gray-400">{formatDateTime(scope.createdAt)}</span>
+              <span className="text-xs text-muted">{formatDateTime(scope.createdAt)}</span>
               {canWrite && (
                 <Button
                   variant="ghost"
@@ -449,7 +449,7 @@ export function UsersTab(): JSX.Element {
       )}
       {isError && (
         <div className="rounded-card bg-card p-10 text-center shadow-soft">
-          <p className="text-sm text-gray-600">{getApiErrorMessage(error)}</p>
+          <p className="text-sm text-secondary">{getApiErrorMessage(error)}</p>
           <Button
             className="mt-4"
             variant="secondary"
@@ -466,7 +466,7 @@ export function UsersTab(): JSX.Element {
       {data && (
         <div className="overflow-x-auto rounded-card bg-card shadow-soft">
           <table className="w-full min-w-[760px] text-sm">
-            <thead className="border-b border-gray-100 text-left text-xs uppercase tracking-wide text-gray-500">
+            <thead className="border-b border-hairline text-left text-xs uppercase tracking-wide text-muted">
               <tr>
                 <th className="px-4 py-3 font-medium">User</th>
                 <th className="px-4 py-3 font-medium">Phone</th>
@@ -479,7 +479,7 @@ export function UsersTab(): JSX.Element {
             <tbody>
               {data.items.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-500">
+                  <td colSpan={6} className="px-4 py-10 text-center text-sm text-muted">
                     No users match the current filters.
                   </td>
                 </tr>
@@ -487,13 +487,13 @@ export function UsersTab(): JSX.Element {
               {data.items.map((user) => (
                 <tr
                   key={user.id}
-                  className="border-b border-gray-50 transition-colors last:border-b-0 hover:bg-gray-50/60"
+                  className="border-b border-hairline transition-colors last:border-b-0 hover:bg-surface"
                 >
                   <td className="px-4 py-3">
                     <p className="font-medium text-ink">{user.name}</p>
-                    <p className="text-xs text-gray-500">{user.email}</p>
+                    <p className="text-xs text-muted">{user.email}</p>
                   </td>
-                  <td className="px-4 py-3 text-gray-600">{user.phone ?? '—'}</td>
+                  <td className="px-4 py-3 text-secondary">{user.phone ?? '—'}</td>
                   <td className="px-4 py-3">
                     <Badge variant={ROLE_BADGE[user.role]} size="sm">
                       {ROLE_LABELS[user.role]}
@@ -504,7 +504,7 @@ export function UsersTab(): JSX.Element {
                       {user.mfaEnabled ? 'Enabled' : 'Off'}
                     </Badge>
                   </td>
-                  <td className="px-4 py-3 text-gray-600">
+                  <td className="px-4 py-3 text-secondary">
                     {user.lastLoginAt ? formatDateTime(user.lastLoginAt) : 'Never'}
                   </td>
                   <td className="px-4 py-3">
@@ -557,7 +557,7 @@ export function UsersTab(): JSX.Element {
               >
                 Previous
               </Button>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted">
                 Page {data.page} of {totalPages} · {data.total} users
               </p>
               <Button

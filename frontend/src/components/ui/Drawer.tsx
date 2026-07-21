@@ -73,7 +73,7 @@ export function Drawer({
             initial="hidden"
             animate="visible"
             exit="exit"
-            className="absolute inset-0 bg-charcoal/40 backdrop-blur-[2px]"
+            className="absolute inset-0 bg-charcoal/40"
             onClick={onClose}
             aria-hidden
           />
@@ -93,15 +93,15 @@ export function Drawer({
           >
             {/* Grab handle (mobile bottom-sheet affordance). */}
             <div className="flex justify-center pt-2 sm:hidden" aria-hidden>
-              <span className="h-1.5 w-10 rounded-full bg-black/15" />
+              <span className="h-1.5 w-10 rounded-full bg-charcoal/15" />
             </div>
-            <header className="flex items-start justify-between gap-4 border-b border-black/5 px-6 py-4">
+            <header className="flex items-start justify-between gap-4 border-b border-hairline px-6 py-4">
               <div className="min-w-0 flex-1">{title}</div>
               <button
                 type="button"
                 onClick={onClose}
                 aria-label="Close panel"
-                className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-gray-500 transition-colors hover:bg-black/5 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage"
+                className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-muted transition-colors hover:bg-surface hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage"
               >
                 <X size={18} strokeWidth={1.5} />
               </button>

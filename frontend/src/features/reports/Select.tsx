@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 
 // Local select primitive — components/ui has no Select yet. Built from
 // @radix-ui/react-select in the same visual language as components/ui/Input.tsx
-// (rounded-lg border bg-white/70 backdrop-blur-sm ...).
+// (rounded-lg border bg-card/70 ...).
 
 export interface SelectOption {
   value: string;
@@ -54,7 +54,7 @@ export function Select({
   return (
     <div className="w-full space-y-1.5">
       {label && (
-        <label id={labelId} htmlFor={selectId} className="block text-sm font-medium text-gray-700">
+        <label id={labelId} htmlFor={selectId} className="block text-sm font-medium text-ink">
           {label}
         </label>
       )}
@@ -67,24 +67,24 @@ export function Select({
           id={selectId}
           aria-labelledby={labelId}
           className={cn(
-            'flex w-full items-center justify-between gap-2 rounded-lg border bg-white/70 backdrop-blur-sm text-sm text-gray-900',
-            'border-gray-200 hover:border-gray-300 px-3.5 py-2 transition-colors',
-            'focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500',
-            'disabled:cursor-not-allowed disabled:bg-gray-100/50 disabled:text-gray-400',
-            'data-[placeholder]:text-gray-400',
+            'flex w-full items-center justify-between gap-2 rounded-lg border bg-card/70 text-sm text-ink',
+            'border-hairline hover:border-muted px-3.5 py-2 transition-colors',
+            'focus:outline-none focus:ring-2 focus:ring-indigo focus:border-indigo',
+            'disabled:cursor-not-allowed disabled:bg-hairline/50 disabled:text-muted',
+            'data-[placeholder]:text-muted',
             className
           )}
         >
           <SelectPrimitive.Value placeholder={placeholder} />
           <SelectPrimitive.Icon>
-            <ChevronDown className="h-4 w-4 shrink-0 text-gray-400" />
+            <ChevronDown className="h-4 w-4 shrink-0 text-muted" />
           </SelectPrimitive.Icon>
         </SelectPrimitive.Trigger>
         <SelectPrimitive.Portal>
           <SelectPrimitive.Content
             position="popper"
             sideOffset={4}
-            className="z-50 max-h-64 overflow-hidden rounded-lg border border-white/30 bg-white/95 shadow-glass backdrop-blur-md"
+            className="z-50 max-h-64 overflow-hidden rounded-lg border border-hairline bg-card shadow-soft"
           >
             <SelectPrimitive.Viewport className="max-h-64 p-1">
               {options.map((opt) => {
@@ -94,8 +94,8 @@ export function Select({
                     key={itemValue}
                     value={itemValue}
                     className={cn(
-                      'relative flex cursor-pointer select-none items-center rounded-md px-3 py-2 pr-8 text-sm text-gray-800 outline-none',
-                      'data-[highlighted]:bg-indigo-50 data-[highlighted]:text-indigo-700'
+                      'relative flex cursor-pointer select-none items-center rounded-md px-3 py-2 pr-8 text-sm text-ink outline-none',
+                      'data-[highlighted]:bg-indigo-soft data-[highlighted]:text-indigo'
                     )}
                   >
                     <SelectPrimitive.ItemText>{opt.label}</SelectPrimitive.ItemText>
@@ -109,7 +109,7 @@ export function Select({
           </SelectPrimitive.Content>
         </SelectPrimitive.Portal>
       </SelectPrimitive.Root>
-      {hint && <p className="text-xs text-gray-500">{hint}</p>}
+      {hint && <p className="text-xs text-muted">{hint}</p>}
     </div>
   );
 }

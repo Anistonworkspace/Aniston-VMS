@@ -3,15 +3,17 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { Camera } from './cameras.types';
 import { DELHI_NCR, OSM_RASTER_STYLE, STATUS_PIN_COLORS } from './mapStyle';
+import { createCameraPin } from './cameraPin';
 
 interface CameraMapViewProps {
   cameras: Camera[];
   onOpen: (id: string) => void;
 }
 
-// CR-6 — MapLibre fleet map. Every camera renders as a status-colored pin at
-// its registered WGS-84 position; clicking a pin opens the same health drawer
-// the grid cards use. Markers are DOM buttons so they stay keyboard-reachable.
+// CR-6 — MapLibre fleet map. Every camera renders as a 3D teardrop CCTV pin
+// (see cameraPin.ts) at its registered WGS-84 position; clicking a pin opens the
+// same health drawer the grid cards use. Markers are DOM buttons so they stay
+// keyboard-reachable, and use anchor "bottom" so the tip sits on the coordinate.
 export function CameraMapView({ cameras, onOpen }: CameraMapViewProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -48,24 +50,8 @@ export function CameraMapView({ cameras, onOpen }: CameraMapViewProps): JSX.Elem
     const bounds = new maplibregl.LngLatBounds();
     cameras.forEach((camera) => {
       if (!Number.isFinite(camera.latitude) || !Number.isFinite(camera.longitude)) return;
-      const el = document.createElement('button');
-      el.type = 'button';
-      el.title = `${camera.name} · ${camera.status}`;
-      el.setAttribute('aria-label', `Open ${camera.name} (${camera.status})`);
-      el.style.cssText = [
-        'width:15px',
-        'height:15px',
-        'border-radius:9999px',
-        'border:2px solid #fff',
-        'box-shadow:0 1px 4px rgba(15,23,42,0.45)',
-        'cursor:pointer',
-        `background:${STATUS_PIN_COLORS[camera.status] ?? STATUS_PIN_COLORS.UNKNOWN}`,
-      ].join(';');
-      el.addEventListener('click', (event) => {
-        event.stopPropagation();
-        onOpenRef.current(camera.id);
-      });
-      const marker = new maplibregl.Marker({ element: el })
+      const el = createCameraPin(camera, (id) => onOpenRef.current(id));
+      const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
         .setLngLat([camera.longitude, camera.latitude])
         .addTo(map);
       markersRef.current.push(marker);
@@ -85,11 +71,11 @@ export function CameraMapView({ cameras, onOpen }: CameraMapViewProps): JSX.Elem
         role="application"
         aria-label="Camera fleet map"
       />
-      <div className="pointer-events-none absolute bottom-3 left-3 flex flex-wrap items-center gap-2 rounded-full bg-white/85 px-3 py-1.5 shadow-soft backdrop-blur-sm">
+      <div className="pointer-events-none absolute bottom-3 left-3 flex flex-wrap items-center gap-2 rounded-full bg-card px-3 py-1.5 shadow-soft">
         {(Object.entries(STATUS_PIN_COLORS) as Array<[string, string]>).map(([status, color]) => (
           <span
             key={status}
-            className="flex items-center gap-1 text-[10px] font-medium text-gray-600"
+            className="flex items-center gap-1 text-[10px] font-medium text-tertiary"
           >
             <span
               aria-hidden
