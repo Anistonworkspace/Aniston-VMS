@@ -10,11 +10,12 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Trash2,
   X,
 } from 'lucide-react';
 import { Button, Input, SkeletonCard, ToastContainer } from '@/components/ui';
 import { useGetCurrentUserQuery } from '@/features/auth/auth.api';
-import { isCameraWriteRole } from '@/features/auth/auth.types';
+import { isAdminRole, isCameraWriteRole } from '@/features/auth/auth.types';
 import { useListZoneSummariesQuery } from '@/features/overview/overview.api';
 import { useToast } from '@/hooks/useToast';
 import { getApiErrorMessage } from '@/lib/apiError';
@@ -24,10 +25,14 @@ import { AddCameraModal } from './AddCameraModal';
 import { CameraCard } from './CameraCard';
 import { CameraDetailDrawer } from './CameraDetailDrawer';
 import { CameraMapView } from './CameraMapView';
-import { useListCamerasQuery, useListSitesLiteQuery } from './cameras.api';
-import type { CameraStatus } from './cameras.types';
+import { DeleteCameraModal } from './DeleteCameraModal';
+import { useDeleteCameraMutation, useListCamerasQuery, useListSitesLiteQuery } from './cameras.api';
+import type { Camera, CameraStatus } from './cameras.types';
 
 const PAGE_SIZE = 24;
+
+const DANGER_OUTLINE =
+  'border-coral text-coral hover:bg-coral/10 hover:border-coral focus-visible:ring-coral';
 
 const STATUS_FILTERS: Array<{ value: CameraStatus | ''; label: string }> = [
   { value: '', label: 'All' },
@@ -74,6 +79,12 @@ export function CamerasPage(): JSX.Element {
 
   const { data: user } = useGetCurrentUserQuery();
   const canRegister = isCameraWriteRole(user?.role);
+  const canDelete = isAdminRole(user?.role); // mirrors backend ADMIN_ROLES (server still enforces)
+  const [selecting, setSelecting] = useState(false);
+  const [prevView, setPrevView] = useState<'grid' | 'map' | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Camera | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [del, { isLoading: isDeleting }] = useDeleteCameraMutation();
 
   const setStatus = (next: CameraStatus | ''): void => {
     setSearchParams(
@@ -150,6 +161,36 @@ export function CamerasPage(): JSX.Element {
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.limit)) : 1;
 
+  function enterSelection() {
+    if (view === 'map') {
+      setPrevView('map'); // selection is grid-only (needs the cards); remember to restore Map after
+      setView('grid');
+    }
+    setSelecting(true);
+  }
+
+  function exitSelection() {
+    setSelecting(false);
+    setPendingDelete(null);
+    setErrorMessage(null);
+    if (prevView) {
+      setView(prevView);
+      setPrevView(null);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    setErrorMessage(null);
+    try {
+      await del(pendingDelete.id).unwrap();
+      success('Camera removed');
+      exitSelection(); // closes modal, exits selection, restores previous view; tags refetch the list
+    } catch (err) {
+      setErrorMessage(getApiErrorMessage(err)); // immediate, from the caught error → modal stays open, camera stays
+    }
+  }
+
   return (
     <motion.div variants={pageTransition} initial="hidden" animate="visible" className="space-y-6">
       <motion.header
@@ -178,6 +219,22 @@ export function CamerasPage(): JSX.Element {
               Add camera
             </Button>
           )}
+          {canDelete &&
+            (selecting ? (
+              <Button variant="secondary" size="sm" onClick={exitSelection}>
+                Cancel
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                className={DANGER_OUTLINE}
+                onClick={enterSelection}
+                leftIcon={<Trash2 size={14} />}
+              >
+                Delete camera
+              </Button>
+            ))}
         </div>
       </motion.header>
 
@@ -270,6 +327,16 @@ export function CamerasPage(): JSX.Element {
         </div>
       </motion.div>
 
+      {selecting && (
+        <motion.div
+          variants={pageChild}
+          className="rounded-card border border-hairline bg-card px-4 py-2.5 text-sm text-secondary shadow-soft"
+          role="status"
+        >
+          Select a camera to delete.
+        </motion.div>
+      )}
+
       {view === 'map' ? (
         <motion.div variants={pageChild}>
           <CameraMapView
@@ -306,6 +373,11 @@ export function CamerasPage(): JSX.Element {
               key={camera.id}
               camera={camera}
               onOpen={(id) => navigate(`/cameras/${id}`)}
+              selectable={selecting}
+              onSelect={(cam) => {
+                setErrorMessage(null);
+                setPendingDelete(cam);
+              }}
             />
           ))}
         </motion.div>
@@ -358,6 +430,18 @@ export function CamerasPage(): JSX.Element {
         open={addOpen}
         onClose={() => setAddOpen(false)}
         notify={{ success, error: notifyError }}
+      />
+
+      <DeleteCameraModal
+        open={pendingDelete !== null}
+        camera={pendingDelete}
+        loading={isDeleting}
+        errorMessage={errorMessage}
+        onConfirm={confirmDelete}
+        onCancel={() => {
+          setPendingDelete(null); // cancel the popup but stay in selection mode to pick another
+          setErrorMessage(null);
+        }}
       />
 
       <ToastContainer toasts={toasts} onDismiss={dismiss} />

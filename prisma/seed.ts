@@ -2,8 +2,6 @@ import 'dotenv/config';
 import { createHash, randomBytes, createCipheriv } from 'node:crypto';
 import {
   PrismaClient,
-  Role,
-  ScopeType,
   CameraStatus,
   Diagnosis,
   CheckType,
@@ -14,11 +12,6 @@ import {
   NotificationStatus,
   SnapshotKind,
   RecordingTrack,
-  StreamKind,
-  ClipStatus,
-  LayoutKind,
-  PermissionType,
-  BackupStatus,
   TaskType,
   TaskSource,
   TaskStatus,
@@ -107,11 +100,6 @@ const encrypt = (plaintext: string): string => {
   const tag = cipher.getAuthTag();
   return Buffer.concat([iv, tag, enc]).toString('base64');
 };
-
-// Real bcrypt hash of the demo password shown on the login page
-// (DEMO_PASSWORD = "AdminDemo2026!"). Every seeded user shares it so all roles
-// can be signed in locally to exercise RBAC. Cost 12 matches the auth module.
-const DEMO_PASSWORD_HASH = '$2a$12$cOmPkspDIwo6pbpj6Rj5ROJ2Y5e9uX4l0x7/8IpnirWnX0Ua/JVd.';
 
 async function wipe(): Promise<void> {
   // Children first (FK-safe order).
@@ -423,122 +411,17 @@ async function main(): Promise<void> {
   const cam = (n: number): string => uid(B.camera, n);
 
   // -------------------------------------------------------------------------
-  // 4. One user per role + access scopes
+  // 4. Users are intentionally NOT seeded.
+  //    Demo accounts that all shared one hardcoded password were removed for
+  //    security. The real administrator is provisioned out-of-band by the
+  //    dedicated admin bootstrap script (reads ADMIN_PASSWORD from the env);
+  //    this seed never creates login credentials, and no replacement demo
+  //    user is created here.
+  //    Because no users exist, every user-scoped demo row is also omitted:
+  //    access scopes, permissions/LIVE_VIEW grants, stream sessions, clip
+  //    exports, saved layouts, backups, maintenance windows, and reference
+  //    images. Incident/task/event actor fields are left unassigned (null).
   // -------------------------------------------------------------------------
-  const users: Array<{
-    n: number;
-    email: string;
-    name: string;
-    phone: string;
-    role: Role;
-    scopeType: ScopeType;
-    scopeId: string | null;
-  }> = [
-    {
-      n: 1,
-      email: 'admin@anistonvms.example',
-      name: 'Aniston Super Admin',
-      phone: '+91-9800000001',
-      role: Role.SUPER_ADMIN,
-      scopeType: ScopeType.ALL,
-      scopeId: null,
-    },
-    {
-      n: 2,
-      email: 'pm@anistonvms.example',
-      name: 'Priya Malhotra (Project Manager)',
-      phone: '+91-9800000002',
-      role: Role.PROJECT_ADMIN,
-      scopeType: ScopeType.ALL,
-      scopeId: null,
-    },
-    {
-      n: 3,
-      email: 'operator@anistonvms.example',
-      name: 'Omkar Patil (Control Room)',
-      phone: '+91-9800000003',
-      role: Role.OPERATOR,
-      scopeType: ScopeType.ALL,
-      scopeId: null,
-    },
-    {
-      n: 4,
-      email: 'engineer.rohini@anistonvms.example',
-      name: 'Ravi Kumar (Rohini Engineer)',
-      phone: '+91-9800000004',
-      role: Role.ENGINEER,
-      scopeType: ScopeType.ZONE,
-      scopeId: zoneRohini,
-    },
-    {
-      n: 5,
-      email: 'viewer@client.example',
-      name: 'Client Viewer (Demo Client)',
-      phone: '+91-9800000005',
-      role: Role.CLIENT_VIEWER,
-      scopeType: ScopeType.SITE,
-      scopeId: site1,
-    },
-    {
-      n: 6,
-      email: 'auditor@anistonvms.example',
-      name: 'Asha Verma (Auditor)',
-      phone: '+91-9800000006',
-      role: Role.AUDITOR,
-      scopeType: ScopeType.ALL,
-      scopeId: null,
-    },
-    {
-      n: 7,
-      email: 'camviewer@client.example',
-      name: 'Camera Viewer (Single-Camera Demo)',
-      phone: '+91-9800000007',
-      role: Role.CLIENT_VIEWER,
-      scopeType: ScopeType.CAMERA,
-      scopeId: cam(1),
-    },
-  ];
-  await prisma.user.createMany({
-    data: users.map((u) => ({
-      id: uid(B.user, u.n),
-      email: u.email,
-      passwordHash: DEMO_PASSWORD_HASH,
-      name: u.name,
-      phone: u.phone,
-      role: u.role,
-    })),
-  });
-  await prisma.userAccessScope.createMany({
-    data: users.map((u) => ({
-      id: uid(B.scope, u.n),
-      userId: uid(B.user, u.n),
-      scopeType: u.scopeType,
-      scopeId: u.scopeId,
-    })),
-  });
-  const userEngineer = uid(B.user, 4);
-  const userAdmin = uid(B.user, 1);
-
-  // v1.5: demo LIVE_VIEW grants — admin and one operator have it; the zone
-  // engineer deliberately does not (exercises the permission gate end-to-end).
-  await prisma.userPermission.createMany({
-    data: [
-      {
-        id: uid(B.permission, 1),
-        userId: userAdmin,
-        permission: PermissionType.LIVE_VIEW,
-        grantedBy: userAdmin,
-        grantedAt: hrAgo(72),
-      },
-      {
-        id: uid(B.permission, 2),
-        userId: uid(B.user, 3),
-        permission: PermissionType.LIVE_VIEW,
-        grantedBy: userAdmin,
-        grantedAt: hrAgo(48),
-      },
-    ],
-  });
 
   // v1.5: default system settings (docs/05 §Retention & jobs documented keys).
   await prisma.systemSetting.createMany({
@@ -548,21 +431,6 @@ async function main(): Promise<void> {
       { id: uid(B.setting, 3), key: 'max_live_sessions_global', value: 40 },
       { id: uid(B.setting, 4), key: 'max_live_sessions_per_site', value: 6 },
     ],
-  });
-
-  // v1.5: one completed demo backup row.
-  await prisma.backup.create({
-    data: {
-      id: uid(B.backup, 1),
-      requestedBy: userAdmin,
-      scopeType: ScopeType.ZONE,
-      scopeId: zoneRohini,
-      rangeStart: hrAgo(24 * 8),
-      rangeEnd: hrAgo(24),
-      status: BackupStatus.DONE,
-      fileKey: 'backups/demo/zone-rohini-weekly.zip',
-      sizeBytes: BigInt(734_003_200),
-    },
   });
 
   // -------------------------------------------------------------------------
@@ -776,8 +644,6 @@ async function main(): Promise<void> {
       firstDetectedAt: hrAgo(6),
       lastDetectedAt: minAgo(5),
       acknowledgedAt: minAgo(340),
-      acknowledgedBy: userEngineer,
-      assignedToId: userEngineer,
       slaImpact: true,
     },
   });
@@ -795,7 +661,6 @@ async function main(): Promise<void> {
       firstDetectedAt: hrAgo(3),
       lastDetectedAt: minAgo(20),
       acknowledgedAt: minAgo(150),
-      acknowledgedBy: userEngineer,
     },
   });
   await prisma.incident.create({
@@ -827,8 +692,6 @@ async function main(): Promise<void> {
       firstDetectedAt: hrAgo(30),
       lastDetectedAt: hrAgo(29),
       acknowledgedAt: hrAgo(29),
-      acknowledgedBy: userEngineer,
-      assignedToId: userEngineer,
       resolvedAt: hrAgo(28),
       rootCause: 'RTSP password rotated on camera but not updated in VMS',
       resolutionNotes: 'Credentials corrected via camera edit form; test connection passed.',
@@ -850,8 +713,6 @@ async function main(): Promise<void> {
       firstDetectedAt: hrAgo(50),
       lastDetectedAt: hrAgo(48),
       acknowledgedAt: hrAgo(49),
-      acknowledgedBy: userEngineer,
-      assignedToId: userEngineer,
       resolvedAt: hrAgo(48),
       recoveryVerifiedAt: hrAgo(47),
       closedAt: hrAgo(46),
@@ -866,15 +727,15 @@ async function main(): Promise<void> {
     { incident: inc(1), at: hrAgo(6), actor: null, event: 'DETECTED' },
     { incident: inc(1), at: minAgo(355), actor: null, event: 'CONFIRMED' },
     { incident: inc(1), at: minAgo(354), actor: null, event: 'ALERTED' },
-    { incident: inc(1), at: minAgo(340), actor: userEngineer, event: 'ACKNOWLEDGED' },
-    { incident: inc(1), at: minAgo(335), actor: userEngineer, event: 'ASSIGNED' },
+    { incident: inc(1), at: minAgo(340), actor: null, event: 'ACKNOWLEDGED' },
+    { incident: inc(1), at: minAgo(335), actor: null, event: 'ASSIGNED' },
     { incident: inc(4), at: hrAgo(30), actor: null, event: 'DETECTED' },
     { incident: inc(4), at: hrAgo(30), actor: null, event: 'ALERTED' },
-    { incident: inc(4), at: hrAgo(28), actor: userEngineer, event: 'RESOLVED' },
+    { incident: inc(4), at: hrAgo(28), actor: null, event: 'RESOLVED' },
     { incident: inc(5), at: hrAgo(50), actor: null, event: 'DETECTED' },
-    { incident: inc(5), at: hrAgo(48), actor: userEngineer, event: 'RESOLVED' },
+    { incident: inc(5), at: hrAgo(48), actor: null, event: 'RESOLVED' },
     { incident: inc(5), at: hrAgo(47), actor: null, event: 'RECOVERY_VERIFIED' },
-    { incident: inc(5), at: hrAgo(46), actor: userEngineer, event: 'CLOSED' },
+    { incident: inc(5), at: hrAgo(46), actor: null, event: 'CLOSED' },
   ];
   await prisma.incidentEvent.createMany({
     data: events.map((e, i) => ({
@@ -1091,17 +952,6 @@ async function main(): Promise<void> {
     },
   });
 
-  // 9b. Approved reference images (one per camera, approved by the admin).
-  await prisma.referenceImage.createMany({
-    data: [1, 2, 3, 4, 5, 6].map((n) => ({
-      id: uid(B.refimage, n),
-      cameraId: cam(n),
-      s3Key: `reference-images/${camCode(n)}/seed-ref.jpg`,
-      approvedById: uid(B.user, 1),
-      approvedAt: hrAgo(72),
-    })),
-  });
-
   // 9c. SD card status for every camera (§ SD_HEALTH surfaces).
   const sdRows = [
     { n: 1, present: true, cap: 128, free: 41.2, rec: true, seg: minAgo(3) },
@@ -1210,125 +1060,6 @@ async function main(): Promise<void> {
   }
   await prisma.connectionQualityHourly.createMany({ data: qualityRows });
 
-  // 9g. Stream sessions (one live, two ended).
-  await prisma.streamSession.createMany({
-    data: [
-      {
-        id: uid(B.stream, 1),
-        cameraId: cam(1),
-        userId: uid(B.user, 3),
-        kind: StreamKind.LIVE_SUB,
-        mediamtxPath: 'cam-001-sub',
-        startedAt: minAgo(14),
-        lastHeartbeatAt: minAgo(1),
-        clientIp: '10.30.0.25',
-        bytesEstimate: BigInt(52_428_800),
-      },
-      {
-        id: uid(B.stream, 2),
-        cameraId: cam(2),
-        userId: uid(B.user, 5),
-        kind: StreamKind.LIVE_SUB,
-        mediamtxPath: 'cam-002-sub',
-        startedAt: hrAgo(3),
-        lastHeartbeatAt: hrAgo(2),
-        endedAt: hrAgo(2),
-        endReason: 'ttl_expired',
-        clientIp: '10.30.0.31',
-        bytesEstimate: BigInt(120_586_240),
-      },
-      {
-        id: uid(B.stream, 3),
-        cameraId: cam(1),
-        userId: uid(B.user, 3),
-        kind: StreamKind.PLAYBACK,
-        mediamtxPath: 'playback-cam-001',
-        startedAt: hrAgo(5),
-        lastHeartbeatAt: hrAgo(5),
-        endedAt: new Date(hrAgo(5).getTime() + 10 * 60_000),
-        endReason: 'user_stopped',
-        clientIp: '10.30.0.25',
-        bytesEstimate: BigInt(31_457_280),
-      },
-    ],
-  });
-
-  // 9h. Clip exports: DONE (file provided by demo:media), PROCESSING, FAILED.
-  await prisma.clipExport.createMany({
-    data: [
-      {
-        id: uid(B.clip, 1),
-        cameraId: cam(1),
-        requestedById: uid(B.user, 3),
-        startAt: hrAgo(5),
-        endAt: new Date(hrAgo(5).getTime() + 2 * 60_000),
-        status: ClipStatus.DONE,
-        s3Key: 'clips/seed-clip-0001.mp4',
-        sizeBytes: BigInt(1_048_576),
-      },
-      {
-        id: uid(B.clip, 2),
-        cameraId: cam(2),
-        requestedById: uid(B.user, 2),
-        startAt: hrAgo(1),
-        endAt: new Date(hrAgo(1).getTime() + 5 * 60_000),
-        status: ClipStatus.PROCESSING,
-      },
-      {
-        id: uid(B.clip, 3),
-        cameraId: cam(4),
-        requestedById: uid(B.user, 4),
-        startAt: hrAgo(8),
-        endAt: new Date(hrAgo(8).getTime() + 2 * 60_000),
-        status: ClipStatus.FAILED,
-        error: 'Camera offline during export window',
-        incidentId: inc(1),
-      },
-    ],
-  });
-
-  // 9i. Saved live-wall layouts.
-  await prisma.savedLayout.createMany({
-    data: [
-      {
-        id: uid(B.layout, 1),
-        userId: uid(B.user, 3),
-        name: 'Control room 2x2',
-        layout: LayoutKind.L2x2,
-        cameraIds: [cam(1), cam(2), cam(3), cam(4)],
-      },
-      {
-        id: uid(B.layout, 2),
-        userId: uid(B.user, 5),
-        name: 'Gate focus',
-        layout: LayoutKind.L1x1,
-        cameraIds: [cam(1)],
-      },
-    ],
-  });
-
-  // 9j. Maintenance windows (active for CAM-005, plus one past site window).
-  await prisma.maintenanceWindow.createMany({
-    data: [
-      {
-        id: uid(B.mwindow, 1),
-        cameraId: cam(5),
-        startAt: hrAgo(26),
-        endAt: minAgo(-22 * 60),
-        reason: 'Lens cleaning + housing repair',
-        approvedById: uid(B.user, 2),
-      },
-      {
-        id: uid(B.mwindow, 2),
-        siteId: site1,
-        startAt: hrAgo(200),
-        endAt: hrAgo(196),
-        reason: 'Planned power maintenance',
-        approvedById: uid(B.user, 1),
-      },
-    ],
-  });
-
   // 9k. Maintenance tasks (DONE with before/after snapshots, OPEN, IN_PROGRESS).
   await prisma.maintenanceTask.createMany({
     data: [
@@ -1338,7 +1069,6 @@ async function main(): Promise<void> {
         type: TaskType.LENS_CLEANING,
         source: TaskSource.AUTO,
         status: TaskStatus.DONE,
-        assignedToId: uid(B.user, 4),
         beforeSnapshotId: uid(B.snapshot, 7),
         afterSnapshotId: uid(B.snapshot, 8),
         notes: 'Dust score recovered after cleaning; verified against reference image.',
@@ -1350,7 +1080,6 @@ async function main(): Promise<void> {
         type: TaskType.REPAIR,
         source: TaskSource.MANUAL,
         status: TaskStatus.OPEN,
-        assignedToId: uid(B.user, 4),
         notes: 'RTSP port closed while router reachable — check camera PSU and cabling.',
       },
       {
@@ -1359,7 +1088,6 @@ async function main(): Promise<void> {
         type: TaskType.INSPECTION,
         source: TaskSource.AUTO,
         status: TaskStatus.IN_PROGRESS,
-        assignedToId: uid(B.user, 4),
         notes: 'Scheduled quarterly inspection.',
       },
     ],
