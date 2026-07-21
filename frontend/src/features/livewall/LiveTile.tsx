@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FetchBaseQueryError } from '@reduxjs/toolkit/query/react';
 import { Loader2, RefreshCw, VideoOff, X } from 'lucide-react';
 import { getApiErrorMessage } from '@/lib/apiError';

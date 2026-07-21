@@ -1,15 +1,20 @@
 import 'dotenv/config';
-import { PrismaClient, Role, ScopeType } from '@prisma/client';
+import { pathToFileURL } from 'node:url';
+import { PrismaClient, Role } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 // ---------------------------------------------------------------------------
-// Standalone admin bootstrap — creates (or updates) a single SUPER_ADMIN user
-// with an ALL access scope, WITHOUT wiping any data.
+// Standalone admin maintenance — UPDATE-ONLY and non-escalating by design.
+//
+// This script NEVER creates users, NEVER assigns or changes a role, and NEVER
+// grants access scopes. It only updates an account that is ALREADY a
+// SUPER_ADMIN (matched by email) - e.g. to rotate its password. If no such
+// user exists, or the matched account is not a SUPER_ADMIN, it makes NO
+// database changes at all.
 //
 // Unlike `prisma/seed.ts` (a destructive wipe-and-reseed of the full demo
 // dataset), this script is idempotent and safe to run against a populated
-// database — including staging/production — to bootstrap or reset an admin
-// login. It only touches the User + UserAccessScope rows for one email.
+// database - including staging/production.
 //
 //   npm run db:seed:admin
 //
@@ -45,7 +50,7 @@ const DEFAULT_PHONE = '+91-9800000001';
 const MIN_PASSWORD_LEN = 12;
 const MAX_PASSWORD_LEN = 128;
 
-interface AdminConfig {
+export interface AdminConfig {
   email: string;
   name: string;
   phone: string;
@@ -92,67 +97,99 @@ function resolveConfig(): AdminConfig {
   };
 }
 
-async function main(): Promise<void> {
-  const cfg = resolveConfig();
-  const existing = await prisma.user.findUnique({ where: { email: cfg.email } });
+export type AdminUpdateOutcome =
+  | { status: 'updated'; userId: string; passwordChanged: boolean }
+  | { status: 'skipped'; reason: 'not-found' | 'not-super-admin' };
 
-  // Only (re)hash + write the password when creating a new user, or when a
-  // password was supplied explicitly — so re-running without ADMIN_PASSWORD
-  // never clobbers a rotated credential on an existing account.
-  const writePassword = existing === null || cfg.passwordExplicit;
-  const passwordHash = writePassword ? await bcrypt.hash(cfg.password, BCRYPT_ROUNDS) : undefined;
+/**
+ * Update-only, non-escalating admin maintenance.
+ *
+ * Safety contract (enforced here, covered by seed-admin.test.ts):
+ *   - Never creates a user (no create / createMany / upsert).
+ *   - Never assigns or changes a role (no promotion).
+ *   - Never grants access scopes.
+ *   - Only mutates an account that is ALREADY a SUPER_ADMIN.
+ *   - A missing account, or a non-SUPER_ADMIN match, performs ZERO writes.
+ */
+export async function applyAdminUpdate(
+  db: PrismaClient,
+  cfg: AdminConfig,
+): Promise<AdminUpdateOutcome> {
+  const existing = await db.user.findUnique({ where: { email: cfg.email } });
 
-  const user = await prisma.$transaction(async (tx) => {
-    const upserted = await tx.user.upsert({
-      where: { email: cfg.email },
-      create: {
-        email: cfg.email,
-        // create always needs a hash; writePassword is true on the create path.
-        passwordHash: passwordHash as string,
-        name: cfg.name,
-        phone: cfg.phone,
-        role: Role.SUPER_ADMIN,
-        isActive: true,
-      },
-      update: {
-        name: cfg.name,
-        phone: cfg.phone,
-        role: Role.SUPER_ADMIN,
-        isActive: true,
-        ...(writePassword ? { passwordHash } : {}),
-      },
-    });
+  // No account for this email -> do nothing. We never create accounts.
+  if (existing === null) {
+    return { status: 'skipped', reason: 'not-found' };
+  }
 
-    // Ensure exactly one ALL access scope (SUPER_ADMIN sees everything).
-    const allScope = await tx.userAccessScope.findFirst({
-      where: { userId: upserted.id, scopeType: ScopeType.ALL },
-    });
-    if (!allScope) {
-      await tx.userAccessScope.create({
-        data: { userId: upserted.id, scopeType: ScopeType.ALL, scopeId: null },
-      });
-    }
+  // Account exists but is not already a SUPER_ADMIN -> do nothing. We never
+  // promote; this guard is what makes the tool non-escalating.
+  if (existing.role !== Role.SUPER_ADMIN) {
+    return { status: 'skipped', reason: 'not-super-admin' };
+  }
 
-    return upserted;
+  // Only (re)hash + write the password when one was supplied explicitly, so a
+  // routine run never clobbers a manually rotated credential.
+  const passwordChanged = cfg.passwordExplicit;
+  const passwordHash = passwordChanged
+    ? await bcrypt.hash(cfg.password, BCRYPT_ROUNDS)
+    : undefined;
+
+  // Update profile/credential fields ONLY. `role` is intentionally never part
+  // of this payload, and access scopes are never touched.
+  await db.user.update({
+    where: { id: existing.id },
+    data: {
+      name: cfg.name,
+      phone: cfg.phone,
+      isActive: true,
+      ...(passwordChanged ? { passwordHash } : {}),
+    },
   });
 
-  const action = existing === null ? 'created' : 'updated';
-  const usingDemo = !cfg.passwordExplicit;
-  console.log('----------------------------------------------------------------');
-  console.log(`  Admin ${action}: ${user.email}`);
-  console.log(`  Role:     ${user.role}  ·  Scope: ALL  ·  id: ${user.id}`);
-  console.log(`  Password: ${writePassword ? 'set/updated' : 'unchanged (no ADMIN_PASSWORD provided)'}`);
-  if (writePassword && usingDemo) {
-    console.log(`  Password value (public demo default): ${DEMO_PASSWORD}`);
-  } else if (writePassword) {
-    console.log('  Password value: (from ADMIN_PASSWORD — not printed)');
-  }
-  console.log('----------------------------------------------------------------');
+  return { status: 'updated', userId: existing.id, passwordChanged };
 }
 
-main()
-  .catch((err) => {
-    console.error('[seed-admin] failed:', err instanceof Error ? err.message : err);
+async function main(): Promise<void> {
+  const cfg = resolveConfig();
+  const outcome = await applyAdminUpdate(prisma, cfg);
+
+  if (outcome.status === 'skipped') {
+    const why =
+      outcome.reason === 'not-found'
+        ? `no user exists for ${cfg.email}`
+        : `the account for ${cfg.email} is not a SUPER_ADMIN`;
+    console.error(
+      `[seed-admin] No changes made: ${why}. This tool only updates an ` +
+        'existing SUPER_ADMIN; it never creates accounts or changes roles. ' +
+        'Nothing was written to the database.',
+    );
     process.exitCode = 1;
-  })
-  .finally(() => prisma.$disconnect());
+    return;
+  }
+
+  console.info('----------------------------------------------------------------');
+  console.info(`  SUPER_ADMIN updated: ${cfg.email}  (id: ${outcome.userId})`);
+  console.info('  Role: SUPER_ADMIN (unchanged)  |  Access scopes: unchanged');
+  console.info(
+    `  Password: ${outcome.passwordChanged ? 'updated' : 'unchanged (no ADMIN_PASSWORD provided)'}`,
+  );
+  console.info('----------------------------------------------------------------');
+}
+
+// Only run as a CLI (`tsx prisma/seed-admin.ts`). Importing this module (e.g.
+// from tests) must NOT execute main() or touch the database.
+const invokedDirectly =
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (invokedDirectly) {
+  main()
+    .catch((err) => {
+      console.error('[seed-admin] failed:', err instanceof Error ? err.message : err);
+      process.exitCode = 1;
+    })
+    .finally(() => {
+      void prisma.$disconnect();
+    });
+}

@@ -187,7 +187,7 @@ export function CamerasPage(): JSX.Element {
       success('Camera removed');
       exitSelection(); // closes modal, exits selection, restores previous view; tags refetch the list
     } catch (err) {
-      setErrorMessage(getApiErrorMessage(err)); // immediate, from the caught error → modal stays open, camera stays
+      setErrorMessage(getApiErrorMessage(err as Parameters<typeof getApiErrorMessage>[0])); // immediate, from the caught error → modal stays open, camera stays
     }
   }
 

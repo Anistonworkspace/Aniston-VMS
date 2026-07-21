@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { DeleteCameraModal } from './DeleteCameraModal';
 import type { Camera } from './cameras.types';
 
@@ -37,12 +36,11 @@ describe('DeleteCameraModal', () => {
     expect(screen.getByText(/never deletes historical incidents/i)).toBeInTheDocument();
   });
 
-  it('calls onCancel and onConfirm from the buttons', async () => {
-    const user = userEvent.setup();
+  it('calls onCancel and onConfirm from the buttons', () => {
     const { onConfirm, onCancel } = setup();
-    await user.click(screen.getByRole('button', { name: /cancel/i }));
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
     expect(onCancel).toHaveBeenCalledTimes(1);
-    await user.click(screen.getByRole('button', { name: /delete camera/i }));
+    fireEvent.click(screen.getByRole('button', { name: /delete camera/i }));
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
 

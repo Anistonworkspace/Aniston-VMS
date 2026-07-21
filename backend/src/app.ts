@@ -78,13 +78,18 @@ export function createApp(): Express {
   app.use('/api', snapshotFileRouter);
   app.use('/api', filesRouter);
   app.use('/api', metricsRouter);
+  // mediaAuthRouter is public (token-gated via signed media cookie, no user JWT).
+  // It MUST be mounted before any router that applies a router-level requireAuth
+  // (healthRouter onward), otherwise that middleware runs first for every /api/*
+  // request and 401s GET /api/media/authorize with "Missing Bearer token" before
+  // the reverse-proxy media gate can authorize it.
+  app.use('/api', mediaAuthRouter); // public: reverse-proxy media authorization (token-gated, no user JWT)
   app.use('/api', healthRouter);
   app.use('/api', snapshotRouter);
   app.use('/api', incidentRouter);
   app.use('/api', hierarchyRouter);
   app.use('/api/cameras', cameraRouter);
   app.use('/api', clipRouter);
-  app.use('/api', mediaAuthRouter); // public: reverse-proxy media authorization (token-gated, no user JWT)
   app.use('/api', playbackRouter);
   app.use('/api', layoutRouter);
   app.use('/api', maintenanceRouter);

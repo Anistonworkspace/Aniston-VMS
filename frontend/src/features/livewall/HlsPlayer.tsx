@@ -30,7 +30,14 @@ export function HlsPlayer({ src, className, onStatus }: HlsPlayerProps): JSX.Ele
       hls.loadSource(src);
       hls.attachMedia(video);
       hls.on(Hls.Events.ERROR, (_event, data) => {
-        if (data.fatal) statusRef.current?.('error');
+        if (data.fatal) {
+          // Fatal = hls.js has already exhausted its internal retries. Stop
+          // loading so we don't keep hitting the (failed) media-authorize gate,
+          // then signal the terminal state up to LiveTile so it can release the
+          // server-side session slot instead of retrying in a tight loop.
+          hls?.stopLoad();
+          statusRef.current?.('error');
+        }
       });
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = src;

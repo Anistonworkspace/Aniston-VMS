@@ -138,8 +138,26 @@ async function wipe(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  if (process.env.NODE_ENV === 'production' && process.env.ALLOW_PROD_SEED !== 'true') {
-    console.error('Refusing to seed production database. Set ALLOW_PROD_SEED=true to override.');
+  // -------------------------------------------------------------------------
+  // Destructive-seed safety gate — MUST stay above wipe() (the first DB write).
+  // wipe() runs user.deleteMany() and would erase real accounts, so:
+  //   * Production: always abort. There is deliberately NO override.
+  //   * Development: require an explicit ALLOW_DESTRUCTIVE_DEV_SEED=true opt-in.
+  // -------------------------------------------------------------------------
+  if (process.env.NODE_ENV === 'production') {
+    console.error(
+      'Refusing to run prisma/seed.ts in production: it wipes ALL data (including users). ' +
+        'This destructive seed has no production override by design. ' +
+        'Use `npm run db:seed:admin` for safe admin provisioning.',
+    );
+    process.exit(1);
+  }
+
+  if (process.env.ALLOW_DESTRUCTIVE_DEV_SEED !== 'true') {
+    console.error(
+      'Refusing to run destructive seed: prisma/seed.ts wipes ALL data (including users) before reseeding. ' +
+        'Set ALLOW_DESTRUCTIVE_DEV_SEED=true to confirm you are targeting a disposable development database.',
+    );
     process.exit(1);
   }
 
@@ -1095,13 +1113,12 @@ async function main(): Promise<void> {
 
   console.info(
     'Seed complete: 4 regions, 13 zones, 2 sites, 2 routers, 6 cameras, ' +
-      `${users.length} users, 1 escalation policy (${steps.length} steps), ` +
+      `no seeded users, 1 escalation policy (${steps.length} steps), ` +
       `${rules.length} alert rules, 5 incidents, ${events.length} events, ` +
       `4 notifications, ${checks.length} health checks, ${snaps.length} snapshots, ` +
-      '6 reference images, 6 SD statuses, 6 segments, 4 SIM usage rows, ' +
-      `${qualityRows.length} quality rows, 3 streams, 3 clips, 2 layouts, ` +
-      '2 maintenance windows, 3 tasks, 2 LIVE_VIEW grants, 4 system settings, ' +
-      '1 backup. Run `npm run demo:media` to fetch media files.'
+      '6 SD statuses, 6 segments, 4 SIM usage rows, ' +
+      `${qualityRows.length} quality rows, 3 tasks (unassigned), ` +
+      '4 system settings. Run `npm run demo:media` to fetch media files.'
   );
 }
 
