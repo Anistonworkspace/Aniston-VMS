@@ -1,0 +1,367 @@
+name: CI/CD
+
+# Single pipeline for vms.anistonav.com — replaces the old ci.yml + deploy.yml.
+#
+#                     ┌─ build-backend ─┐
+#                     ├─ build-frontend ┤
+#   resolve ──────────┤                 ├──► deploy ──► health
+#                     ├─ test-backend ──┤
+#                     └─ test-frontend ─┘
+#
+# On pull_request (main, develop): only the test jobs run — code is verified but
+#   NO images are pushed and prod is never touched.
+# On push to main / manual dispatch: images are pushed to GHCR and deploy runs,
+#   but ONLY after every build + test job passes — broken code can never reach
+#   production. Nothing is built on the EC2 disk; everything is scoped to the
+#   isolated `aniston-vms` compose project, so no other stack on the box is
+#   touched. Prod stays unchanged unless the deploy reaches `compose up`.
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main]
+    # push-only path filter: PRs always run full checks (safe for required
+    # status checks), but a docs-only push to main skips the rebuild/redeploy.
+    paths-ignore:
+      - '**.md'
+      - '.claude/**'
+      - 'memory/**'
+      - 'docs/**'
+  workflow_dispatch: {}
+
+concurrency:
+  # PR runs cancel superseded runs; main deploys serialize and never cancel a
+  # live production deploy.
+  group: cicd-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # ── resolve ────────────────────────────────────────────────────────────────
+  resolve:
+    name: Resolve image names
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      base: ${{ steps.img.outputs.base }}
+      sha: ${{ steps.img.outputs.sha }}
+    steps:
+      - name: Compute image base + tag
+        id: img
+        run: |
+          owner="$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
+          echo "base=ghcr.io/${owner}/aniston-vms" >> "$GITHUB_OUTPUT"
+          echo "sha=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+  # ── test: backend (unit + integration, needs postgres + redis) ──────────────
+  test-backend:
+    name: Test · backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: aniston_vms_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/aniston_vms_test
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: ci-test-jwt-secret-32chars-minimum
+      JWT_REFRESH_SECRET: ci-test-refresh-secret-32chars-min
+      ENCRYPTION_KEY: 0000000000000000000000000000000000000000000000000000000000000000
+      SMTP_HOST: localhost
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Push schema to test DB
+        run: npx prisma db push --schema=prisma/schema.prisma --accept-data-loss
+
+      - name: Typecheck — backend
+        run: npx tsc --noEmit
+        working-directory: backend
+
+      - name: Typecheck — shared
+        run: npx tsc --noEmit
+        working-directory: shared
+
+      - name: Lint
+        run: npm run lint --workspaces --if-present
+
+      - name: Test — backend (unit + integration)
+        run: npm test
+        working-directory: backend
+
+      - name: Build — backend
+        run: npm run build
+        working-directory: backend
+
+      - name: Upload backend coverage
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-backend
+          path: backend/coverage/
+
+  # ── test: frontend (unit + component, no DB needed) ─────────────────────────
+  test-frontend:
+    name: Test · frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NODE_ENV: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        # frontend tsc pulls shared types that reference the generated client.
+        run: npm run db:generate
+
+      - name: Typecheck — frontend
+        run: npx tsc --noEmit
+        working-directory: frontend
+
+      - name: Test — frontend (unit + component)
+        run: npm test
+        working-directory: frontend
+
+      - name: Build — frontend
+        run: npm run build
+        working-directory: frontend
+
+      - name: Upload frontend coverage
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-frontend
+          path: frontend/coverage/
+
+  # ── build + push backend image (main / dispatch only) ───────────────────────
+  build-backend:
+    name: Build & push · backend
+    needs: resolve
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: true
+          tags: |
+            ${{ needs.resolve.outputs.base }}-backend:${{ needs.resolve.outputs.sha }}
+            ${{ needs.resolve.outputs.base }}-backend:latest
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+  # ── build + push frontend image (main / dispatch only) ──────────────────────
+  build-frontend:
+    name: Build & push · frontend
+    needs: resolve
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: frontend/Dockerfile
+          push: true
+          # Baked into the SPA at build time — the browser talks to the app on its
+          # own origin. Same-origin means the frontend nginx proxies /api itself.
+          build-args: |
+            VITE_API_URL=https://vms.anistonav.com
+          tags: |
+            ${{ needs.resolve.outputs.base }}-frontend:${{ needs.resolve.outputs.sha }}
+            ${{ needs.resolve.outputs.base }}-frontend:latest
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+  # ── deploy (gated behind ALL build + test jobs) ─────────────────────────────
+  deploy:
+    name: Deploy (EC2)
+    needs: [resolve, build-backend, build-frontend, test-backend, test-frontend]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read # EC2 host pulls private GHCR images with GITHUB_TOKEN
+    steps:
+      - name: Configure SSH
+        env:
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$EC2_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          if [[ -n "$EC2_KNOWN_HOSTS" ]]; then
+            # Preferred: pin the host key. Set the optional EC2_KNOWN_HOSTS secret
+            # to the output of `ssh-keyscan -H <host>` captured on a trusted network
+            # — this authenticates the channel that carries the prod secrets + token.
+            printf '%s\n' "$EC2_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            # Fallback (trust-on-first-use): works, but set EC2_KNOWN_HOSTS to close
+            # the first-connection MITM window.
+            ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          fi
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Sync repo on EC2 (git)
+        env:
+          EC2: ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}
+        run: |
+          ssh -i ~/.ssh/deploy_key "$EC2" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          APP_DIR="${HOME}/aniston-vms"
+          REPO="https://github.com/Anistonworkspace/Aniston-VMS.git"
+          if [[ ! -d "${APP_DIR}/.git" ]]; then
+            git clone "$REPO" "$APP_DIR"
+          fi
+          cd "$APP_DIR"
+          git fetch origin main
+          git reset --hard origin/main
+          REMOTE
+
+      - name: Write production .env on EC2 (from secret)
+        env:
+          PROD_ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
+          EC2: ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}
+        run: |
+          # Secret via stdin (never on a command line / process list). Also:
+          #  - tr -d '\r' normalises CRLF→LF in case the secret was pasted from a
+          #    Windows editor (a trailing \r would corrupt DATABASE_URL / passwords).
+          #  - write to a temp file, chmod 600, then atomic mv — `umask` alone would
+          #    leave an already-existing wider-mode .env untouched on re-deploys.
+          printf '%s' "$PROD_ENV_FILE" | tr -d '\r' | \
+            ssh -i ~/.ssh/deploy_key "$EC2" \
+              'umask 077; d="$HOME/aniston-vms"; cat > "$d/.env.tmp" && chmod 600 "$d/.env.tmp" && mv -f "$d/.env.tmp" "$d/.env"'
+
+      - name: Deploy on EC2 (login → pull → migrate → up → health)
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+          IMAGE_TAG: ${{ needs.resolve.outputs.sha }}
+          EC2: ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}
+        run: |
+          # 1) GHCR login — token piped over stdin, so it never appears in argv.
+          printf '%s' "$GHCR_TOKEN" | \
+            ssh -i ~/.ssh/deploy_key "$EC2" "docker login ghcr.io -u '${GHCR_USER}' --password-stdin"
+          # 2) Deploy (no secrets on the command line; .env already on the host).
+          ssh -i ~/.ssh/deploy_key "$EC2" \
+            "cd \"\${HOME}/aniston-vms\" && IMAGE_TAG='${IMAGE_TAG}' FRONTEND_HOST_PORT='8095' APP_DIR=\"\${HOME}/aniston-vms\" bash scripts/deploy-prod.sh"
+
+      - name: Drop GHCR credential on EC2
+        # Always run — even if the deploy step failed — so the registry credential
+        # never lingers in ~/.docker/config.json on the shared host.
+        if: always()
+        env:
+          EC2: ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}
+        run: |
+          if [[ -f ~/.ssh/deploy_key ]]; then
+            ssh -i ~/.ssh/deploy_key "$EC2" 'docker logout ghcr.io || true' || true
+          fi
+
+      - name: Deploy failed
+        if: failure()
+        run: echo "::error::Production deploy failed — see the step logs. The running app on EC2 is unchanged unless the 'Deploy on EC2' step reached 'compose up'."
+
+  # ── post-deploy public health probe (end-to-end: DNS → TLS → nginx → app) ───
+  health:
+    name: Post-deploy health (public)
+    needs: deploy
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe https://vms.anistonav.com/api/health
+        run: |
+          code=000
+          for i in $(seq 1 12); do
+            code="$(curl -sS -o /dev/null -w '%{http_code}' https://vms.anistonav.com/api/health || echo 000)"
+            echo "attempt ${i}: HTTP ${code}"
+            if [[ "$code" == "200" ]]; then
+              echo "Public edge healthy (DNS → TLS → nginx → frontend → backend /api/health)."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::Public health probe never returned 200 (last: ${code}). The deploy job's own on-host health gate passed, so this is an edge/DNS/TLS issue, not the app."
+          exit 1
