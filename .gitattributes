@@ -1,0 +1,10 @@
+# Shell scripts must use LF line endings so they execute correctly on the
+# Linux (Ubuntu) deploy host. Without this, autocrlf on Windows checkouts can
+# store CRLF and cause `bash: bad interpreter: /bin/bash^M` failures on deploy.
+*.sh text eol=lf
+
+# Deploy-related config consumed by Linux tooling — force LF for safety.
+*.yml text eol=lf
+*.yaml text eol=lf
+*.conf text eol=lf
+Dockerfile text eol=lf

@@ -1095,7 +1095,7 @@ async function main(): Promise<void> {
 
   console.info(
     'Seed complete: 4 regions, 13 zones, 2 sites, 2 routers, 6 cameras, ' +
-      `${users.length} users, 1 escalation policy (${steps.length} steps), ` +
+      `0 users, 1 escalation policy (${steps.length} steps), ` +
       `${rules.length} alert rules, 5 incidents, ${events.length} events, ` +
       `4 notifications, ${checks.length} health checks, ${snaps.length} snapshots, ` +
       '6 reference images, 6 SD statuses, 6 segments, 4 SIM usage rows, ' +

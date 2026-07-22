@@ -22,7 +22,11 @@ If you see an active lock on a file you need to edit:
 
 ## Current locks
 
-_(none - no active locks)_
+- **prod-deploy-ghcr-cicd** — held by `claude` since 2026-07-22 10:40
+  - Files: `docker/docker-compose.prod.yml`, `scripts/deploy-prod.sh`, `.github/workflows/deploy.yml`, `nginx/vms.anistonav.com.conf`
+  - Reason: Isolated GHCR push-to-deploy CI/CD for vms.anistonav.com on the shared EC2 host (no other stack touched).
+  - Plan: [../plans/_active/2026-07-22-prod-deploy-ghcr-cicd.md](../plans/_active/2026-07-22-prod-deploy-ghcr-cicd.md)
+  - Status: ACTIVE
 
 ## Recently released
 

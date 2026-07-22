@@ -1,80 +1,159 @@
 name: Deploy to Production
 
+# Push-to-deploy for vms.anistonav.com.
+#
+# Flow: build backend + frontend images  →  push to GHCR  →  SSH into the shared
+# EC2 host  →  sync repo  →  write .env from the PROD_ENV_FILE secret  →  docker
+# login ghcr (ephemeral GITHUB_TOKEN)  →  scripts/deploy-prod.sh (pull → migrate →
+# up → health). Nothing is built on the EC2 disk; everything is scoped to the
+# isolated `aniston-vms` compose project so no other stack on the box is touched.
+
 on:
   push:
     branches: [main]
     paths-ignore:
-      - "**.md"
-      - ".claude/**"
-      - "memory/**"
+      - '**.md'
+      - '.claude/**'
+      - 'memory/**'
+      - 'docs/**'
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
 
 jobs:
-  deploy:
-    name: Build → Migrate → Deploy
+  build-and-deploy:
+    name: Build → Push (GHCR) → Deploy (EC2)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    environment: production
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: write # push images to ghcr.io/<owner>/aniston-vms-*
 
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Compute image base + tag
+        id: img
+        run: |
+          owner="$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
+          echo "base=ghcr.io/${owner}/aniston-vms" >> "$GITHUB_OUTPUT"
+          echo "sha=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
-          node-version: "20"
-          cache: "npm"
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Build & push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.img.outputs.base }}-backend:${{ steps.img.outputs.sha }}
+            ${{ steps.img.outputs.base }}-backend:latest
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
 
-      - name: Generate Prisma client
-        run: npm run db:generate
+      - name: Build & push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: frontend/Dockerfile
+          push: true
+          # Baked into the SPA at build time — the browser talks to the app on its
+          # own origin. Same-origin means the frontend nginx proxies /api itself.
+          build-args: |
+            VITE_API_URL=https://vms.anistonav.com
+          tags: |
+            ${{ steps.img.outputs.base }}-frontend:${{ steps.img.outputs.sha }}
+            ${{ steps.img.outputs.base }}-frontend:latest
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
 
-      - name: Build frontend
-        run: npm run build
-        working-directory: frontend
+      - name: Configure SSH
         env:
-          VITE_API_URL: ${{ secrets.PROD_API_URL }}
-
-      - name: Build backend
-        run: npm run build
-        working-directory: backend
-
-      - name: Set up SSH key
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
+          printf '%s' "$EC2_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+          if [[ -n "$EC2_KNOWN_HOSTS" ]]; then
+            # Preferred: pin the host key. Set the optional EC2_KNOWN_HOSTS secret
+            # to the output of `ssh-keyscan -H <host>` captured on a trusted network
+            # — this authenticates the channel that carries the prod secrets + token.
+            printf '%s\n' "$EC2_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            # Fallback (trust-on-first-use): works, but set EC2_KNOWN_HOSTS to close
+            # the first-connection MITM window.
+            ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          fi
+          chmod 600 ~/.ssh/known_hosts
 
-      - name: Copy files to EC2
+      - name: Sync repo on EC2 (git)
+        env:
+          EC2: ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}
         run: |
-          rsync -avz --delete \
-            -e "ssh -i ~/.ssh/deploy_key" \
-            --exclude='.git' \
-            --exclude='node_modules' \
-            --exclude='.env' \
-            ./ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:${{ secrets.EC2_APP_PATH }}/
+          ssh -i ~/.ssh/deploy_key "$EC2" 'bash -s' <<'REMOTE'
+          set -Eeuo pipefail
+          APP_DIR="${HOME}/aniston-vms"
+          REPO="https://github.com/Anistonworkspace/Aniston-VMS.git"
+          if [[ ! -d "${APP_DIR}/.git" ]]; then
+            git clone "$REPO" "$APP_DIR"
+          fi
+          cd "$APP_DIR"
+          git fetch origin main
+          git reset --hard origin/main
+          REMOTE
 
-      - name: Install production dependencies on EC2
+      - name: Write production .env on EC2 (from secret)
+        env:
+          PROD_ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
+          EC2: ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}
         run: |
-          ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
-            "cd ${{ secrets.EC2_APP_PATH }} && npm ci --omit=dev --workspaces"
+          # Secret via stdin (never on a command line / process list). Also:
+          #  - tr -d '\r' normalises CRLF→LF in case the secret was pasted from a
+          #    Windows editor (a trailing \r would corrupt DATABASE_URL / passwords).
+          #  - write to a temp file, chmod 600, then atomic mv — `umask` alone would
+          #    leave an already-existing wider-mode .env untouched on re-deploys.
+          printf '%s' "$PROD_ENV_FILE" | tr -d '\r' | \
+            ssh -i ~/.ssh/deploy_key "$EC2" \
+              'umask 077; d="$HOME/aniston-vms"; cat > "$d/.env.tmp" && chmod 600 "$d/.env.tmp" && mv -f "$d/.env.tmp" "$d/.env"'
 
-      - name: Run database migrations
+      - name: Deploy on EC2 (login → pull → migrate → up → health)
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+          IMAGE_TAG: ${{ steps.img.outputs.sha }}
+          EC2: ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}
         run: |
-          ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
-            "cd ${{ secrets.EC2_APP_PATH }} && DATABASE_URL=${{ secrets.PROD_DATABASE_URL }} npx prisma migrate deploy"
+          # 1) GHCR login — token piped over stdin, so it never appears in argv.
+          printf '%s' "$GHCR_TOKEN" | \
+            ssh -i ~/.ssh/deploy_key "$EC2" "docker login ghcr.io -u '${GHCR_USER}' --password-stdin"
+          # 2) Deploy (no secrets on the command line; .env already on the host).
+          ssh -i ~/.ssh/deploy_key "$EC2" \
+            "cd \"\${HOME}/aniston-vms\" && IMAGE_TAG='${IMAGE_TAG}' FRONTEND_HOST_PORT='8095' APP_DIR=\"\${HOME}/aniston-vms\" bash scripts/deploy-prod.sh"
 
-      - name: Reload PM2
+      - name: Drop GHCR credential on EC2
+        # Always run — even if the deploy step failed — so the registry credential
+        # never lingers in ~/.docker/config.json on the shared host.
+        if: always()
+        env:
+          EC2: ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}
         run: |
-          ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
-            "cd ${{ secrets.EC2_APP_PATH }} && pm2 reload ecosystem.config.cjs --update-env"
+          if [[ -f ~/.ssh/deploy_key ]]; then
+            ssh -i ~/.ssh/deploy_key "$EC2" 'docker logout ghcr.io || true' || true
+          fi
 
-      - name: Verify health check
-        run: |
-          sleep 5
-          curl --fail --silent ${{ secrets.PROD_API_URL }}/health || exit 1
-
-      - name: Notify on failure
+      - name: Deploy failed
         if: failure()
-        run: echo "Deploy failed — check PM2 logs on EC2"
+        run: echo "::error::Production deploy failed — see the step logs. The running app on EC2 is unchanged unless the 'Deploy on EC2' step reached 'compose up'."
