@@ -5,7 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { motion, useReducedMotion } from 'framer-motion';
 import toast from 'react-hot-toast';
-import { Cctv, Eye, EyeOff, KeyRound, Loader2, ShieldAlert, Wand2 } from 'lucide-react';
+import { Cctv, Eye, EyeOff, KeyRound, Loader2, ShieldAlert } from 'lucide-react';
 import type { FetchBaseQueryError } from '@reduxjs/toolkit/query/react';
 import type { SerializedError } from '@reduxjs/toolkit';
 import { getApiErrorCode, getApiErrorMessage } from '@/lib/apiError';
@@ -15,10 +15,6 @@ import { cn } from '@/lib/utils';
 import { useLoginMutation } from './auth.api';
 import type { LoginInput } from './auth.types';
 import { LoginIllustration } from './LoginIllustration';
-
-// Seeded by the backend demo dataset — see .claude/docs/04-uiux-brief.md.
-const DEMO_EMAIL = 'admin@anistonvms.example';
-const DEMO_PASSWORD = 'AdminDemo2026!';
 
 const loginSchema = z.object({
   email: z.string().min(1, 'Email is required').email('Enter a valid email address'),
@@ -49,7 +45,6 @@ export function LoginPage(): JSX.Element {
     register,
     handleSubmit,
     setError,
-    setValue,
     formState: { errors },
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -93,11 +88,6 @@ export function LoginPage(): JSX.Element {
       }
       setFormError(getApiErrorMessage(apiErr));
     }
-  }
-
-  function fillDemoCredentials(): void {
-    setValue('email', DEMO_EMAIL, { shouldValidate: true });
-    setValue('password', DEMO_PASSWORD, { shouldValidate: true });
   }
 
   const fieldBase =
@@ -235,15 +225,6 @@ export function LoginPage(): JSX.Element {
                   </button>
                 </div>
               </form>
-
-              <button
-                type="button"
-                onClick={fillDemoCredentials}
-                className="mt-6 flex w-full items-center justify-center gap-1.5 rounded-full border border-dashed border-auth-border py-2 text-xs font-medium text-auth-muted transition-colors hover:text-auth-link"
-              >
-                <Wand2 size={14} strokeWidth={1.5} />
-                Use demo credentials
-              </button>
             </div>
           </div>
 
