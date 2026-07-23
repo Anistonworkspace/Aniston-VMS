@@ -9,6 +9,16 @@
 export type CameraStatus = 'HEALTHY' | 'WARNING' | 'CRITICAL' | 'MAINTENANCE' | 'UNKNOWN';
 
 /**
+ * prisma `CameraProvisioning` enum — see shared/src/enums.ts. DRAFT: registered
+ * with identity only, not placed/wired, never streamable or health-probed.
+ * CONFIGURED: placement + stream config saved AND a passing activation test.
+ */
+export type CameraProvisioning = 'DRAFT' | 'CONFIGURED';
+
+/** prisma `PlaybackAdapter` enum — recorded-playback vendor integration. */
+export type PlaybackAdapter = 'ONVIF_G' | 'HIKVISION' | 'DAHUA' | 'NONE';
+
+/**
  * prisma `Diagnosis` enum (SITE_INTERNET_DOWN, CAMERA_OFFLINE, …). The UI
  * renders the server-provided `diagnosisText`, so keep this open to new values.
  */
@@ -23,8 +33,9 @@ export interface Paginated<T> {
 
 export interface Camera {
   id: string;
-  siteId: string;
-  routerId: string;
+  // Nullable until the camera is configured — a DRAFT camera is identity-only.
+  siteId: string | null;
+  routerId: string | null;
   cameraCode: string;
   name: string;
   brand: string | null;
@@ -32,20 +43,24 @@ export interface Camera {
   firmware: string | null;
   serialNumber: string | null;
   onvifPort: number | null;
-  /** CR-6 — WGS-84 map position registered via the add-camera MapLibre pin. */
-  latitude: number;
-  longitude: number;
-  playbackAdapter: string;
+  /** CR-6 — WGS-84 map position, set when the camera is configured (null while DRAFT). */
+  latitude: number | null;
+  longitude: number | null;
+  playbackAdapter: PlaybackAdapter;
   expectedCodec: string | null;
   expectedResolution: string | null;
   expectedFps: number | null;
   expectedBitrateKbps: number | null;
+  /** DRAFT until placement + stream config are saved and activation passes. */
+  provisioningState: CameraProvisioning;
   healthScore: number;
   status: CameraStatus;
   diagnosis: CameraDiagnosis | null;
   lastHealthyAt: string | null;
   lastSnapshotAt: string | null;
   maintenanceMode: boolean;
+  /** CR-4 — per-camera snapshot cadence in minutes (1–60). */
+  snapshotIntervalMinutes: number;
   createdAt: string;
   updatedAt: string;
   /** Present when the list/detail endpoint includes relations. */
@@ -70,30 +85,41 @@ export interface CameraListQuery {
   q?: string;
 }
 
-/** PATCH /cameras/:id — backend updateCameraSchema (partial create + maintenanceMode). */
+/** PATCH /cameras/:id — backend updateCameraSchema (partial identity/config + maintenanceMode). */
 export interface UpdateCameraInput {
   name?: string;
   maintenanceMode?: boolean;
 }
 
 /**
- * POST /cameras — backend createCameraSchema (CR-6, admin/engineer only).
- * RTSP secrets are plaintext in transit over TLS and encrypted at rest.
+ * POST /cameras — backend registerCameraSchema. Step 1 of the split workflow:
+ * a camera is registered with IDENTITY ONLY and is born DRAFT. Placement,
+ * network and stream config are added afterwards via configure (see below).
  */
-export interface CreateCameraInput {
-  siteId: string;
-  routerId: string;
+export interface RegisterCameraInput {
   cameraCode: string;
   name: string;
   brand?: string;
   model?: string;
   firmware?: string;
   serialNumber?: string;
+}
+
+/**
+ * PUT /cameras/:id/configure — backend configureCameraSchema. Step 2: save
+ * placement + network + stream config onto a registered camera. State-
+ * preserving (never activates on its own). RTSP secrets are plaintext in
+ * transit over TLS and encrypted at rest.
+ */
+export interface ConfigureCameraInput {
+  siteId: string;
+  routerId: string;
   mainRtspUrl: string;
   subRtspUrl: string;
   rtspUsername: string;
   rtspPassword: string;
   onvifPort?: number;
+  playbackAdapter?: PlaybackAdapter;
   expectedCodec: string;
   expectedResolution: string;
   expectedFps: number;
@@ -134,6 +160,18 @@ export interface TestConnectionResult {
   video: ProbeStageResult;
 }
 
+/**
+ * POST /cameras/:id/activate response. The server RE-RUNS the connection test
+ * against the STORED config and only flips DRAFT → CONFIGURED on success; a
+ * failing probe is an expected 200 with `activated: false` and `test`
+ * explaining why, so the UI can surface the failure without treating it as an error.
+ */
+export interface ActivateCameraResult {
+  camera: Camera;
+  activated: boolean;
+  test: TestConnectionResult;
+}
+
 /** GET /routers list item — powers the add-camera modal's router select. */
 export interface RouterItem {
   id: string;
@@ -164,6 +202,8 @@ export interface CameraHealthDetail {
   id: string;
   cameraCode: string;
   name: string;
+  latitude: number;
+  longitude: number;
   status: CameraStatus;
   healthScore: number;
   diagnosis: CameraDiagnosis | null;

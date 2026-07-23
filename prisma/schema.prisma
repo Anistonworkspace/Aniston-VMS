@@ -48,6 +48,22 @@ enum CameraStatus {
   UNKNOWN
 }
 
+// Provisioning lifecycle — deliberately SEPARATE from health `status` (which is
+// an observed runtime signal). This tracks how far a physical camera has moved
+// through commissioning:
+//   DRAFT      = registered in inventory with identity only (code/name/brand).
+//                Not placed, not wired to a stream, never streamable, excluded
+//                from the health probe cycle and the Live Wall.
+//   CONFIGURED = placement + network + RTSP config saved AND a real connection
+//                test has passed. Only CONFIGURED cameras are streamable / probed.
+// Transitions are admin/engineer-gated (see camera.provisioning.ts state machine):
+//   DRAFT → CONFIGURED requires a passing server-side probe; CONFIGURED → DRAFT
+//   is an admin-only deactivation.
+enum CameraProvisioning {
+  DRAFT
+  CONFIGURED
+}
+
 enum Diagnosis {
   SITE_INTERNET_DOWN
   SIM_SIGNAL_ISSUE
@@ -181,15 +197,16 @@ model User {
   refreshTokens              RefreshToken[]
   auditLogs                  AuditLog[]
   approvedReferenceImages    ReferenceImage[]
-  assignedIncidents          Incident[]          @relation("IncidentAssignedTo")
+  assignedIncidents          Incident[]            @relation("IncidentAssignedTo")
   approvedMaintenanceWindows MaintenanceWindow[]
-  assignedMaintenanceTasks   MaintenanceTask[]   @relation("MaintenanceTaskAssignedTo")
+  assignedMaintenanceTasks   MaintenanceTask[]     @relation("MaintenanceTaskAssignedTo")
   streamSessions             StreamSession[]
   clipExports                ClipExport[]
   savedLayouts               SavedLayout[]
-  permissions                UserPermission[]    @relation("UserPermissionUser")
-  grantedPermissions         UserPermission[]    @relation("UserPermissionGrantedBy")
+  permissions                UserPermission[]      @relation("UserPermissionUser")
+  grantedPermissions         UserPermission[]      @relation("UserPermissionGrantedBy")
   backups                    Backup[]
+  incidentReadReceipts       IncidentReadReceipt[] @relation("UserIncidentReadReceipts")
 
   @@map("users")
 }
@@ -327,43 +344,49 @@ model Router {
 }
 
 model Camera {
-  id                    String          @id @default(uuid())
-  siteId                String          @map("site_id")
-  routerId              String          @map("router_id")
-  cameraCode            String          @unique @map("camera_code") // "CAM-042"
-  name                  String
-  brand                 String?
-  model                 String?
-  firmware              String?
-  serialNumber          String?         @map("serial_number")
-  mainRtspUrlEncrypted  String          @map("main_rtsp_url_enc") // AES-256-GCM
-  subRtspUrlEncrypted   String          @map("sub_rtsp_url_enc") // AES-256-GCM
-  mainRtspHash          String          @unique @map("main_rtsp_hash") // normalized host+port+path
-  subRtspHash           String          @unique @map("sub_rtsp_hash") // normalized host+port+path
-  rtspUsernameEncrypted String          @map("rtsp_username_enc")
-  rtspPasswordEncrypted String          @map("rtsp_password_enc")
-  onvifPort             Int?            @map("onvif_port")
-  onvifCapabilities     Json?           @map("onvif_capabilities")
-  playbackAdapter       PlaybackAdapter @default(NONE) @map("playback_adapter")
-  playbackVerified      Boolean         @default(false) @map("playback_verified")
-  expectedCodec         String          @map("expected_codec")
-  expectedResolution    String          @map("expected_resolution")
-  expectedFps           Int             @map("expected_fps")
-  expectedBitrateKbps   Int             @map("expected_bitrate_kbps")
-  status                CameraStatus    @default(UNKNOWN)
-  healthScore           Int             @default(0) @map("health_score")
-  diagnosis             Diagnosis?
-  lastHealthyAt         DateTime?       @map("last_healthy_at")
-  lastSnapshotAt        DateTime?       @map("last_snapshot_at")
-  maintenanceMode       Boolean         @default(false) @map("maintenance_mode")
-  latitude              Float           @default(0) // real Delhi coords set by seed (v1.5)
-  longitude             Float           @default(0)
-  snapshotIntervalMinutes Int           @default(60) @map("snapshot_interval_minutes")
-  createdAt             DateTime        @default(now()) @map("created_at")
-  updatedAt             DateTime        @updatedAt @map("updated_at")
+  id                      String             @id @default(uuid())
+  // Placement + stream config are nullable: a DRAFT camera is registered with
+  // identity only (see CameraProvisioning). These are populated when the camera
+  // is configured, and are enforced as present at the CONFIGURED gate in
+  // camera.service.ts — NOT by the database.
+  siteId                  String?            @map("site_id")
+  routerId                String?            @map("router_id")
+  cameraCode              String             @unique @map("camera_code") // "CAM-042"
+  name                    String
+  brand                   String?
+  model                   String?
+  firmware                String?
+  serialNumber            String?            @map("serial_number")
+  mainRtspUrlEncrypted    String?            @map("main_rtsp_url_enc") // AES-256-GCM
+  subRtspUrlEncrypted     String?            @map("sub_rtsp_url_enc") // AES-256-GCM
+  mainRtspHash            String?            @unique @map("main_rtsp_hash") // normalized host+port+path (Postgres @unique permits many NULLs)
+  subRtspHash             String?            @unique @map("sub_rtsp_hash") // normalized host+port+path (Postgres @unique permits many NULLs)
+  rtspUsernameEncrypted   String?            @map("rtsp_username_enc")
+  rtspPasswordEncrypted   String?            @map("rtsp_password_enc")
+  onvifPort               Int?               @map("onvif_port")
+  onvifCapabilities       Json?              @map("onvif_capabilities")
+  playbackAdapter         PlaybackAdapter    @default(NONE) @map("playback_adapter")
+  playbackVerified        Boolean            @default(false) @map("playback_verified")
+  expectedCodec           String?            @map("expected_codec")
+  expectedResolution      String?            @map("expected_resolution")
+  expectedFps             Int?               @map("expected_fps")
+  expectedBitrateKbps     Int?               @map("expected_bitrate_kbps")
+  detectedSubCodec        String?            @map("detected_sub_codec") // ffprobe-measured sub-stream codec; drives Live Wall transcode (null = never probed → fail-safe transcode)
+  provisioningState       CameraProvisioning @default(DRAFT) @map("provisioning_state")
+  status                  CameraStatus       @default(UNKNOWN)
+  healthScore             Int                @default(0) @map("health_score")
+  diagnosis               Diagnosis?
+  lastHealthyAt           DateTime?          @map("last_healthy_at")
+  lastSnapshotAt          DateTime?          @map("last_snapshot_at")
+  maintenanceMode         Boolean            @default(false) @map("maintenance_mode")
+  latitude                Float?             // WGS-84 map position; null until placement is configured (was default 0)
+  longitude               Float?
+  snapshotIntervalMinutes Int                @default(60) @map("snapshot_interval_minutes")
+  createdAt               DateTime           @default(now()) @map("created_at")
+  updatedAt               DateTime           @updatedAt @map("updated_at")
 
-  site                    Site                      @relation(fields: [siteId], references: [id])
-  router                  Router                    @relation(fields: [routerId], references: [id])
+  site                    Site?                     @relation(fields: [siteId], references: [id], onDelete: Restrict)
+  router                  Router?                   @relation(fields: [routerId], references: [id], onDelete: Restrict)
   referenceImages         ReferenceImage[]
   healthChecks            HealthCheck[]
   connectionQualityHourly ConnectionQualityHourly[]
@@ -378,6 +401,7 @@ model Camera {
 
   @@index([siteId])
   @@index([status])
+  @@index([provisioningState])
   @@map("cameras")
 }
 
@@ -561,15 +585,16 @@ model Incident {
   createdAt          DateTime       @default(now()) @map("created_at")
   updatedAt          DateTime       @updatedAt @map("updated_at")
 
-  camera           Camera?         @relation(fields: [cameraId], references: [id])
-  site             Site            @relation(fields: [siteId], references: [id])
-  zone             Zone            @relation(fields: [zoneId], references: [id])
-  assignedTo       User?           @relation("IncidentAssignedTo", fields: [assignedToId], references: [id], onDelete: Restrict)
-  previousSnapshot Snapshot?       @relation("IncidentPreviousSnapshot", fields: [previousSnapshotId], references: [id])
-  faultSnapshot    Snapshot?       @relation("IncidentFaultSnapshot", fields: [faultSnapshotId], references: [id])
+  camera           Camera?               @relation(fields: [cameraId], references: [id])
+  site             Site                  @relation(fields: [siteId], references: [id])
+  zone             Zone                  @relation(fields: [zoneId], references: [id])
+  assignedTo       User?                 @relation("IncidentAssignedTo", fields: [assignedToId], references: [id], onDelete: Restrict)
+  previousSnapshot Snapshot?             @relation("IncidentPreviousSnapshot", fields: [previousSnapshotId], references: [id])
+  faultSnapshot    Snapshot?             @relation("IncidentFaultSnapshot", fields: [faultSnapshotId], references: [id])
   events           IncidentEvent[]
   notifications    Notification[]
   clipExports      ClipExport[]
+  readReceipts     IncidentReadReceipt[]
 
   @@index([status])
   @@index([zoneId, firstDetectedAt])
@@ -839,4 +864,27 @@ model Backup {
   requester User @relation(fields: [requestedBy], references: [id], onDelete: Restrict)
 
   @@map("backups")
+}
+
+// Per-user read state for incident notifications (the in-app notification bell).
+// Presence of a row = the user has read that incident's notification; absence =
+// unread. Deliberately stores NO incident data — only the (user, incident) pair
+// and when it was read — so it can never drift from the incident record. The
+// @@unique makes marking-read idempotent (dup-proof) and also serves the
+// per-user unread lookup (userId-prefixed). onDelete: Cascade follows the
+// UserPermission.user precedent for a pure per-user pivot record: a receipt is
+// meaningless once its user or incident is gone.
+model IncidentReadReceipt {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  incidentId String   @map("incident_id")
+  readAt     DateTime @default(now()) @map("read_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user     User     @relation("UserIncidentReadReceipts", fields: [userId], references: [id], onDelete: Cascade)
+  incident Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, incidentId])
+  @@index([incidentId])
+  @@map("incident_read_receipts")
 }

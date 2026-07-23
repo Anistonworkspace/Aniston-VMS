@@ -1,14 +1,16 @@
 import { api } from '@/app/api';
 import { unwrapEnvelope } from '@/lib/apiError';
 import type {
+  ActivateCameraResult,
   Camera,
   CameraChecksQuery,
   CameraHealthDetail,
   CameraListQuery,
   CameraSnapshotsQuery,
-  CreateCameraInput,
+  ConfigureCameraInput,
   HealthCheckRecord,
   Paginated,
+  RegisterCameraInput,
   RouterItem,
   RunCheckResult,
   SiteItem,
@@ -74,12 +76,55 @@ export const camerasApi = api
               ],
       }),
 
-      // POST /cameras — CR-6 admin/engineer registration. Only the LIST tag is
-      // invalidated: the new camera has no health/checks/snapshots rows yet.
-      createCamera: builder.mutation<Camera, CreateCameraInput>({
+      // POST /cameras — step 1: register a camera with identity only. It is born
+      // DRAFT with no config, so only the LIST tag is invalidated (no
+      // health/checks/snapshots rows exist yet).
+      registerCamera: builder.mutation<Camera, RegisterCameraInput>({
         query: (body) => ({ url: '/cameras', method: 'POST', body }),
         transformResponse: unwrapEnvelope<Camera>,
         invalidatesTags: [{ type: 'Camera' as const, id: 'LIST' }],
+      }),
+
+      // PUT /cameras/:id/configure — step 2: save placement + network + stream
+      // config. State-preserving (never activates), but the list card shows
+      // site/config-derived fields, so invalidate the row and the LIST.
+      configureCamera: builder.mutation<Camera, { id: string; body: ConfigureCameraInput }>({
+        query: ({ id, body }) => ({ url: `/cameras/${id}/configure`, method: 'PUT', body }),
+        transformResponse: unwrapEnvelope<Camera>,
+        invalidatesTags: (_result, _error, { id }) => [
+          { type: 'Camera' as const, id },
+          { type: 'Camera' as const, id: 'LIST' },
+        ],
+      }),
+
+      // POST /cameras/:id/activate — step 3: DRAFT → CONFIGURED. The server
+      // RE-RUNS the connection test against the stored config; a failing probe
+      // returns 200 with { activated: false, test } (not an error). Only flips
+      // to CONFIGURED on success, which starts health-probing — so invalidate
+      // the row, LIST and CameraHealth. Skip invalidation on transport error.
+      activateCamera: builder.mutation<ActivateCameraResult, string>({
+        query: (id) => ({ url: `/cameras/${id}/activate`, method: 'POST' }),
+        transformResponse: unwrapEnvelope<ActivateCameraResult>,
+        invalidatesTags: (_result, error, id) =>
+          error
+            ? []
+            : [
+                { type: 'Camera' as const, id },
+                { type: 'Camera' as const, id: 'LIST' },
+                { type: 'CameraHealth' as const, id },
+              ],
+      }),
+
+      // POST /cameras/:id/deactivate — CONFIGURED → DRAFT (config retained,
+      // health-probing stops). Invalidate the row, LIST and CameraHealth.
+      deactivateCamera: builder.mutation<Camera, string>({
+        query: (id) => ({ url: `/cameras/${id}/deactivate`, method: 'POST' }),
+        transformResponse: unwrapEnvelope<Camera>,
+        invalidatesTags: (_result, _error, id) => [
+          { type: 'Camera' as const, id },
+          { type: 'Camera' as const, id: 'LIST' },
+          { type: 'CameraHealth' as const, id },
+        ],
       }),
 
       // POST /cameras/test-connection — CR-6 pre-registration probe (RTSP
@@ -160,7 +205,10 @@ export const camerasApi = api
 export const {
   useListCamerasQuery,
   useGetCameraQuery,
-  useCreateCameraMutation,
+  useRegisterCameraMutation,
+  useConfigureCameraMutation,
+  useActivateCameraMutation,
+  useDeactivateCameraMutation,
   useTestCameraConnectionMutation,
   useListRoutersLiteQuery,
   useUpdateCameraMutation,

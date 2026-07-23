@@ -77,6 +77,50 @@ describe('redactRtsp', () => {
     expect(out).not.toContain('admin:');
     expect(out).toContain('rtsp://***@cam.local/main');
   });
+
+  it('strips credentials embedded as Dahua/Hik query params (no userinfo @)', () => {
+    // The real leak: creds are `key=value` in the PATH, there is no `user:pass@`.
+    const url =
+      'rtsp://192.0.2.10:554/user=admin_password=pAsSw0rd9_channel=1_stream=0&onvif=0.sdp';
+    const out = redactRtsp(`method DESCRIBE failed: 401 Unauthorized for '${url}'`);
+
+    // secrets are gone, in every representation
+    expect(out).not.toContain('pAsSw0rd9');
+    expect(out).not.toContain('user=admin');
+    expect(out).toContain('user=***');
+    expect(out).toContain('password=***');
+
+    // useful ffmpeg diagnostics + non-secret fields survive
+    expect(out).toContain('DESCRIBE');
+    expect(out).toContain('401 Unauthorized');
+    expect(out).toContain('channel=1');
+    expect(out).toContain('192.0.2.10');
+  });
+
+  it('redacts standard ?query credentials and preserves neighbours', () => {
+    const out = redactRtsp(
+      "rtsp://cam/stream?username=root&password=hunter2&token=abc.def&resolution=1080p",
+    );
+    expect(out).not.toContain('hunter2');
+    expect(out).not.toContain('abc.def');
+    expect(out).toContain('username=***');
+    expect(out).toContain('password=***');
+    expect(out).toContain('token=***');
+    expect(out).toContain('resolution=1080p'); // non-secret field kept
+  });
+
+  it('redacts Authorization headers and bearer tokens (HTTP-reachable cams)', () => {
+    const jwt = 'eyJhbGciOiJIUzI1NiJ9.cGF5bG9hZA.c2lnbmF0dXJl';
+    const out = redactRtsp(`GET /snapshot [401]: Authorization: Bearer ${jwt}`);
+    expect(out).not.toContain(jwt);
+    expect(out).toContain('***');
+    expect(out).toContain('401'); // diagnostic status preserved
+  });
+
+  it('leaves credential-free diagnostics untouched', () => {
+    const clean = "ffmpeg exited 8: method DESCRIBE failed: 454 Session Not Found";
+    expect(redactRtsp(clean)).toBe(clean);
+  });
 });
 
 describe('generateSyntheticFrame (SIM mode only)', () => {

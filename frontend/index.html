@@ -12,6 +12,31 @@
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&family=Inter:wght@400;500;600&family=Figtree:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
     <title>Aniston VMS</title>
     <script>
+      // Apply the saved Appearance theme BEFORE first paint so there is no flash
+      // of the wrong theme on load. Dependency-free mirror of applyPrefsToDocument
+      // in src/features/settings/theme.ts — keep the two in sync.
+      (function () {
+        try {
+          var KEY = 'aniston-vms:appearance-prefs';
+          var prefs = { theme: 'system', density: 'comfortable', reduceMotion: false };
+          var raw = window.localStorage.getItem(KEY);
+          if (raw) {
+            var parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === 'object') prefs = Object.assign(prefs, parsed);
+          }
+          var prefersDark =
+            !!window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var isDark = prefs.theme === 'dark' || (prefs.theme === 'system' && prefersDark);
+          var root = document.documentElement;
+          root.classList.toggle('dark', !!isDark);
+          root.setAttribute('data-density', prefs.density);
+          root.setAttribute('data-reduce-motion', String(!!prefs.reduceMotion));
+        } catch (e) {
+          /* localStorage / matchMedia unavailable — fall back to the default light theme. */
+        }
+      })();
+    </script>
+    <script>
       // Capture PWA install prompt for later UI use
       window.deferredInstallPrompt = null;
       window.addEventListener('beforeinstallprompt', (e) => {
@@ -20,7 +45,7 @@
       });
     </script>
   </head>
-  <body class="font-body bg-slate-50 text-slate-900 antialiased">
+  <body class="font-body antialiased">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

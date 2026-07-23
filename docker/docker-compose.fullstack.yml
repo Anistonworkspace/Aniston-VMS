@@ -53,6 +53,13 @@ services:
     ports:
       - '127.0.0.1:4000:4000'
     env_file: ../.env
+    volumes:
+      # Persist captured snapshots/clips/reference-images across container
+      # recreation. Without a mount, UPLOAD_DIR (/app/uploads) lives only in the
+      # container's ephemeral writable layer, so `docker compose up` recreates
+      # orphan the image files while the DB snapshot rows survive in
+      # postgres_data — leaving signed snapshot URLs returning 404.
+      - uploads_data:/app/uploads
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-devpassword123}@postgres:5432/${POSTGRES_DB:-aniston_vms}
       REDIS_URL: redis://redis:6379
@@ -130,3 +137,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  uploads_data:

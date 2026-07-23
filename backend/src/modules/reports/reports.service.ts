@@ -62,6 +62,9 @@ function buildCameraWhere(
   return {
     AND: [
       cameraScopeWhere(scope),
+      // Uptime reports cover CONFIGURED cameras only: DRAFT cameras are unplaced
+      // (no site) and have never streamed, so they have no uptime to report.
+      { provisioningState: 'CONFIGURED' },
       filters.cameraId ? { id: filters.cameraId } : {},
       siteConditions.length > 0 ? { site: { AND: siteConditions } } : {},
     ],
@@ -209,7 +212,7 @@ export async function getUptimeReport(
   }
 
   const cameraIds = cameras.map((c) => c.id);
-  const siteIds = [...new Set(cameras.map((c) => c.site.id))];
+  const siteIds = [...new Set(cameras.map((c) => c.site!.id))];
 
   // Incidents attributed to a specific camera, PLUS site-wide incidents
   // (INCIDENT_RULES scope: 'SITE', cameraId null — e.g. SITE_INTERNET_DOWN)
@@ -242,7 +245,7 @@ export async function getUptimeReport(
   const rows: UptimeReportRow[] = cameras.map((camera) => {
     const relevant = [
       ...(incidentsByCameraId.get(camera.id) ?? []),
-      ...(incidentsBySiteId.get(camera.site.id) ?? []),
+      ...(incidentsBySiteId.get(camera.site!.id) ?? []),
     ];
     const downtimeSeconds = sumClippedDowntimeSeconds(
       relevant,
@@ -261,12 +264,12 @@ export async function getUptimeReport(
       cameraId: camera.id,
       cameraCode: camera.cameraCode,
       cameraName: camera.name,
-      siteId: camera.site.id,
-      siteName: camera.site.name,
-      zoneId: camera.site.zone.id,
-      zoneName: camera.site.zone.name,
-      regionId: camera.site.zone.region.id,
-      regionName: camera.site.zone.region.name,
+      siteId: camera.site!.id,
+      siteName: camera.site!.name,
+      zoneId: camera.site!.zone.id,
+      zoneName: camera.site!.zone.name,
+      regionId: camera.site!.zone.region.id,
+      regionName: camera.site!.zone.region.name,
       downtimeSeconds,
       uptimePercent,
       slaTargetPercent,

@@ -140,7 +140,12 @@ export async function getCapacityOverview() {
       select: { id: true, name: true, zone: { select: { name: true } } },
       orderBy: { name: 'asc' },
     }),
-    prisma.camera.findMany({ select: { siteId: true, expectedBitrateKbps: true } }),
+    // Capacity planning covers CONFIGURED cameras only: DRAFT cameras have no
+    // site and no configured bitrate, so they consume no storage or bandwidth.
+    prisma.camera.findMany({
+      where: { provisioningState: 'CONFIGURED' },
+      select: { siteId: true, expectedBitrateKbps: true },
+    }),
     prisma.streamSession.findMany({
       where: { endedAt: null, kind: { in: [...LIVE_KINDS] } },
       select: { camera: { select: { siteId: true } } },
@@ -149,16 +154,18 @@ export async function getCapacityOverview() {
 
   const liveBySite = new Map<string, number>();
   for (const s of activeLive) {
-    liveBySite.set(s.camera.siteId, (liveBySite.get(s.camera.siteId) ?? 0) + 1);
+    // A live session implies a streaming (CONFIGURED) camera, so siteId is set.
+    liveBySite.set(s.camera.siteId!, (liveBySite.get(s.camera.siteId!) ?? 0) + 1);
   }
   const camsBySite = new Map<string, { count: number; dailyGb: number }>();
   let totalDailyGb = 0;
   for (const c of cameras) {
-    const bucket = camsBySite.get(c.siteId) ?? { count: 0, dailyGb: 0 };
+    // cameras is CONFIGURED-only (queried above), so siteId/bitrate are set.
+    const bucket = camsBySite.get(c.siteId!) ?? { count: 0, dailyGb: 0 };
     bucket.count += 1;
-    bucket.dailyGb += dailyGb(c.expectedBitrateKbps);
-    camsBySite.set(c.siteId, bucket);
-    totalDailyGb += dailyGb(c.expectedBitrateKbps);
+    bucket.dailyGb += dailyGb(c.expectedBitrateKbps!);
+    camsBySite.set(c.siteId!, bucket);
+    totalDailyGb += dailyGb(c.expectedBitrateKbps!);
   }
 
   return {

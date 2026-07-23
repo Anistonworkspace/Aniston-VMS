@@ -50,6 +50,7 @@ export default {
           DEFAULT: 'var(--sidebar)',
           text: 'var(--sidebar-text)',
           muted: 'var(--sidebar-muted)',
+          hover: 'var(--sidebar-hover)',
         },
         ink: 'var(--ink)',
         muted: 'var(--muted)',
@@ -158,6 +159,8 @@ export default {
         soft: 'var(--shadow-soft)',
         'soft-hover': 'var(--shadow-soft-hover)',
         card: 'var(--shadow-soft)',
+        // Blue-grey separator between the main content panel and the sidebar.
+        panel: 'var(--shadow-panel)',
       },
       transitionTimingFunction: {
         // Canonical Boilerplate Design System easing curves

@@ -29,3 +29,14 @@ export const HEARTBEAT_INTERVAL_MS = 20_000;
 
 /** localStorage key for the current (unsaved) wall — survives refreshes. */
 export const WALL_STORAGE_KEY = 'vms.livewall.wall';
+
+/**
+ * Screenshots-mode poll cadence. The backend SUB scheduler only captures a new
+ * frame every SNAPSHOT_SUB_INTERVAL_MINUTES (default 15 min, backend/src/config/
+ * env.ts), so the poll interval is deliberately not tied to generation cadence.
+ * We poll every 30 s to (a) surface a freshly-captured frame promptly and
+ * (b) re-mint the pre-signed URL well inside its SNAPSHOT_URL_TTL_SECONDS
+ * (default 600 s) lifetime. The poll is paused while the tab is hidden (see
+ * SnapshotTile), so the tighter cadence costs nothing for a backgrounded wall.
+ */
+export const SNAPSHOT_POLL_MS = 30_000;

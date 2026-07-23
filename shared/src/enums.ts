@@ -27,6 +27,16 @@ export enum CameraStatus {
   UNKNOWN = 'UNKNOWN',
 }
 
+// Commissioning lifecycle — SEPARATE from the observed health `status` above.
+// DRAFT: registered in inventory (identity only), not placed/wired, never
+// streamable or probed. CONFIGURED: placement + stream config saved AND a real
+// connection test passed → streamable / Live Wall eligible. See prisma Camera
+// model and camera.provisioning.ts (state machine).
+export enum CameraProvisioning {
+  DRAFT = 'DRAFT',
+  CONFIGURED = 'CONFIGURED',
+}
+
 export enum Diagnosis {
   SITE_INTERNET_DOWN = 'SITE_INTERNET_DOWN',
   SIM_SIGNAL_ISSUE = 'SIM_SIGNAL_ISSUE',

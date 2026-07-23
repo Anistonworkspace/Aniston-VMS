@@ -27,10 +27,11 @@ interface LocationState {
   from?: { pathname: string };
 }
 
-// Aniston VMS sign-in — split "welcome" layout mirroring .claude/docs/Login-Page.png:
-// a light form panel (#F7F9FC) beside a light-blue welcome panel (#D8EAF7) with a curved seam.
-// Access token + user are held in memory only (features/auth/auth.slice.ts) —
-// never localStorage/sessionStorage.
+// Aniston VMS sign-in — split "welcome" layout mirroring the reference mock:
+// a light form panel (--auth-surface) beside a light-blue welcome panel
+// (--auth-panel) joined by a curved wave seam, with a security-camera
+// illustration. Access token + user are held in memory only
+// (features/auth/auth.slice.ts) — never localStorage/sessionStorage.
 export function LoginPage(): JSX.Element {
   const [login, { isLoading }] = useLoginMutation();
   const [mfaRequired, setMfaRequired] = useState(false);
@@ -91,178 +92,193 @@ export function LoginPage(): JSX.Element {
   }
 
   const fieldBase =
-    'peer w-full rounded-xl border bg-auth-field px-3.5 py-2.5 text-sm text-auth-ink outline-none transition-colors placeholder:text-auth-muted focus:border-auth-accent focus:ring-2 focus:ring-auth-accent/25';
+    'peer w-full rounded-xl border bg-auth-field px-4 py-3 text-sm text-auth-ink outline-none transition-colors placeholder:text-auth-muted focus:border-auth-accent focus:ring-2 focus:ring-auth-accent/25';
 
   return (
-    <div className="min-h-screen w-full bg-auth-bg">
+    <div className="flex min-h-[100svh] w-full items-stretch justify-center bg-[var(--auth-bg)] md:h-[100svh] md:max-h-[100svh] md:overflow-hidden">
       <motion.div
         initial={reduceMotion ? false : 'hidden'}
         animate="visible"
         variants={pageTransition}
-        className="relative w-full overflow-hidden bg-auth-bg"
+        className="relative flex w-full flex-col overflow-hidden bg-auth-surface md:flex-row"
       >
-        <div className="relative flex min-h-screen flex-col md:flex-row">
-          {/* ── Form panel (#F7F9FC) ─────────────────────────────── */}
-          <div className="relative z-10 flex w-full flex-col justify-center bg-auth-surface px-7 py-10 sm:px-12 md:w-[52%]">
-            {/* Compact brand (mobile only) */}
-            <div className="mb-8 flex items-center gap-2.5 md:hidden">
-              <span className="grid h-8 w-8 place-items-center rounded-full bg-auth-accent">
-                <Cctv size={16} strokeWidth={1.5} className="text-white" />
-              </span>
-              <span className="font-heading text-base font-semibold text-auth-ink">
-                Aniston VMS
-              </span>
-            </div>
+        {/* ── Curved wave seam: a full-height blue field with an S-curved left
+           edge that flows slightly onto the form surface. Desktop only. ────── */}
+        <svg
+          className="pointer-events-none absolute inset-0 z-0 hidden h-full w-full md:block"
+          viewBox="0 0 1440 900"
+          preserveAspectRatio="none"
+          aria-hidden="true"
+        >
+          <defs>
+            <linearGradient id="auth-seam-shadow" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stopColor="#0f2848" stopOpacity="0" />
+              <stop offset="1" stopColor="#0f2848" stopOpacity="0.07" />
+            </linearGradient>
+          </defs>
+          {/* Soft shadow the blue field casts onto the form surface */}
+          <path
+            d="M786 0C734 150 654 300 684 450C714 600 794 720 754 900L900 900L900 0Z"
+            fill="url(#auth-seam-shadow)"
+          />
+          {/* Blue welcome field */}
+          <path
+            className="fill-auth-panel"
+            d="M800 0C748 150 668 300 698 450C728 600 808 720 768 900L1440 900L1440 0Z"
+          />
+          {/* Crisp highlight along the crest of the wave */}
+          <path
+            d="M800 0C748 150 668 300 698 450C728 600 808 720 768 900"
+            fill="none"
+            stroke="#ffffff"
+            strokeOpacity="0.6"
+            strokeWidth="2"
+          />
+        </svg>
 
-            <div className="mx-auto w-full max-w-sm">
-              <h1 className="text-center font-heading text-2xl font-semibold text-auth-ink">
-                Sign in
-              </h1>
+        {/* ── Form panel ──────────────────────────────────────── */}
+        <div className="relative z-20 flex w-full flex-col justify-center px-6 py-12 sm:px-10 sm:py-14 md:w-1/2 md:px-14 md:py-[clamp(2rem,5vh,4rem)] lg:px-20">
+          {/* Brand — pinned top-left */}
+          <div className="absolute left-6 top-7 flex items-center gap-2 sm:left-10 sm:top-8 md:left-14 lg:left-20">
+            <Cctv className="h-6 w-6 text-auth-ink" strokeWidth={1.75} aria-hidden />
+            <span className="font-heading text-lg font-semibold tracking-tight text-auth-ink">
+              Aniston VMS
+            </span>
+          </div>
 
-              {formError && (
-                <div className="mt-5 flex items-start gap-2 rounded-xl border border-coral/30 bg-coral-soft px-3.5 py-2.5 text-sm text-coral">
-                  <ShieldAlert size={16} strokeWidth={1.5} className="mt-0.5 shrink-0" />
-                  <span>{formError}</span>
+          <div className="mx-auto w-full max-w-sm">
+            <h1 className="text-center font-heading text-3xl font-bold text-auth-ink">Sign in</h1>
+
+            {formError && (
+              <div className="mt-6 flex items-start gap-2 rounded-xl border border-coral/30 bg-coral-soft px-3.5 py-2.5 text-sm text-coral">
+                <ShieldAlert size={16} strokeWidth={1.5} className="mt-0.5 shrink-0" />
+                <span>{formError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit(onSubmit)} noValidate className="mt-8 space-y-5">
+              <div>
+                <label
+                  htmlFor="login-email"
+                  className="mb-1.5 block text-xs font-medium text-auth-ink"
+                >
+                  Email
+                </label>
+                <input
+                  id="login-email"
+                  type="email"
+                  autoComplete="username"
+                  placeholder="you@example.com"
+                  className={cn(fieldBase, errors.email ? 'border-coral' : 'border-auth-border')}
+                  {...register('email')}
+                />
+                {errors.email?.message && (
+                  <p className="mt-1 text-xs text-coral">{errors.email.message}</p>
+                )}
+              </div>
+
+              <div>
+                <label
+                  htmlFor="login-password"
+                  className="mb-1.5 block text-xs font-medium text-auth-ink"
+                >
+                  Password
+                </label>
+                <div className="relative">
+                  <input
+                    id="login-password"
+                    type={showPassword ? 'text' : 'password'}
+                    autoComplete="current-password"
+                    placeholder="••••••••"
+                    className={cn(
+                      fieldBase,
+                      'pr-11',
+                      errors.password ? 'border-coral' : 'border-auth-border'
+                    )}
+                    {...register('password')}
+                  />
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-auth-muted transition-colors hover:text-auth-accent"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+                {errors.password?.message && (
+                  <p className="mt-1 text-xs text-coral">{errors.password.message}</p>
+                )}
+              </div>
+
+              {mfaRequired && (
+                <div>
+                  <label
+                    htmlFor="login-mfa"
+                    className="mb-1.5 block text-xs font-medium text-auth-ink"
+                  >
+                    Authenticator code
+                  </label>
+                  <div className="relative">
+                    <KeyRound
+                      size={16}
+                      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-auth-muted"
+                    />
+                    <input
+                      id="login-mfa"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      placeholder="123456"
+                      maxLength={6}
+                      autoFocus
+                      className={cn(
+                        fieldBase,
+                        'pl-10',
+                        errors.mfaCode ? 'border-coral' : 'border-auth-border'
+                      )}
+                      {...register('mfaCode')}
+                    />
+                  </div>
+                  <p className="mt-1 text-xs text-auth-muted">
+                    Enter the 6-digit code from your authenticator app
+                  </p>
+                  {errors.mfaCode?.message && (
+                    <p className="mt-1 text-xs text-coral">{errors.mfaCode.message}</p>
+                  )}
                 </div>
               )}
 
-              <form onSubmit={handleSubmit(onSubmit)} noValidate className="mt-8 space-y-6">
-                <div>
-                  <label htmlFor="login-email" className="text-xs font-medium text-auth-ink">
-                    Email
-                  </label>
-                  <input
-                    id="login-email"
-                    type="email"
-                    autoComplete="username"
-                    placeholder="you@example.com"
-                    className={cn(fieldBase, errors.email ? 'border-coral' : 'border-auth-border')}
-                    {...register('email')}
-                  />
-                  {errors.email?.message && (
-                    <p className="mt-1 text-xs text-coral">{errors.email.message}</p>
-                  )}
-                </div>
-
-                <div>
-                  <label htmlFor="login-password" className="text-xs font-medium text-auth-ink">
-                    Password
-                  </label>
-                  <div className="relative">
-                    <input
-                      id="login-password"
-                      type={showPassword ? 'text' : 'password'}
-                      autoComplete="current-password"
-                      placeholder="••••••••"
-                      className={cn(
-                        fieldBase,
-                        'pr-10',
-                        errors.password ? 'border-coral' : 'border-auth-border'
-                      )}
-                      {...register('password')}
-                    />
-                    <button
-                      type="button"
-                      tabIndex={-1}
-                      onClick={() => setShowPassword((v) => !v)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-auth-muted transition-colors hover:text-auth-accent"
-                      aria-label={showPassword ? 'Hide password' : 'Show password'}
-                    >
-                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                  {errors.password?.message && (
-                    <p className="mt-1 text-xs text-coral">{errors.password.message}</p>
-                  )}
-                </div>
-
-                {mfaRequired && (
-                  <div>
-                    <label htmlFor="login-mfa" className="text-xs font-medium text-auth-ink">
-                      Authenticator code
-                    </label>
-                    <div className="relative">
-                      <KeyRound
-                        size={16}
-                        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-auth-muted"
-                      />
-                      <input
-                        id="login-mfa"
-                        type="text"
-                        inputMode="numeric"
-                        autoComplete="one-time-code"
-                        placeholder="123456"
-                        maxLength={6}
-                        autoFocus
-                        className={cn(
-                          fieldBase,
-                          'pl-10',
-                          errors.mfaCode ? 'border-coral' : 'border-auth-border'
-                        )}
-                        {...register('mfaCode')}
-                      />
-                    </div>
-                    <p className="mt-1 text-xs text-auth-muted">
-                      Enter the 6-digit code from your authenticator app
-                    </p>
-                    {errors.mfaCode?.message && (
-                      <p className="mt-1 text-xs text-coral">{errors.mfaCode.message}</p>
-                    )}
-                  </div>
-                )}
-
-                <div className="pt-2 text-center">
-                  <p className="mb-3 text-xs text-auth-muted">
-                    You&apos;re all set — pick up where you left off.
-                  </p>
-                  <button
-                    type="submit"
-                    disabled={isLoading}
-                    className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-full bg-auth-accent px-6 text-sm font-medium text-white shadow-sm transition-colors hover:bg-auth-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-auth-accent focus-visible:ring-offset-2 focus-visible:ring-offset-auth-surface disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-                    Sign in
-                  </button>
-                </div>
-              </form>
-            </div>
+              <div className="pt-2 text-center">
+                <p className="mb-3 text-sm text-auth-muted">
+                  You&apos;re all set — pick up where you left off.
+                </p>
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-auth-accent px-6 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-auth-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-auth-accent focus-visible:ring-offset-2 focus-visible:ring-offset-auth-surface disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                  Sign in
+                </button>
+              </div>
+            </form>
           </div>
+        </div>
 
-          {/* ── Illustration panel (blue, curved seam) ───────── */}
-          <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-[54%] md:block">
-            {/* Curved seam: blue shape whose left edge waves into the sign-in surface. */}
-            <svg
-              className="absolute inset-0 h-full w-full"
-              viewBox="0 0 100 100"
-              preserveAspectRatio="none"
-              aria-hidden
-            >
-              <path
-                className="fill-auth-panel"
-                d="M26 0 C56 16, 2 44, 24 72 C38 92, 32 96, 44 100 L100 100 L100 0 Z"
-              />
-            </svg>
-
-            {/* Overlay: brand pinned top-right; welcome copy + art centred within the
-                blue mass — clear of the curved seam, responsive, never viewport-centred. */}
-            <div className="pointer-events-auto absolute inset-0">
-              <div className="absolute right-8 top-9 flex items-center gap-2 text-auth-ink/80 lg:right-12">
-                <span className="grid h-6 w-6 place-items-center rounded-full bg-auth-ink/10">
-                  <Cctv size={13} strokeWidth={1.5} className="text-auth-ink" />
-                </span>
-                <span className="text-sm font-semibold tracking-tight">Aniston VMS</span>
-              </div>
-
-              <div className="flex h-full flex-col items-center justify-center gap-7 pl-[32%] pr-8 text-center lg:pl-[30%] lg:pr-12">
-                <div>
-                  <h2 className="font-heading text-3xl font-bold leading-tight text-auth-ink">
-                    Welcome back!
-                  </h2>
-                  <p className="mt-2 text-sm text-auth-muted">Pick up where you left off.</p>
-                </div>
-                <LoginIllustration className="w-52 max-w-full lg:w-60" />
-              </div>
-            </div>
+        {/* ── Welcome panel (blue) — heading near the top, illustration below ─ */}
+        <div className="relative z-10 flex w-full flex-col items-center justify-center bg-auth-panel px-6 pb-[clamp(2rem,5vh,3rem)] pt-[clamp(2.5rem,6vh,4rem)] text-center md:w-1/2 md:bg-transparent md:px-10 lg:pl-[6%] lg:pr-[4%]">
+          <div>
+            <h2 className="font-heading text-[clamp(2rem,3.6vw,3rem)] font-bold leading-tight text-auth-ink">
+              Welcome back!
+            </h2>
+            <p className="mx-auto mt-4 max-w-[34rem] text-[15px] leading-relaxed text-auth-muted">
+              Your entire security network, monitored from one intelligent platform.
+            </p>
+          </div>
+          <div className="flex w-full flex-1 items-center justify-center">
+            <LoginIllustration className="mt-[clamp(1rem,3.5vh,2.5rem)] h-auto w-[min(100%,64vh,540px)]" />
           </div>
         </div>
       </motion.div>

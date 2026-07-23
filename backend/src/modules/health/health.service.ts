@@ -1,4 +1,4 @@
-import { NotFoundError, ForbiddenError } from '../../middleware/errorHandler.js';
+import { NotFoundError, ForbiddenError, ValidationError } from '../../middleware/errorHandler.js';
 import { prisma } from '../../lib/prisma.js';
 import {
   canAccessCamera,
@@ -7,7 +7,7 @@ import {
   zoneScopeWhere,
 } from '../../lib/scope.js';
 import { DIAGNOSIS_TEXT } from './health.diagnosis.js';
-import { runCameraCheck } from './health.scheduler.js';
+import { runCameraCheck, type ConfiguredCameraWithRouter } from './health.scheduler.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Read-side of the Stage 2 health engine: camera health detail, check history,
@@ -30,6 +30,8 @@ export async function getCameraHealth(userId: string, cameraId: string): Promise
       id: true,
       cameraCode: true,
       name: true,
+      latitude: true,
+      longitude: true,
       status: true,
       healthScore: true,
       diagnosis: true,
@@ -118,7 +120,14 @@ export async function runCameraCheckNow(userId: string, cameraId: string): Promi
     include: { router: true },
   });
   if (!camera) throw new NotFoundError('Camera not found');
-  const result = await runCameraCheck(camera);
+  // Only CONFIGURED cameras have the stream config + router relation needed to
+  // probe. DRAFT cameras are registered by identity only and cannot be checked.
+  if (camera.provisioningState !== 'CONFIGURED' || !camera.router) {
+    throw new ValidationError('Cannot run a health check on a DRAFT camera; configure it first.');
+  }
+  // Cast is sound: the CONFIGURED guard above guarantees the stream config columns
+  // and router relation are non-null (mirrors the scheduler's own query invariant).
+  const result = await runCameraCheck(camera as ConfiguredCameraWithRouter);
   return {
     ...result,
     diagnosisText: result.diagnosis ? DIAGNOSIS_TEXT[result.diagnosis as never] : null,

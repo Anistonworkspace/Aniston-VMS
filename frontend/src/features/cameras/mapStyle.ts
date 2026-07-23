@@ -12,7 +12,11 @@ export const OSM_RASTER_STYLE: StyleSpecification = {
       type: 'raster',
       tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
       tileSize: 256,
-      attribution: '© OpenStreetMap contributors',
+      // Required OSM credit. "OpenStreetMap" is the linked text; MapLibre's
+      // AttributionControl dedupes by source, so this single source renders the
+      // line exactly once as "© OpenStreetMap contributors".
+      attribution:
+        '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors',
       maxzoom: 19,
     },
   },

@@ -80,6 +80,13 @@ export async function createClipExport(
 ): Promise<ReturnType<typeof toPublicClip>> {
   const camera = await requireCamera(actor.id, cameraId);
 
+  // A DRAFT (unconfigured) camera has no site and has never recorded, so there
+  // is no footage to export. Reject before touching storage policies, which are
+  // keyed on the camera's site. (This also narrows siteId to non-null below.)
+  if (camera.siteId == null) {
+    throw new ValidationError('Camera is not configured — no footage is available to export');
+  }
+
   // CR-9 — a SITE- or ZONE-level storage policy with storeClips=false blocks
   // new exports for every camera under that scope, with a clear message.
   // (Cameras hang off sites; the zone is reached through Site.zoneId.)

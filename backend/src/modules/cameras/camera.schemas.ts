@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { PaginationSchema } from '@aniston-vms/shared';
+import { normalizeRtspUrl, InvalidRtspUrlError } from '../../lib/rtsp-url.js';
 
 // Request validation for the cameras API (see camera.router.ts). Camera is the
 // leaf of the Region → Zone → Site → Router → Camera hierarchy (prisma.schema.
@@ -10,6 +11,32 @@ import { PaginationSchema } from '@aniston-vms/shared';
 
 const cameraStatusEnum = z.enum(['HEALTHY', 'WARNING', 'CRITICAL', 'MAINTENANCE', 'UNKNOWN']);
 const playbackAdapterEnum = z.enum(['ONVIF_G', 'HIKVISION', 'DAHUA', 'NONE']);
+
+// An RTSP URL field, validated AND normalized at the trust boundary by the
+// canonical lib/rtsp-url so a given URL is stored in exactly one canonical form
+// (scheme lowercased, &amp; entity decoded, byte-exact vendor path/query) and
+// every downstream consumer — encryption, the @unique dedup hash, MediaMTX
+// source resolution, health DESCRIBE — treats it identically. A malformed URL
+// is rejected here with a fixed reason that never echoes the URL or its
+// credentials back to the client (see InvalidRtspUrlError).
+const rtspUrlSchema = z
+  .string()
+  .min(1)
+  .max(500)
+  .transform((val, ctx) => {
+    try {
+      return normalizeRtspUrl(val);
+    } catch (err) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          err instanceof InvalidRtspUrlError
+            ? `Not a valid RTSP URL (${err.reason}) — must start with rtsp:// or rtsps://`
+            : 'Not a valid RTSP URL',
+      });
+      return z.NEVER;
+    }
+  });
 
 export const cameraIdParamsSchema = z.object({
   id: z.string().uuid('Camera id must be a UUID'),
@@ -30,18 +57,31 @@ export const cameraListQuerySchema = PaginationSchema.extend({
   q: z.string().max(200).trim().optional(),
 });
 
-export const createCameraSchema = z.object({
-  siteId: z.string().uuid(),
-  routerId: z.string().uuid(),
+// ── Registration: identity ONLY ──────────────────────────────────────────────
+// What you need to add a physical camera to inventory as DRAFT: identity fields
+// only. No site/router, no RTSP, no map position — those arrive later via
+// configureCameraSchema. This split is the heart of the commissioning redesign.
+export const registerCameraSchema = z.object({
   cameraCode: z.string().min(1).max(50),
   name: z.string().min(1).max(150),
   brand: z.string().max(100).optional(),
   model: z.string().max(100).optional(),
   firmware: z.string().max(100).optional(),
   serialNumber: z.string().max(100).optional(),
+});
+
+// ── Configuration: placement + stream config, ALL required ───────────────────
+// Saved in a separate step (ConfigureCameraModal). Every field is required so a
+// saved config is always complete enough to run a connection test and activate
+// (DRAFT → CONFIGURED). RTSP plaintext is TLS-only + encrypted at rest
+// (camera.service.ts); mainRtspHash/subRtspHash are derived server-side.
+export const configureCameraSchema = z.object({
+  siteId: z.string().uuid(),
+  routerId: z.string().uuid(),
   // Plaintext in transit over TLS — encrypted at rest, see camera.service.ts.
-  mainRtspUrl: z.string().min(1).max(500),
-  subRtspUrl: z.string().min(1).max(500),
+  // Validated + canonicalized by rtspUrlSchema at the trust boundary.
+  mainRtspUrl: rtspUrlSchema,
+  subRtspUrl: rtspUrlSchema,
   rtspUsername: z.string().min(1).max(200),
   rtspPassword: z.string().min(1).max(200),
   onvifPort: z.coerce.number().int().min(1).max(65535).optional(),
@@ -50,19 +90,26 @@ export const createCameraSchema = z.object({
   expectedResolution: z.string().min(1).max(50),
   expectedFps: z.coerce.number().int().min(1).max(240),
   expectedBitrateKbps: z.coerce.number().int().min(1).max(1_000_000),
-  // CR-6 — the add-camera modal registers the camera's map position directly
-  // (MapLibre pin); Delhi NCR in practice, but any valid WGS-84 pair is fine.
+  // CR-6 — the configure step sets the camera's map position (MapLibre pin);
+  // Delhi NCR in practice, but any valid WGS-84 pair is fine. Nullable in the DB
+  // until placed (DRAFT); required here so a CONFIGURED camera is always placed.
   latitude: z.coerce.number().min(-90).max(90),
   longitude: z.coerce.number().min(-180).max(180),
-  status: cameraStatusEnum.optional(),
 });
 
-export const updateCameraSchema = createCameraSchema.partial().extend({
-  maintenanceMode: z.boolean().optional(),
-  // CR-4 — per-camera snapshot cadence, editable 1–60 min (frontend pairs this
-  // with a projected-storage calculator and warns below 15 min).
-  snapshotIntervalMinutes: z.coerce.number().int().min(1).max(60).optional(),
-});
+// Edit an existing camera — identity and/or config, every field optional. A
+// DRAFT camera can be edited freely; editing config does NOT auto-activate
+// (that stays an explicit, test-gated action — see camera.service activate).
+export const updateCameraSchema = registerCameraSchema
+  .merge(configureCameraSchema)
+  .partial()
+  .extend({
+    status: cameraStatusEnum.optional(),
+    maintenanceMode: z.boolean().optional(),
+    // CR-4 — per-camera snapshot cadence, editable 1–60 min (frontend pairs
+    // this with a projected-storage calculator and warns below 15 min).
+    snapshotIntervalMinutes: z.coerce.number().int().min(1).max(60).optional(),
+  });
 
 export const createReferenceImageSchema = z.object({
   imageBase64: z.string().min(1),
@@ -76,7 +123,7 @@ export const referenceImageListQuerySchema = PaginationSchema;
 // under HEALTH_SIM_MODE the result is synthesized from the injected sim fault
 // (health.checkers.ts) so the modal works against the simulated fleet.
 export const testCameraConnectionSchema = z.object({
-  mainRtspUrl: z.string().min(1).max(500),
+  mainRtspUrl: rtspUrlSchema,
   rtspUsername: z.string().min(1).max(200),
   rtspPassword: z.string().min(1).max(200),
   // Optional — lets the sim path look up an injected fault for this code.
@@ -88,7 +135,8 @@ export const testCameraConnectionSchema = z.object({
 });
 
 export type CameraListQuery = z.infer<typeof cameraListQuerySchema>;
-export type CreateCameraInput = z.infer<typeof createCameraSchema>;
+export type RegisterCameraInput = z.infer<typeof registerCameraSchema>;
+export type ConfigureCameraInput = z.infer<typeof configureCameraSchema>;
 export type UpdateCameraInput = z.infer<typeof updateCameraSchema>;
 export type CreateReferenceImageInput = z.infer<typeof createReferenceImageSchema>;
 export type ReferenceImageListQuery = z.infer<typeof referenceImageListQuerySchema>;

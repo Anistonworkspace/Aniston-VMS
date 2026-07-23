@@ -26,6 +26,7 @@ import { reportRouter } from './modules/reports/reports.router.js';
 import { auditLogRouter } from './modules/admin/audit-log.router.js';
 import { escalationRouter } from './modules/admin/escalation.router.js';
 import { notificationsRouter } from './modules/admin/notifications.router.js';
+import { notificationReadRouter } from './modules/notifications/notification-read.router.js';
 import { usersRouter } from './modules/admin/users.router.js';
 import { platformRouter } from './modules/health/platform.router.js';
 import { dashboardRouter } from './modules/dashboard/dashboard.router.js';
@@ -96,6 +97,9 @@ export function createApp(): Express {
   app.use('/api', reportRouter);
   app.use('/api', auditLogRouter);
   app.use('/api', escalationRouter);
+  // notificationReadRouter MUST precede notificationsRouter so `/notifications/me`
+  // is matched here rather than by the admin router's `/notifications/:id`.
+  app.use('/api', notificationReadRouter);
   app.use('/api', notificationsRouter);
   app.use('/api', usersRouter);
   app.use('/api', platformRouter);

@@ -1,5 +1,6 @@
 import type { CameraStatus, Diagnosis } from '@prisma/client';
 import type { CheckResult } from './health.checkers.js';
+import { normalizeCodec } from '../../lib/codec.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Root-cause diagnosis engine (docs/02-TRD.md §3). Maps the staged pipeline
@@ -97,9 +98,19 @@ export function diagnose(
     return { diagnosis: 'CAMERA_OFFLINE', healthScore: score(staged, ctx, exp), allHealthy: false };
   }
 
-  // Stage 3 — auth/path failures are configuration problems
+  // Stage 3 — RTSP DESCRIBE failed. Only genuine auth/path rejections are
+  // configuration problems the operator must fix. Protocol/session/timeout
+  // faults (e.g. RTSP 454, TIMEOUT, connection reset) are transient
+  // camera-side/network issues and must NOT be reported as wrong credentials.
   if (!rtspAuth.success) {
-    return { diagnosis: 'CONFIG_ERROR', healthScore: score(staged, ctx, exp), allHealthy: false };
+    const isConfig =
+      rtspAuth.errorCode === 'INVALID_CREDENTIALS' ||
+      rtspAuth.errorCode === 'INVALID_STREAM_PATH';
+    return {
+      diagnosis: isConfig ? 'CONFIG_ERROR' : 'NETWORK_UNSTABLE',
+      healthScore: score(staged, ctx, exp),
+      allHealthy: false,
+    };
   }
 
   // Stage 4 — video validation
@@ -118,9 +129,13 @@ export function diagnose(
     };
   }
 
-  // Video up — compare against expected profile
+  // Video up — compare against expected profile. Codec spellings are collapsed
+  // through the ONE canonical normalizer (lib/codec) — the same one the Live
+  // Wall transcode decision and the health probe use — so the operator's
+  // 'H.265' and ffprobe's 'HEVC' (or 'H.264' vs 'H264') are recognised as the
+  // same codec and never produce a false CONFIG_ERROR on a healthy stream.
   const wrongCodec =
-    video.codec !== undefined && video.codec.toUpperCase() !== exp.codec.toUpperCase();
+    video.codec !== undefined && normalizeCodec(video.codec) !== normalizeCodec(exp.codec);
   const wrongRes = video.resolution !== undefined && video.resolution !== exp.resolution;
   if (wrongCodec || wrongRes) {
     return { diagnosis: 'CONFIG_ERROR', healthScore: score(staged, ctx, exp), allHealthy: false };

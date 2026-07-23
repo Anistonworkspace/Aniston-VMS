@@ -145,7 +145,7 @@ function ZoneCardMenu({ zone, onDark }: ZoneCardMenuProps): JSX.Element {
             initial="hidden"
             animate="visible"
             exit="exit"
-            className="absolute right-0 top-full z-20 mt-1 w-44 origin-top-right overflow-hidden rounded-card bg-white py-1 text-ink shadow-soft-hover"
+            className="absolute right-0 top-full z-20 mt-1 w-44 origin-top-right overflow-hidden rounded-card bg-card py-1 text-ink shadow-soft-hover"
           >
             {items.map(({ label, icon: Icon, to }) => (
               <button

@@ -1,6 +1,8 @@
 import type { Camera } from '@prisma/client';
 import { env } from '../../config/env.js';
 import { logger } from '../../lib/logger.js';
+import { normalizeRtspUrl, injectRtspCredentials, InvalidRtspUrlError } from '../../lib/rtsp-url.js';
+import { isBrowserPlayableCodec } from '../../lib/codec.js';
 import { decrypt } from '../../utils/encryption.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -73,50 +75,34 @@ export function buildStreamEndpoints(mediamtxPath: string): StreamEndpoints {
 
 // ─── Camera source resolution ────────────────────────────────────────────────
 
-const RTSP_SCHEME_RE = /^(rtsps?:\/\/)/i;
-// rtsp://user:pass@host — credentials already in the URL userinfo.
-const HAS_USERINFO_RE = /^rtsps?:\/\/[^/@]+@/i;
-// Some ONVIF/Hikvision variants embed creds in the path (…/user=x_password=y).
-const EMBEDS_CREDS_RE = /(?:user|usr|password|pwd)=/i;
-
-/**
- * Some camera URLs were captured/stored with an HTML-encoded ampersand
- * (`…stream=0&amp;onvif=0…`) — a form/import artifact that is never valid in a
- * real RTSP URL. ffmpeg/MediaMTX would otherwise receive a malformed query and
- * fail to open the input. Normalize it back to a literal `&`. Targeted to the
- * `&amp;` entity only (collapsing any accidental double-encoding); deliberately
- * NOT a general HTML-entity decode, so genuine URL characters are untouched.
- */
-function normalizeRtspUrl(rawUrl: string): string {
-  return rawUrl.replace(/&(?:amp;)+/gi, '&');
-}
-
-/**
- * Injects the decrypted username/password into a bare `rtsp://host/…` URL.
- * Left untouched when the URL already carries credentials (userinfo or
- * path-embedded) or when no username is stored, so cameras whose whole
- * credentialed URL was pasted into the form keep working verbatim.
- */
-function withCredentials(rawUrl: string, username: string, password: string): string {
-  if (!username || HAS_USERINFO_RE.test(rawUrl) || EMBEDS_CREDS_RE.test(rawUrl)) return rawUrl;
-  return rawUrl.replace(
-    RTSP_SCHEME_RE,
-    `$1${encodeURIComponent(username)}:${encodeURIComponent(password)}@`
-  );
-}
-
 /**
  * Decrypts the camera's stored RTSP URL for the requested kind (sub-stream for
  * LIVE_SUB, main otherwise) and returns a fully-credentialed source URL that
  * MediaMTX can pull from. Never logged — it contains the camera password.
+ *
+ * URL hygiene (scheme validation, &amp; entity decode, byte-exact vendor-path
+ * preservation, credential injection) is delegated to the canonical
+ * lib/rtsp-url so streaming, Test Connection, health DESCRIBE and snapshot
+ * capture all treat a given stored URL identically. `normalizeRtspUrl` throws
+ * InvalidRtspUrlError on a malformed stored URL; that propagates out of
+ * publishStream *before* any streamSession row is created (see
+ * playback.service startSession), so a bad URL surfaces as a clean error
+ * without consuming a per-camera concurrency slot.
  */
 export function resolveCameraSource(camera: Camera, kind: StreamKind): string {
   const encryptedUrl =
     kind === 'LIVE_SUB' ? camera.subRtspUrlEncrypted : camera.mainRtspUrlEncrypted;
+  // Post-split, the RTSP URL columns are nullable to allow DRAFT cameras with
+  // identity-only rows. A CONFIGURED camera always has both main and sub URLs
+  // (enforced by configureCameraSchema at the configure gate), and streaming
+  // paths only ever run for CONFIGURED cameras — so a null here means a DRAFT
+  // camera slipped through. Surface it as a clean InvalidRtspUrlError (fixed
+  // reason string, never leaks the URL) *before* any streamSession row exists.
+  if (encryptedUrl == null) throw new InvalidRtspUrlError('missing-url');
   const rawUrl = normalizeRtspUrl(decrypt(encryptedUrl));
   const username = camera.rtspUsernameEncrypted ? decrypt(camera.rtspUsernameEncrypted) : '';
   const password = camera.rtspPasswordEncrypted ? decrypt(camera.rtspPasswordEncrypted) : '';
-  return withCredentials(rawUrl, username, password);
+  return injectRtspCredentials(rawUrl, username, password);
 }
 
 // ─── MediaMTX control plane ──────────────────────────────────────────────────
@@ -128,19 +114,23 @@ function mtxPathUrl(action: 'add' | 'delete', mediamtxPath: string): string {
   return `${env.MEDIAMTX_API_URL}/v3/config/paths/${action}/${mediamtxPath}`;
 }
 
-// Browsers decode H.264 over MediaMTX's HLS/WebRTC output; HEVC/H.265 (and
-// anything else a camera might emit) will not play. Pass-through is only safe
-// for codecs in this set.
-const BROWSER_PLAYABLE_CODECS = new Set(['H.264']);
-
 /**
- * The Live Wall (LIVE_SUB) must always be playable in the browser, so any
- * non-H.264 sub source is transcoded to H.264 on demand. The full-res main
- * stream is deliberately left as-is (it may stay HEVC per ops policy) — only
- * the wall's sub tile is touched.
+ * The Live Wall (LIVE_SUB) must always be playable in the browser, so any sub
+ * stream whose codec is not browser-playable is transcoded to H.264 on demand.
+ * The full-res main stream is deliberately left as-is (it may stay HEVC per ops
+ * policy) — only the wall's sub tile is touched.
+ *
+ * DETECTION-AUTHORITATIVE: the decision is driven by `detectedSubCodec` — what
+ * the health probe actually measured on the sub stream with ffprobe — NEVER by
+ * the operator-declared `expectedCodec`, which is routinely wrong for HEVC/H.265
+ * cameras and is exactly how HEVC tiles reached the wall un-transcoded. Codec
+ * spellings are normalized before comparison (ffprobe emits 'H264'/'HEVC', the
+ * form stores 'H.264'), and `isBrowserPlayableCodec` FAILS SAFE: a null /
+ * undetected / unknown codec is treated as not playable, so a camera the probe
+ * has not reached yet transcodes (and plays) rather than shipping a dead tile.
  */
 function needsH264Transcode(camera: Camera, kind: StreamKind): boolean {
-  return kind === 'LIVE_SUB' && !BROWSER_PLAYABLE_CODECS.has(camera.expectedCodec);
+  return kind === 'LIVE_SUB' && !isBrowserPlayableCodec(camera.detectedSubCodec);
 }
 
 /**

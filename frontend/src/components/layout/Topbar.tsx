@@ -1,27 +1,40 @@
 import { useNavigate } from 'react-router-dom';
-import { Bell, Search } from 'lucide-react';
+import { PanelLeftOpen, Search } from 'lucide-react';
 import { Skeleton } from '@/components/ui';
-import {
-  useGetHealthSummaryQuery,
-  useListRecentIncidentsQuery,
-} from '@/features/overview/overview.api';
+import { useGetHealthSummaryQuery } from '@/features/overview/overview.api';
+import { NotificationBell } from './NotificationBell';
 
-// Topbar — docs/04-uiux-brief.md §5: page title + coral critical pill,
-// centered search, bell (unread dot), account menu (avatar → sign-out
-// dropdown), sage primary CTA (Dashboard → "Open Live Wall").
-const ICON_BUTTON =
-  'grid h-11 w-11 place-items-center rounded-control border border-hairline bg-card text-muted transition-colors duration-150 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage';
+interface TopbarProps {
+  /** Whether the desktop sidebar is currently collapsed to its icon rail. */
+  collapsed: boolean;
+  /** Expand the desktop sidebar back to full width (shown only while collapsed). */
+  onExpand: () => void;
+}
 
-export function Topbar(): JSX.Element {
+// Topbar — docs/04-uiux-brief.md §5: sidebar toggle + page title + coral
+// critical pill, centered search, bell (unread dot + dropdown), account menu
+// (avatar → sign-out dropdown), sage primary CTA (Dashboard → "Open Live Wall").
+export function Topbar({ collapsed, onExpand }: TopbarProps): JSX.Element {
   const navigate = useNavigate();
   const { data: health, isLoading } = useGetHealthSummaryQuery();
-  const { data: incidents } = useListRecentIncidentsQuery();
 
   const critical = health?.critical ?? 0;
-  const hasUnread = (incidents?.filter((i) => i.status === 'OPEN').length ?? 0) > 0;
 
   return (
-    <header className="flex items-center gap-4 px-6 pb-2 pt-6 lg:px-8">
+    <header className="flex items-center gap-3 px-4 pb-1.5 pt-2 lg:px-6">
+      {/* Sidebar expand toggle — desktop only, shown only while the sidebar is
+          collapsed. The expanded sidebar carries its own collapse control in its header. */}
+      {collapsed && (
+        <button
+          type="button"
+          onClick={onExpand}
+          aria-label="Expand sidebar"
+          title="Expand sidebar"
+          className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-control text-muted transition-colors duration-150 hover:bg-card hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage lg:inline-flex"
+        >
+          <PanelLeftOpen size={20} strokeWidth={1.5} />
+        </button>
+      )}
       <div className="flex shrink-0 items-center gap-3">
         <h1 className="font-heading text-xl font-semibold text-ink">Overview</h1>
         {isLoading ? (
@@ -34,8 +47,8 @@ export function Topbar(): JSX.Element {
         ) : null}
       </div>
 
-      <div className="hidden flex-1 justify-center px-2 md:flex">
-        <div className="relative w-full max-w-sm">
+      <div className="-mt-0.5 hidden flex-1 justify-center px-2 md:flex">
+        <div className="relative w-full max-w-xs">
           <Search
             size={18}
             strokeWidth={1.5}
@@ -45,25 +58,17 @@ export function Topbar(): JSX.Element {
             type="search"
             aria-label="Search cameras, sites, incidents"
             placeholder="Search cameras, sites, incidents…"
-            className="h-11 w-full rounded-control border border-hairline bg-card pl-10 pr-4 text-sm text-ink placeholder:text-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-sage"
+            className="h-9 w-full rounded-control border border-hairline bg-card pl-10 pr-4 text-sm text-ink placeholder:text-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-sage"
           />
         </div>
       </div>
 
-      <div className="ml-auto flex shrink-0 items-center gap-2.5 md:ml-0">
-        <button type="button" aria-label="Notifications" className={`relative ${ICON_BUTTON}`}>
-          <Bell size={18} strokeWidth={1.5} />
-          {hasUnread && (
-            <span
-              className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-coral"
-              aria-hidden
-            />
-          )}
-        </button>
+      <div className="-mt-0.5 ml-auto flex shrink-0 items-center gap-2 md:ml-0">
+        <NotificationBell />
         <button
           type="button"
           onClick={() => navigate('/live')}
-          className="h-11 rounded-control bg-sage px-5 text-sm font-medium text-white transition-colors duration-150 hover:bg-sage-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-offset-2"
+          className="h-9 rounded-control bg-sage px-3.5 text-xs font-medium text-white transition-colors duration-150 hover:bg-sage-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-offset-2"
         >
           Open Live Wall
         </button>

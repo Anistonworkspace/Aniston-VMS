@@ -32,3 +32,20 @@ export function CameraStatusBadge({
     </span>
   );
 }
+
+// DRAFT cameras are registered but not yet placed/wired, so they carry no health
+// status. This neutral pill signals that provisioning is still incomplete and
+// replaces the health chip until the camera is configured + activated.
+export function DraftBadge({ className }: { className?: string }): JSX.Element {
+  return (
+    <span
+      className={cn(
+        'inline-flex shrink-0 items-center gap-1.5 rounded-full bg-state-unknown-soft px-2.5 py-0.5 text-xs font-medium text-state-unknown',
+        className
+      )}
+    >
+      <span className="h-1.5 w-1.5 rounded-full border border-current" aria-hidden />
+      Draft
+    </span>
+  );
+}

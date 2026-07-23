@@ -56,7 +56,12 @@ const { ConflictError, ForbiddenError, NotFoundError } =
 const operator = { id: 'user-1', role: 'OPERATOR' as const, email: 'operator@example.com' };
 const admin = { id: 'admin-1', role: 'SUPER_ADMIN' as const, email: 'admin@example.com' };
 
-const camera = { id: 'cam-1', cameraCode: 'CAM-1', name: 'Front Gate' };
+const camera = {
+  id: 'cam-1',
+  cameraCode: 'CAM-1',
+  name: 'Front Gate',
+  provisioningState: 'CONFIGURED' as const,
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -105,6 +110,30 @@ describe('startSession', () => {
     await expect(
       playbackService.startSession(operator, { cameraId: 'cam-1', kind: 'LIVE_SUB' }, '10.0.0.1')
     ).rejects.toThrow(NotFoundError);
+  });
+
+  it('throws ConflictError for a DRAFT camera that has no stream config yet', async () => {
+    prismaMock.camera.findUnique.mockResolvedValue({ ...camera, provisioningState: 'DRAFT' });
+
+    await expect(
+      playbackService.startSession(operator, { cameraId: 'cam-1', kind: 'LIVE_SUB' }, '10.0.0.1')
+    ).rejects.toThrow(ConflictError);
+    expect(publishStreamMock).not.toHaveBeenCalled();
+    expect(prismaMock.streamSession.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses a PLAYBACK (VOD) session against a DRAFT camera too', async () => {
+    prismaMock.camera.findUnique.mockResolvedValue({ ...camera, provisioningState: 'DRAFT' });
+
+    await expect(
+      playbackService.startSession(
+        operator,
+        { cameraId: 'cam-1', kind: 'PLAYBACK', startAt: '2026-07-01T00:00:00.000Z' },
+        '10.0.0.1'
+      )
+    ).rejects.toThrow(ConflictError);
+    expect(publishStreamMock).not.toHaveBeenCalled();
+    expect(prismaMock.streamSession.create).not.toHaveBeenCalled();
   });
 
   it('throws ConflictError once the camera is at STREAM_MAX_CONCURRENT_PER_CAMERA', async () => {

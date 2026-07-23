@@ -26,9 +26,11 @@ import { listContainer, pageChild, pageTransition } from '@/lib/animations';
 import { AddCameraModal } from './AddCameraModal';
 import { CameraCard } from './CameraCard';
 import { CameraDetailDrawer } from './CameraDetailDrawer';
+import { ConfigureCameraModal } from './ConfigureCameraModal';
 import { CameraMapView } from './CameraMapView';
 import { DeleteCameraModal } from './DeleteCameraModal';
-import { useDeleteCameraMutation, useListCamerasQuery, useListSitesLiteQuery } from './cameras.api';
+import { SelectCameraModal } from './SelectCameraModal';
+import { useDeleteCameraMutation, useListCamerasQuery } from './cameras.api';
 import type { Camera, CameraStatus } from './cameras.types';
 
 const PAGE_SIZE = 24;
@@ -72,7 +74,6 @@ export function CamerasPage(): JSX.Element {
   // Zone is URL-derived too so dashboard zone cards can deep-link into a
   // zone-filtered fleet ("/cameras?zone=<id>") and the filter stays shareable.
   const zoneId = searchParams.get('zone') ?? '';
-  const [siteId, setSiteId] = useState('');
   const [page, setPage] = useState(1);
 
   // CR-6 — grid/map presentation toggle + role-gated registration modal.
@@ -83,9 +84,13 @@ export function CamerasPage(): JSX.Element {
   const canRegister = isCameraWriteRole(user?.role);
   const canDelete = isAdminRole(user?.role); // mirrors backend ADMIN_ROLES (server still enforces)
   const [selecting, setSelecting] = useState(false);
+  const [selectPromptOpen, setSelectPromptOpen] = useState(false);
   const [prevView, setPrevView] = useState<'grid' | 'map' | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Camera | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // DRAFT cameras open the placement + stream-config flow (step 2) rather than
+  // the health drawer, which has nothing to show until the camera is activated.
+  const [configureCamera, setConfigureCamera] = useState<Camera | null>(null);
   const [del, { isLoading: isDeleting }] = useDeleteCameraMutation();
 
   const setStatus = (next: CameraStatus | ''): void => {
@@ -115,6 +120,24 @@ export function CamerasPage(): JSX.Element {
     );
   };
 
+  // Selecting a zone in the filter dropdown writes "?zone=<id>" so the grid, the
+  // map and the deep-link chip all read from the same URL-derived zoneId. Picking
+  // the "All sites" default (empty value) simply clears the filter.
+  const setZone = (nextZoneId: string): void => {
+    if (!nextZoneId) {
+      clearZone();
+      return;
+    }
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev);
+        params.set('zone', nextZoneId);
+        return params;
+      },
+      { replace: true }
+    );
+  };
+
   // Reset to the first page whenever the active status or zone filter changes,
   // including when driven externally by a dashboard deep-link rather than a click.
   useEffect(() => {
@@ -135,15 +158,13 @@ export function CamerasPage(): JSX.Element {
       page,
       limit: PAGE_SIZE,
       q: q || undefined,
-      siteId: siteId || undefined,
       zoneId: zoneId || undefined,
       status: status || undefined,
     }),
-    [page, q, siteId, zoneId, status]
+    [page, q, zoneId, status]
   );
 
   const { data, isLoading, isFetching, error, refetch } = useListCamerasQuery(query);
-  const { data: sites } = useListSitesLiteQuery();
 
   // Resolve the active zone's name for the filter chip. The list is already
   // scoped to the caller, so an out-of-scope "?zone=" simply yields no name
@@ -231,7 +252,7 @@ export function CamerasPage(): JSX.Element {
                 variant="outline"
                 size="sm"
                 className={DANGER_OUTLINE}
-                onClick={enterSelection}
+                onClick={() => setSelectPromptOpen(true)}
                 leftIcon={<Trash2 size={14} />}
               >
                 Delete camera
@@ -251,18 +272,15 @@ export function CamerasPage(): JSX.Element {
           />
         </div>
         <select
-          value={siteId}
-          onChange={(event) => {
-            setSiteId(event.target.value);
-            setPage(1);
-          }}
-          aria-label="Filter by site"
+          value={zoneId}
+          onChange={(event) => setZone(event.target.value)}
+          aria-label="Filter by zone"
           className="h-9 rounded-lg border border-hairline bg-card px-3 text-sm text-ink transition-colors hover:border-hairline focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
         >
           <option value="">All sites</option>
-          {(sites?.items ?? []).map((site) => (
-            <option key={site.id} value={site.id}>
-              {site.name}
+          {(zones ?? []).map((zone) => (
+            <option key={zone.id} value={zone.id}>
+              {zone.name}
             </option>
           ))}
         </select>
@@ -327,16 +345,6 @@ export function CamerasPage(): JSX.Element {
         </div>
       </motion.div>
 
-      {selecting && (
-        <motion.div
-          variants={pageChild}
-          className="rounded-card border border-hairline bg-card px-4 py-2.5 text-sm text-secondary shadow-soft"
-          role="status"
-        >
-          Select a camera to delete.
-        </motion.div>
-      )}
-
       {view === 'map' ? (
         <motion.div variants={pageChild}>
           <CameraMapView
@@ -362,7 +370,7 @@ export function CamerasPage(): JSX.Element {
         </div>
       ) : data && data.items.length > 0 ? (
         <motion.div
-          key={`${page}-${q}-${siteId}-${zoneId}-${status}`}
+          key={`${page}-${q}-${zoneId}-${status}`}
           variants={listContainer}
           initial="hidden"
           animate="visible"
@@ -373,6 +381,7 @@ export function CamerasPage(): JSX.Element {
               key={camera.id}
               camera={camera}
               onOpen={(id) => navigate(`/cameras/${id}`)}
+              onConfigure={(cam) => setConfigureCamera(cam)}
               selectable={selecting}
               onSelect={(cam) => {
                 setErrorMessage(null);
@@ -387,9 +396,13 @@ export function CamerasPage(): JSX.Element {
           className="rounded-card bg-card p-10 text-center shadow-soft"
         >
           <Cctv size={28} strokeWidth={1.5} className="mx-auto text-muted" />
-          <p className="mt-3 text-sm font-medium text-ink">No cameras match these filters</p>
+          <p className="mt-3 text-sm font-medium text-ink">
+            {zoneId ? 'No cameras found in this zone.' : 'No cameras match these filters'}
+          </p>
           <p className="mt-1 text-xs text-tertiary">
-            Try clearing the search or switching the site/status filters.
+            {zoneId
+              ? 'Select “All sites” or a different zone to see more cameras.'
+              : 'Try clearing the search or switching the zone/status filters.'}
           </p>
         </motion.div>
       )}
@@ -430,6 +443,24 @@ export function CamerasPage(): JSX.Element {
         open={addOpen}
         onClose={() => setAddOpen(false)}
         notify={{ success, error: notifyError }}
+      />
+
+      {configureCamera && (
+        <ConfigureCameraModal
+          open
+          camera={configureCamera}
+          onClose={() => setConfigureCamera(null)}
+          notify={{ success, error: notifyError }}
+        />
+      )}
+
+      <SelectCameraModal
+        open={selectPromptOpen}
+        onCancel={() => setSelectPromptOpen(false)} // dismiss without entering selection mode
+        onContinue={() => {
+          setSelectPromptOpen(false);
+          enterSelection(); // activate camera-selection mode
+        }}
       />
 
       <DeleteCameraModal

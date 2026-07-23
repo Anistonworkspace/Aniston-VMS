@@ -52,7 +52,13 @@ export interface DashboardOverview {
 
 export async function getDashboardOverview(userId: string): Promise<DashboardOverview> {
   const scope = await getUserScope(userId);
-  const cameraWhere = cameraScopeWhere(scope);
+  // Operational dashboards report CONFIGURED cameras only: DRAFT cameras are
+  // identity-only, unplaced, and have never streamed, so they carry no health
+  // status, snapshots, or live sessions. (A CONFIGURED camera always has a site
+  // — enforced at the configure gate — so the `site!` reads below are sound.)
+  const cameraWhere: Prisma.CameraWhereInput = {
+    AND: [cameraScopeWhere(scope), { provisioningState: 'CONFIGURED' }],
+  };
   const since = new Date(Date.now() - SNAPSHOT_FRESH_MS);
 
   const [
@@ -148,7 +154,7 @@ export async function getDashboardOverview(userId: string): Promise<DashboardOve
       cameraId: c.id,
       cameraCode: c.cameraCode,
       name: c.name,
-      siteName: c.site.name,
+      siteName: c.site!.name,
       status: c.status,
       healthScore: c.healthScore,
       diagnosis: c.diagnosis,
@@ -157,7 +163,7 @@ export async function getDashboardOverview(userId: string): Promise<DashboardOve
       cameraId: c.id,
       cameraCode: c.cameraCode,
       name: c.name,
-      siteName: c.site.name,
+      siteName: c.site!.name,
       lastSnapshotAt: c.lastSnapshotAt ? c.lastSnapshotAt.toISOString() : null,
     })),
   };
@@ -211,7 +217,8 @@ export async function listZoneSummaries(userId: string): Promise<ZoneSummaryDto[
       orderBy: { name: 'asc' },
     }),
     prisma.camera.findMany({
-      where: cameraScopeWhere(scope),
+      // CONFIGURED only: DRAFT cameras are unplaced (no site/zone) and pending.
+      where: { AND: [cameraScopeWhere(scope), { provisioningState: 'CONFIGURED' }] },
       select: { status: true, site: { select: { zoneId: true } } },
     }),
   ]);
@@ -221,7 +228,7 @@ export async function listZoneSummaries(userId: string): Promise<ZoneSummaryDto[
     { total: number; critical: number; warning: number; maintenance: number }
   >();
   for (const cam of cameras) {
-    const zid = cam.site.zoneId;
+    const zid = cam.site!.zoneId;
     const c = byZone.get(zid) ?? { total: 0, critical: 0, warning: 0, maintenance: 0 };
     c.total += 1;
     if (cam.status === 'CRITICAL') c.critical += 1;
@@ -305,8 +312,11 @@ export async function getZoneOverview(zoneId: string, userId: string): Promise<Z
   });
   if (!zone) throw new NotFoundError('Zone not found');
 
+  // CONFIGURED only: DRAFT cameras have no site placement and never stream, so
+  // the `{ site: { zoneId } }` filter already excludes them, but stating the
+  // provisioning state keeps intent explicit and the `site!` reads below sound.
   const cameraWhere: Prisma.CameraWhereInput = {
-    AND: [cameraScopeWhere(scope), { site: { zoneId } }],
+    AND: [cameraScopeWhere(scope), { site: { zoneId } }, { provisioningState: 'CONFIGURED' }],
   };
   const since = new Date(Date.now() - SNAPSHOT_FRESH_MS);
   const windowStart = new Date(Date.now() - ZONE_UPTIME_WINDOW_MS);
@@ -374,9 +384,9 @@ export async function getZoneOverview(zoneId: string, userId: string): Promise<Z
       if (cam.lastSnapshotAt && cam.lastSnapshotAt >= since) snapFresh += 1;
     }
 
-    const s = siteMap.get(cam.site.id) ?? {
-      id: cam.site.id,
-      name: cam.site.name,
+    const s = siteMap.get(cam.site!.id) ?? {
+      id: cam.site!.id,
+      name: cam.site!.name,
       cameraCount: 0,
       healthy: 0,
       offline: 0,
@@ -388,7 +398,7 @@ export async function getZoneOverview(zoneId: string, userId: string): Promise<Z
     else if (cam.status === 'CRITICAL') s.offline += 1;
     else if (cam.status === 'WARNING') s.warning += 1;
     else if (cam.status === 'MAINTENANCE') s.maintenance += 1;
-    siteMap.set(cam.site.id, s);
+    siteMap.set(cam.site!.id, s);
   }
 
   const percent = snapEligible === 0 ? 100 : Math.round((snapFresh / snapEligible) * 100);
@@ -425,7 +435,7 @@ export async function getZoneOverview(zoneId: string, userId: string): Promise<Z
       id: c.id,
       cameraCode: c.cameraCode,
       name: c.name,
-      siteName: c.site.name,
+      siteName: c.site!.name,
       status: c.status,
       healthScore: c.healthScore,
       lastSnapshotAt: c.lastSnapshotAt ? c.lastSnapshotAt.toISOString() : null,

@@ -597,4 +597,74 @@
   /* Shadow — soft, never harsh */
   --shadow-soft: 0 10px 30px rgba(33, 32, 30, 0.07);
   --shadow-soft-hover: 0 10px 30px rgba(33, 32, 30, 0.1);
+  /* Blue-grey panel shadow — casts leftward so the main content panel reads as
+     clearly lifted off / separated from the sidebar. Subtle, cool (slate) tint. */
+  --shadow-panel: -8px 0 24px -12px rgba(51, 65, 85, 0.18), -2px 0 6px -3px rgba(51, 65, 85, 0.1);
+}
+
+/* ────────────────────────────────────────────────────────────
+   Aniston VMS design tokens — Dark Mode Overrides
+   Mirrors the light block above, remapped to the same navy-grey
+   dark surfaces used by the Boilerplate dark block (#181b23 /
+   #1f2128 / #252830, text #d5d8df). Accent HUES are preserved
+   (teal sage / indigo / coral / sand) but brightened for contrast
+   on dark, and every "*-soft" tint is inverted to a dark tint so
+   text stays legible on it. Toggled by `.dark` on <html>.
+   ──────────────────────────────────────────────────────────── */
+.dark,
+.theme-dark {
+  /* Surfaces */
+  --canvas: #14161d; /* page background behind the app frame (darkest) */
+  --surface: #1f2128; /* main content background */
+
+  /* Sign-in (unauthenticated) — dark topology, same family as the app */
+  --auth-bg: #14161d;
+  --auth-surface: #1f2128;
+  --auth-panel: #252830;
+  --auth-field: #252830;
+  --auth-field-border: #3c3f4e;
+  --auth-ink: #d5d8df;
+  --auth-muted: #9699a6;
+  --auth-accent: #22a39a; /* teal, brightened for dark */
+  --auth-accent-hover: #2bb8ad;
+  --auth-link: #6a8bff; /* indigo, brightened for dark */
+
+  --card: #252830; /* cards, topbar controls, list rows */
+  --sidebar: #1a1d24; /* dark rail (distinct from canvas) */
+  --sidebar-text: #d5d8df; /* light text on the dark rail */
+  --sidebar-muted: #9699a6; /* muted text for inactive nav */
+
+  /* Text */
+  --ink: #d5d8df;
+  --muted: #9699a6;
+  --hairline: #333644; /* borders, dividers */
+
+  /* Accents — hue preserved, brightened; soft tints inverted to dark */
+  --sage: #22a39a;
+  --sage-hover: #2bb8ad;
+  --sage-soft: #16332f;
+  --indigo: #6a8bff;
+  --indigo-soft: #1e2740;
+  --coral: #ff6b52;
+  --coral-soft: #3a1f1a;
+  --sand: #d8c583;
+  --sand-deep: #c9a94e;
+  --charcoal: #0e1620; /* video/player chrome — even darker on dark */
+
+  /* Status semantics — dots brightened, soft backgrounds inverted to dark */
+  --status-healthy: #4caf88;
+  --status-healthy-soft: #16291f;
+  --status-warning: #e8b23f;
+  --status-warning-soft: #2e2713;
+  --status-critical: #ff6b52;
+  --status-critical-soft: #331a15;
+  --status-maintenance: #6a8bff;
+  --status-maintenance-soft: #1e2740;
+  --status-unknown: #9aa1a9;
+  --status-unknown-soft: #24272e;
+
+  /* Shadows — deeper on dark so lift still reads */
+  --shadow-soft: 0 10px 30px rgba(0, 0, 0, 0.5);
+  --shadow-soft-hover: 0 10px 30px rgba(0, 0, 0, 0.6);
+  --shadow-panel: -8px 0 24px -12px rgba(0, 0, 0, 0.7), -2px 0 6px -3px rgba(0, 0, 0, 0.5);
 }

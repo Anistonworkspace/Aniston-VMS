@@ -31,6 +31,9 @@ function makeCamera(overrides: Partial<Camera> = {}): Camera {
     rtspUsernameEncrypted: 'enc:admin',
     rtspPasswordEncrypted: 'enc:s3cr3t',
     expectedCodec: 'H.264',
+    // What the health probe actually measured on the SUB stream (ffprobe emits
+    // 'H264', no dot). This — not expectedCodec — drives the transcode decision.
+    detectedSubCodec: 'H264',
     ...overrides,
   } as unknown as Camera;
 }
@@ -50,9 +53,9 @@ describe('resolveCameraSource', () => {
   });
 
   it('leaves a URL that embeds credentials in the path untouched (no double-injection)', () => {
-    const embedded = 'enc:rtsp://122.180.29.77:554/user=admin_password=pw_channel=0';
+    const embedded = 'enc:rtsp://192.0.2.10:554/user=admin_password=pw_channel=0';
     expect(resolveCameraSource(makeCamera({ subRtspUrlEncrypted: embedded }), 'LIVE_SUB')).toBe(
-      'rtsp://122.180.29.77:554/user=admin_password=pw_channel=0'
+      'rtsp://192.0.2.10:554/user=admin_password=pw_channel=0'
     );
   });
 
@@ -64,17 +67,17 @@ describe('resolveCameraSource', () => {
   });
 
   it('normalizes an HTML-encoded ampersand (&amp;) in the stored URL back to a literal &', () => {
-    const encoded = 'enc:rtsp://122.180.29.77:554/user=admin_password=pw_channel=1_stream=0&amp;onvif=0.sdp';
+    const encoded = 'enc:rtsp://192.0.2.10:554/user=admin_password=pw_channel=1_stream=0&amp;onvif=0.sdp';
     expect(resolveCameraSource(makeCamera({ subRtspUrlEncrypted: encoded }), 'LIVE_SUB')).toBe(
-      'rtsp://122.180.29.77:554/user=admin_password=pw_channel=1_stream=0&onvif=0.sdp'
+      'rtsp://192.0.2.10:554/user=admin_password=pw_channel=1_stream=0&onvif=0.sdp'
     );
   });
 
   it('collapses accidental double-encoding (&amp;amp;) to a single &', () => {
     const encoded =
-      'enc:rtsp://122.180.29.77:554/user=admin_password=pw_channel=1_stream=0&amp;amp;onvif=0.sdp';
+      'enc:rtsp://192.0.2.10:554/user=admin_password=pw_channel=1_stream=0&amp;amp;onvif=0.sdp';
     expect(resolveCameraSource(makeCamera({ subRtspUrlEncrypted: encoded }), 'LIVE_SUB')).toBe(
-      'rtsp://122.180.29.77:554/user=admin_password=pw_channel=1_stream=0&onvif=0.sdp'
+      'rtsp://192.0.2.10:554/user=admin_password=pw_channel=1_stream=0&onvif=0.sdp'
     );
   });
 });
@@ -102,7 +105,7 @@ describe('publishStream', () => {
 
     await publishStream(
       'live/live-sub/CAM-007/sess-1',
-      makeCamera({ expectedCodec: 'HEVC' }),
+      makeCamera({ detectedSubCodec: 'HEVC' }),
       'LIVE_SUB'
     );
 
@@ -119,13 +122,62 @@ describe('publishStream', () => {
     expect(body.runOnDemandRestart).toBe(true);
   });
 
+  it('is DETECTION-AUTHORITATIVE: transcodes when the probe detected HEVC even though the operator declared expectedCodec H.264 (the exact production bug)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await publishStream(
+      'live/live-sub/CAM-009/sess-1',
+      makeCamera({ expectedCodec: 'H.264', detectedSubCodec: 'HEVC' }),
+      'LIVE_SUB'
+    );
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.sourceOnDemand).toBeUndefined(); // NOT a passthrough pull
+    expect(body.runOnDemand).toContain('libx264');
+  });
+
+  it('ignores expectedCodec in the safe direction too: a detected H264 (no dot) is passed through even when expectedCodec wrongly says HEVC', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await publishStream(
+      'live/live-sub/CAM-010/sess-1',
+      makeCamera({ expectedCodec: 'HEVC', detectedSubCodec: 'H264' }),
+      'LIVE_SUB'
+    );
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({
+      source: 'rtsp://admin:s3cr3t@cam.example/sub',
+      sourceOnDemand: true,
+    });
+  });
+
+  it('FAILS SAFE: transcodes a LIVE_SUB whose sub codec has not been probed yet (detectedSubCodec null)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await publishStream(
+      'live/live-sub/CAM-011/sess-1',
+      makeCamera({ detectedSubCodec: null }),
+      'LIVE_SUB'
+    );
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body.sourceOnDemand).toBeUndefined();
+    expect(body.runOnDemand).toContain('libx264');
+  });
+
   it('leaves an HEVC LIVE_MAIN stream as a plain HEVC pull (only the sub tile is transcoded)', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
     vi.stubGlobal('fetch', fetchMock);
 
     await publishStream(
       'live/live-main/CAM-007/sess-1',
-      makeCamera({ expectedCodec: 'HEVC' }),
+      makeCamera({ detectedSubCodec: 'HEVC' }),
       'LIVE_MAIN'
     );
 

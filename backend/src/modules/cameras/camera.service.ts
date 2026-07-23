@@ -12,12 +12,15 @@ import {
 } from '../../middleware/errorHandler.js';
 import { canAccessCamera, canAccessSite, cameraScopeWhere, getUserScope } from '../../lib/scope.js';
 import type { AuthUser } from '../../middleware/auth.js';
-import { encrypt } from '../../utils/encryption.js';
+import { encrypt, decrypt } from '../../utils/encryption.js';
 import { storage, signStorageUrl } from '../../lib/storage.js';
 import type { PaginationInput } from '@aniston-vms/shared';
+import { CameraProvisioning } from '@aniston-vms/shared';
+import { assertTransition } from './camera.provisioning.js';
 import type {
   CameraListQuery,
-  CreateCameraInput,
+  RegisterCameraInput,
+  ConfigureCameraInput,
   CreateReferenceImageInput,
   TestCameraConnectionInput,
   UpdateCameraInput,
@@ -51,7 +54,13 @@ function paginate(page: number, limit: number) {
   return { skip: (page - 1) * limit, take: limit };
 }
 
-function normalizeRtspUrl(raw: string): string {
+// Dedup-identity key for the @unique mainRtspHash/subRtspHash columns.
+// DISTINCT from lib/rtsp-url's canonical sanitizer (which already ran at the
+// schema trust boundary and preserves the full vendor path/query byte-for-byte).
+// This deliberately reduces a URL to host:port/path — dropping credentials and
+// query — so the SAME physical stream registered twice dedupes. Do NOT fold
+// this into the canonical normalizer: they are different operations by design.
+function rtspDedupKey(raw: string): string {
   try {
     const u = new URL(raw);
     const host = u.hostname.toLowerCase();
@@ -60,13 +69,14 @@ function normalizeRtspUrl(raw: string): string {
     return `${host}:${port}${path}`;
   } catch {
     // Not a parseable URL (e.g. missing scheme) — fall back to a stable
-    // normalization so the hash is still deterministic.
+    // normalization so the hash is still deterministic. (In practice the input
+    // is already canonical: rtspUrlSchema validated it at the API boundary.)
     return raw.trim().toLowerCase();
   }
 }
 
 function hashRtspUrl(raw: string): string {
-  return crypto.createHash('sha256').update(normalizeRtspUrl(raw)).digest('hex');
+  return crypto.createHash('sha256').update(rtspDedupKey(raw)).digest('hex');
 }
 
 /** Strips encrypted credential blobs and dedupe hashes before a Camera row
@@ -143,22 +153,85 @@ async function assertRouterBelongsToSite(routerId: string, siteId: string): Prom
     throw new ValidationError('Router does not belong to the given site');
 }
 
-export async function createCamera(input: CreateCameraInput, actor: AuthUser, req: Request) {
-  const scope = await getUserScope(actor.id);
-  if (!(await canAccessSite(scope, input.siteId)))
-    throw new ForbiddenError('Site outside your access scope');
-  await assertRouterBelongsToSite(input.routerId, input.siteId);
+/** Placement + stream config columns that must all be present before a camera
+ * can leave DRAFT. configureCameraSchema guarantees they are written together,
+ * so this guard really only fails the register-but-never-configured case. */
+function assertConfigured(camera: Camera): void {
+  const incomplete =
+    camera.siteId == null ||
+    camera.routerId == null ||
+    camera.mainRtspUrlEncrypted == null ||
+    camera.subRtspUrlEncrypted == null ||
+    camera.rtspUsernameEncrypted == null ||
+    camera.rtspPasswordEncrypted == null ||
+    camera.expectedCodec == null ||
+    camera.expectedResolution == null ||
+    camera.expectedFps == null ||
+    camera.expectedBitrateKbps == null ||
+    camera.latitude == null ||
+    camera.longitude == null;
+  if (incomplete)
+    throw new ValidationError(
+      'Configure the camera (site, network, and stream details) before activating it'
+    );
+}
 
+/**
+ * Step 1 of the split workflow: add a physical camera to the inventory with
+ * IDENTITY ONLY. There is no site yet, so there is no site scope to check here
+ * (write RBAC is enforced at the router via CAMERA_WRITE_ROLES). The row is born
+ * DRAFT (schema default) + UNKNOWN health — invisible to the health scheduler
+ * and playback until it is configured and activated.
+ */
+export async function registerCamera(input: RegisterCameraInput, actor: AuthUser, req: Request) {
   const camera = await prisma.camera.create({
     data: {
-      siteId: input.siteId,
-      routerId: input.routerId,
       cameraCode: input.cameraCode,
       name: input.name,
       brand: input.brand,
       model: input.model,
       firmware: input.firmware,
       serialNumber: input.serialNumber,
+      // provisioningState defaults to DRAFT and status to UNKNOWN; placement +
+      // stream config stay NULL until configureCamera fills them in.
+    },
+  });
+  const safe = sanitizeCamera(camera);
+  await audit(req, {
+    userId: actor.id,
+    action: 'camera.register',
+    entityType: 'Camera',
+    entityId: camera.id,
+    newValue: safe,
+  });
+  return safe;
+}
+
+/**
+ * Step 2: place the camera into a site/zone and save its network + stream
+ * config. The caller must be able to reach the TARGET site and the router must
+ * live in that site (same invariant the old createCamera enforced). Saving
+ * config does NOT change provisioningState — activation is a separate,
+ * connection-test-gated step, so a DRAFT camera stays DRAFT and a CONFIGURED
+ * camera being edited stays CONFIGURED.
+ */
+export async function configureCamera(
+  id: string,
+  input: ConfigureCameraInput,
+  actor: AuthUser,
+  req: Request
+) {
+  const before = await findCameraOrThrow(id, actor);
+  const scope = await getUserScope(actor.id);
+  if (!(await canAccessSite(scope, input.siteId)))
+    throw new ForbiddenError('Site outside your access scope');
+  await assertRouterBelongsToSite(input.routerId, input.siteId);
+
+  const camera = await prisma.camera.update({
+    where: { id },
+    data: {
+      siteId: input.siteId,
+      routerId: input.routerId,
       mainRtspUrlEncrypted: encrypt(input.mainRtspUrl),
       subRtspUrlEncrypted: encrypt(input.subRtspUrl),
       mainRtspHash: hashRtspUrl(input.mainRtspUrl),
@@ -171,18 +244,109 @@ export async function createCamera(input: CreateCameraInput, actor: AuthUser, re
       expectedResolution: input.expectedResolution,
       expectedFps: input.expectedFps,
       expectedBitrateKbps: input.expectedBitrateKbps,
-      // CR-6 — map position comes straight from the add-camera modal.
       latitude: input.latitude,
       longitude: input.longitude,
-      status: input.status ?? 'UNKNOWN',
     },
   });
   const safe = sanitizeCamera(camera);
   await audit(req, {
     userId: actor.id,
-    action: 'camera.create',
+    action: 'camera.configure',
     entityType: 'Camera',
-    entityId: camera.id,
+    entityId: id,
+    siteId: input.siteId,
+    oldValue: sanitizeCamera(before),
+    newValue: safe,
+  });
+  return safe;
+}
+
+export interface ActivateCameraResult {
+  camera: ReturnType<typeof sanitizeCamera>;
+  activated: boolean;
+  test: TestConnectionResult;
+}
+
+/**
+ * Step 3: DRAFT → CONFIGURED. The server is the authoritative gate — it RE-RUNS
+ * the connection test against the STORED config (never trusting a client that
+ * asserts "it passed"), and only flips the state when that test succeeds. A
+ * failing test is an expected outcome, not an error: the camera stays DRAFT and
+ * the per-stage result is returned so the UI can show WHY it failed.
+ */
+export async function activateCamera(
+  id: string,
+  actor: AuthUser,
+  req: Request
+): Promise<ActivateCameraResult> {
+  const before = await findCameraOrThrow(id, actor);
+  // Reject re-activation up front (409) — cheaper than probing first.
+  // `provisioningState` arrives as Prisma's generated string-union enum; the
+  // domain state machine speaks the shared nominal enum. They share an
+  // identical string domain (schema enum ⇄ shared/src/enums.ts), so this
+  // Prisma→domain boundary cast is sound.
+  assertTransition(before.provisioningState as CameraProvisioning, CameraProvisioning.CONFIGURED);
+  assertConfigured(before);
+
+  const test = await testCameraConnection({
+    mainRtspUrl: decrypt(before.mainRtspUrlEncrypted!),
+    rtspUsername: decrypt(before.rtspUsernameEncrypted!),
+    rtspPassword: decrypt(before.rtspPasswordEncrypted!),
+    cameraCode: before.cameraCode,
+    expectedCodec: before.expectedCodec ?? undefined,
+    expectedResolution: before.expectedResolution ?? undefined,
+    expectedFps: before.expectedFps ?? undefined,
+    expectedBitrateKbps: before.expectedBitrateKbps ?? undefined,
+  });
+
+  if (!test.success) {
+    return { camera: sanitizeCamera(before), activated: false, test };
+  }
+
+  const camera = await prisma.camera.update({
+    where: { id },
+    data: { provisioningState: CameraProvisioning.CONFIGURED },
+  });
+  const safe = sanitizeCamera(camera);
+  await audit(req, {
+    userId: actor.id,
+    action: 'camera.activate',
+    entityType: 'Camera',
+    entityId: id,
+    siteId: before.siteId,
+    oldValue: sanitizeCamera(before),
+    newValue: safe,
+  });
+  return { camera: safe, activated: true, test };
+}
+
+/**
+ * Reverse of activate: CONFIGURED → DRAFT. Config is RETAINED (so the camera can
+ * be re-activated without re-entering everything), but health resets to UNKNOWN
+ * since the scheduler will stop probing it while it is DRAFT.
+ */
+export async function deactivateCamera(id: string, actor: AuthUser, req: Request) {
+  const before = await findCameraOrThrow(id, actor);
+  // assertTransition 409s a camera that is already DRAFT.
+  // Prisma→domain enum boundary cast (identical string domain) — see activateCamera.
+  assertTransition(before.provisioningState as CameraProvisioning, CameraProvisioning.DRAFT);
+
+  const camera = await prisma.camera.update({
+    where: { id },
+    data: {
+      provisioningState: CameraProvisioning.DRAFT,
+      status: 'UNKNOWN',
+      diagnosis: null,
+    },
+  });
+  const safe = sanitizeCamera(camera);
+  await audit(req, {
+    userId: actor.id,
+    action: 'camera.deactivate',
+    entityType: 'Camera',
+    entityId: id,
+    siteId: before.siteId,
+    oldValue: sanitizeCamera(before),
     newValue: safe,
   });
   return safe;
@@ -252,7 +416,15 @@ export async function updateCamera(
     if (!(await canAccessSite(scope, input.siteId)))
       throw new ForbiddenError('Site outside your access scope');
   }
-  if (input.siteId !== undefined || input.routerId !== undefined) {
+  // Only validate the router↔site relationship when both are known post-edit.
+  // A DRAFT camera may be partially placed (site or router still null); the
+  // configure gate enforces both-required before it can leave DRAFT, so there
+  // is nothing to cross-check here yet.
+  if (
+    (input.siteId !== undefined || input.routerId !== undefined) &&
+    nextSiteId != null &&
+    nextRouterId != null
+  ) {
     await assertRouterBelongsToSite(nextRouterId, nextSiteId);
   }
 

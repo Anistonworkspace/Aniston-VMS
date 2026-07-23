@@ -1,65 +1,32 @@
-import { useCallback, useEffect, useState } from 'react';
+import { createContext, useContext } from 'react';
+import type { AppearancePrefs } from './theme';
 
-// Local-only preferences — there is no backend endpoint for appearance
-// (backend/src/modules/** has no settings/preferences module), so these are
-// persisted to localStorage and applied as attributes on <html>. Tailwind's
-// `darkMode: 'class'` (tailwind.config.js) makes the theme toggle a real,
-// functioning Tailwind dark-mode switch rather than a decorative no-op.
-export type ThemeMode = 'light' | 'dark' | 'system';
-export type Density = 'comfortable' | 'compact';
+// Re-export the token types so existing consumers (e.g. AppearancePanel) keep
+// importing them from here; the single source of truth lives in ./theme.
+export type { AppearancePrefs, ThemeMode, Density } from './theme';
 
-export interface AppearancePrefs {
-  theme: ThemeMode;
-  density: Density;
-  reduceMotion: boolean;
+export interface AppearanceContextValue {
+  prefs: AppearancePrefs;
+  update: <K extends keyof AppearancePrefs>(key: K, value: AppearancePrefs[K]) => void;
 }
 
-const STORAGE_KEY = 'aniston-vms:appearance-prefs';
+/**
+ * Shared context for the app-wide appearance preferences. Created in this
+ * (non-component) module so both <AppearanceProvider> and the
+ * useAppearancePrefs hook can reference the same instance without either file
+ * having to export both a component and a hook — the mix that would break
+ * React Fast Refresh.
+ */
+export const AppearanceContext = createContext<AppearanceContextValue | null>(null);
 
-const DEFAULT_PREFS: AppearancePrefs = {
-  theme: 'system',
-  density: 'comfortable',
-  reduceMotion: false,
-};
-
-function readStoredPrefs(): AppearancePrefs {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_PREFS;
-    const parsed = JSON.parse(raw) as Partial<AppearancePrefs>;
-    return { ...DEFAULT_PREFS, ...parsed };
-  } catch {
-    return DEFAULT_PREFS;
+/**
+ * Read the shared appearance preferences and an `update(key, value)` setter.
+ * Must be called under an <AppearanceProvider>.
+ */
+export function useAppearancePrefs(): AppearanceContextValue {
+  const ctx = useContext(AppearanceContext);
+  if (!ctx) {
+    throw new Error('useAppearancePrefs must be used within an <AppearanceProvider>');
   }
-}
-
-function applyPrefsToDocument(prefs: AppearancePrefs) {
-  const root = document.documentElement;
-  const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
-  const isDark = prefs.theme === 'dark' || (prefs.theme === 'system' && prefersDark);
-  root.classList.toggle('dark', isDark);
-  root.setAttribute('data-density', prefs.density);
-  root.setAttribute('data-reduce-motion', String(prefs.reduceMotion));
-}
-
-export function useAppearancePrefs() {
-  const [prefs, setPrefs] = useState<AppearancePrefs>(() => readStoredPrefs());
-
-  useEffect(() => {
-    applyPrefsToDocument(prefs);
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
-    } catch {
-      // localStorage unavailable (private mode / quota) — preference just won't persist.
-    }
-  }, [prefs]);
-
-  const update = useCallback(
-    <K extends keyof AppearancePrefs>(key: K, value: AppearancePrefs[K]) => {
-      setPrefs((prev) => ({ ...prev, [key]: value }));
-    },
-    []
-  );
-
-  return { prefs, update };
+  return ctx;
 }

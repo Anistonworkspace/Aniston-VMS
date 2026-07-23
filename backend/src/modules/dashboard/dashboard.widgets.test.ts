@@ -196,7 +196,11 @@ describe('getLatestEvidence', () => {
     expect(signFileUrlMock).toHaveBeenCalledWith('snap-1', 'thumb');
     expect(prismaMock.snapshot.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { kind: 'EVIDENCE', camera: { __cameraScope: true } },
+        where: {
+          kind: 'EVIDENCE',
+          // Evidence is scope-filtered AND restricted to CONFIGURED cameras.
+          camera: { AND: [{ __cameraScope: true }, { provisioningState: 'CONFIGURED' }] },
+        },
         orderBy: { capturedAt: 'desc' },
       }),
     );

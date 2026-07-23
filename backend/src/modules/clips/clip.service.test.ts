@@ -51,7 +51,10 @@ const { ForbiddenError, NotFoundError, ValidationError } =
   await import('../../middleware/errorHandler.js');
 
 const operator = { id: 'user-1', role: 'OPERATOR' as const, email: 'operator@example.com' };
-const camera = { id: 'cam-1', cameraCode: 'CAM-1' };
+// A CONFIGURED camera (non-null siteId): createClipExport rejects DRAFT
+// cameras (no site → no footage) before any export path, so tests that
+// exercise export behaviour need a placed camera.
+const camera = { id: 'cam-1', cameraCode: 'CAM-1', siteId: 'site-1' };
 
 beforeEach(() => {
   vi.clearAllMocks();

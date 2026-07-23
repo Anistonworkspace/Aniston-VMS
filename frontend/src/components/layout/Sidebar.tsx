@@ -11,9 +11,11 @@ import {
   LayoutDashboard,
   Layers,
   MonitorPlay,
+  PanelLeftClose,
   Settings,
   ShieldCheck,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui';
 import {
@@ -34,7 +36,7 @@ import { AccountMenu } from './AccountMenu';
 // "Add camera" card (admin) or platform-health chip.
 const ITEM_BASE =
   'flex w-full items-center gap-2.5 rounded-control px-3 py-1.5 text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage';
-const ITEM_INACTIVE = 'text-sidebar-muted hover:bg-white/60 hover:text-sidebar-text';
+const ITEM_INACTIVE = 'text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-text';
 
 const ZONE_DOT: Record<ZoneState, string> = {
   healthy: 'bg-state-healthy',
@@ -43,7 +45,63 @@ const ZONE_DOT: Record<ZoneState, string> = {
   maintenance: 'bg-state-maintenance',
 };
 
-export function Sidebar(): JSX.Element {
+interface SidebarProps {
+  /** When true, render the compact icon-only rail instead of the full sidebar. */
+  collapsed: boolean;
+  /** Expand the sidebar back to full width (used by collapsed-only controls). */
+  onExpand: () => void;
+  /** Collapse the sidebar to the compact rail (used by the expanded header control). */
+  onCollapse: () => void;
+}
+
+// A single top-level nav entry. Collapsed rendering hides the label, centers the
+// icon, and exposes the label as a native tooltip so the icon rail stays usable.
+function NavItem({
+  to,
+  icon: Icon,
+  label,
+  collapsed,
+  badge,
+}: {
+  to: string;
+  icon: LucideIcon;
+  label: string;
+  collapsed: boolean;
+  badge?: number;
+}): JSX.Element {
+  const showBadge = badge != null && badge > 0;
+  return (
+    <NavLink
+      to={to}
+      title={collapsed ? label : undefined}
+      className={({ isActive }) =>
+        cn(
+          ITEM_BASE,
+          collapsed && 'justify-center px-0',
+          isActive ? 'bg-card text-sage shadow-soft' : ITEM_INACTIVE,
+        )
+      }
+    >
+      <span className="relative flex shrink-0">
+        <Icon size={18} strokeWidth={1.5} />
+        {collapsed && showBadge && (
+          <span
+            className="absolute -right-1.5 -top-1.5 h-2 w-2 rounded-full bg-coral"
+            aria-hidden
+          />
+        )}
+      </span>
+      {!collapsed && <span className="truncate">{label}</span>}
+      {!collapsed && showBadge && (
+        <span className="ml-auto rounded-full bg-coral px-2 py-0.5 text-[11px] font-semibold tabular-nums text-white">
+          {badge}
+        </span>
+      )}
+    </NavLink>
+  );
+}
+
+export function Sidebar({ collapsed, onExpand, onCollapse }: SidebarProps): JSX.Element {
   const [zonesOpen, setZonesOpen] = useState(true);
   const { data: user } = useGetCurrentUserQuery();
   const { data: zones, isLoading: zonesLoading } = useListZoneSummariesQuery();
@@ -55,89 +113,93 @@ export function Sidebar(): JSX.Element {
   const platformHealthy = (health?.critical ?? 0) === 0;
 
   return (
-    <aside className="hidden h-full w-[260px] shrink-0 flex-col overflow-hidden bg-sidebar lg:flex">
+    <aside
+      className={cn(
+        'hidden h-full shrink-0 flex-col overflow-hidden bg-sidebar transition-[width] duration-200 ease-in-out lg:flex',
+        collapsed ? 'w-16' : 'w-[260px]',
+      )}
+    >
       {/* Logo */}
-      <div className="flex items-center gap-2.5 px-6 pt-7">
-        <span className="grid h-7 w-7 place-items-center rounded-full bg-sage">
+      <div className={cn('flex items-center pt-7', collapsed ? 'justify-center px-0' : 'gap-2.5 px-6')}>
+        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-sage">
           <Cctv size={16} strokeWidth={1.5} className="text-white" />
         </span>
-        <span className="font-heading text-md font-semibold text-ink">Aniston VMS</span>
+        {!collapsed && (
+          <>
+            <span className="font-heading text-md font-semibold text-ink">Aniston VMS</span>
+            <button
+              type="button"
+              onClick={onCollapse}
+              aria-label="Collapse sidebar"
+              className="ml-auto grid h-7 w-7 shrink-0 place-items-center rounded-control text-sidebar-muted transition-colors duration-150 hover:bg-sidebar-hover hover:text-sidebar-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage"
+            >
+              <PanelLeftClose size={18} strokeWidth={1.5} />
+            </button>
+          </>
+        )}
       </div>
 
       {/* Nav */}
       <nav
-        className="no-scrollbar mt-7 flex-1 space-y-0.5 overflow-y-auto px-4 pb-4"
+        className={cn(
+          'no-scrollbar mt-7 flex-1 space-y-0.5 overflow-y-auto pb-4',
+          collapsed ? 'px-2' : 'px-4',
+        )}
         aria-label="Primary"
       >
-        <NavLink
-          to="/"
-          className={({ isActive }) =>
-            cn(ITEM_BASE, isActive ? 'bg-white text-sage shadow-soft' : ITEM_INACTIVE)
-          }
-        >
-          <LayoutDashboard size={18} strokeWidth={1.5} />
-          Dashboard
-        </NavLink>
-        <NavLink
-          to="/live"
-          className={({ isActive }) =>
-            cn(ITEM_BASE, isActive ? 'bg-white text-sage shadow-soft' : ITEM_INACTIVE)
-          }
-        >
-          <MonitorPlay size={18} strokeWidth={1.5} />
-          Live Wall
-        </NavLink>
-        <NavLink
-          to="/cameras"
-          className={({ isActive }) =>
-            cn(ITEM_BASE, isActive ? 'bg-white text-sage shadow-soft' : ITEM_INACTIVE)
-          }
-        >
-          <Cctv size={18} strokeWidth={1.5} />
-          Cameras
-        </NavLink>
-        <NavLink
+        <NavItem to="/" icon={LayoutDashboard} label="Dashboard" collapsed={collapsed} />
+        <NavItem to="/live" icon={MonitorPlay} label="Live Wall" collapsed={collapsed} />
+        <NavItem to="/cameras" icon={Cctv} label="Cameras" collapsed={collapsed} />
+        <NavItem
           to="/incidents"
-          className={({ isActive }) =>
-            cn(ITEM_BASE, isActive ? 'bg-white text-sage shadow-soft' : ITEM_INACTIVE)
-          }
-        >
-          <AlertTriangle size={18} strokeWidth={1.5} />
-          Incidents
-          {openIncidents > 0 && (
-            <span className="ml-auto rounded-full bg-coral px-2 py-0.5 text-[11px] font-semibold tabular-nums text-white">
-              {openIncidents}
-            </span>
-          )}
-        </NavLink>
+          icon={AlertTriangle}
+          label="Incidents"
+          collapsed={collapsed}
+          badge={openIncidents}
+        />
 
         <button
           type="button"
-          onClick={() => setZonesOpen((open) => !open)}
-          aria-expanded={zonesOpen}
-          className={cn(ITEM_BASE, ITEM_INACTIVE)}
+          onClick={() => {
+            if (collapsed) {
+              onExpand();
+              setZonesOpen(true);
+            } else {
+              setZonesOpen((open) => !open);
+            }
+          }}
+          aria-expanded={collapsed ? undefined : zonesOpen}
+          title={collapsed ? 'Zones' : undefined}
+          className={cn(ITEM_BASE, collapsed && 'justify-center px-0', ITEM_INACTIVE)}
         >
-          <Layers size={18} strokeWidth={1.5} />
-          Zones
-          <ChevronDown
-            size={16}
-            strokeWidth={1.5}
-            className={cn('ml-auto transition-transform duration-150', zonesOpen && 'rotate-180')}
-          />
+          <Layers size={18} strokeWidth={1.5} className="shrink-0" />
+          {!collapsed && (
+            <>
+              <span className="truncate">Zones</span>
+              <ChevronDown
+                size={16}
+                strokeWidth={1.5}
+                className={cn(
+                  'ml-auto transition-transform duration-150',
+                  zonesOpen && 'rotate-180',
+                )}
+              />
+            </>
+          )}
         </button>
-        {zonesOpen && (
+        {!collapsed && zonesOpen && (
           <ul className="space-y-0.5 pl-4">
             {zonesLoading &&
               [0, 1, 2].map((i) => (
                 <li key={i} className="px-3 py-1">
-                  <Skeleton variant="line" width="70%" height={10} className="bg-white/60" />
+                  <Skeleton variant="line" width="70%" height={10} className="bg-sidebar-hover" />
                 </li>
               ))}
             {zones?.map((zone) => (
               <li key={zone.id}>
                 <Link
                   to={`/zones/${zone.id}`}
-                  className="flex w-full items-center gap-2.5 rounded-control px-3 py-1 text-sm text-sidebar-muted transition-colors duration-150 hover:bg-white/60 hover:text-sidebar-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage"
+                  className="flex w-full items-center gap-2.5 rounded-control px-3 py-1 text-sm text-sidebar-muted transition-colors duration-150 hover:bg-sidebar-hover hover:text-sidebar-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage"
                 >
                   <span
                     className={cn('h-2 w-2 shrink-0 rounded-full', ZONE_DOT[zone.state])}
@@ -150,68 +212,44 @@ export function Sidebar(): JSX.Element {
           </ul>
         )}
 
-        <NavLink
-          to="/analytics"
-          className={({ isActive }) =>
-            cn(ITEM_BASE, isActive ? 'bg-white text-sage shadow-soft' : ITEM_INACTIVE)
-          }
-        >
-          <BarChart3 size={18} strokeWidth={1.5} />
-          Analytics
-        </NavLink>
-        <NavLink
-          to="/clips"
-          className={({ isActive }) =>
-            cn(ITEM_BASE, isActive ? 'bg-white text-sage shadow-soft' : ITEM_INACTIVE)
-          }
-        >
-          <Film size={18} strokeWidth={1.5} />
-          Clips
-        </NavLink>
-        <NavLink
-          to="/reports"
-          className={({ isActive }) =>
-            cn(ITEM_BASE, isActive ? 'bg-white text-sage shadow-soft' : ITEM_INACTIVE)
-          }
-        >
-          <FileText size={18} strokeWidth={1.5} />
-          Reports
-        </NavLink>
+        <NavItem to="/analytics" icon={BarChart3} label="Analytics" collapsed={collapsed} />
+        <NavItem to="/clips" icon={Film} label="Clips" collapsed={collapsed} />
+        <NavItem to="/reports" icon={FileText} label="Reports" collapsed={collapsed} />
         {(isAdmin || user?.role === 'AUDITOR') && (
-          <NavLink
-            to="/admin"
-            className={({ isActive }) =>
-              cn(ITEM_BASE, isActive ? 'bg-white text-sage shadow-soft' : ITEM_INACTIVE)
-            }
-          >
-            <ShieldCheck size={18} strokeWidth={1.5} />
-            Admin
-          </NavLink>
+          <NavItem to="/admin" icon={ShieldCheck} label="Admin" collapsed={collapsed} />
         )}
-        <NavLink
-          to="/settings"
-          className={({ isActive }) =>
-            cn(ITEM_BASE, isActive ? 'bg-white text-sage shadow-soft' : ITEM_INACTIVE)
-          }
-        >
-          <Settings size={18} strokeWidth={1.5} />
-          Settings
-        </NavLink>
+        <NavItem to="/settings" icon={Settings} label="Settings" collapsed={collapsed} />
       </nav>
 
       {/* Bottom — platform-health chip + account menu.
           CR-1: no add-camera card in the sidebar; the profile block lives here
           so it is reachable from every page. */}
-      <div className="space-y-2 px-4 pb-6">
-        <div className="flex items-center gap-2 rounded-tile bg-white/60 p-3 text-xs text-sidebar-muted">
+      <div className={cn('space-y-2 pb-6', collapsed ? 'px-2' : 'px-4')}>
+        <div
+          title={
+            collapsed
+              ? platformHealthy
+                ? 'Platform Healthy · heartbeat 20 s'
+                : 'Critical incidents open'
+              : undefined
+          }
+          className={cn(
+            'flex items-center rounded-tile bg-sidebar-hover text-xs text-sidebar-muted',
+            collapsed ? 'justify-center p-2' : 'gap-2 p-3',
+          )}
+        >
           <HeartPulse
             size={16}
             strokeWidth={1.5}
-            className={platformHealthy ? 'text-state-healthy' : 'text-state-critical'}
+            className={cn(
+              'shrink-0',
+              platformHealthy ? 'text-state-healthy' : 'text-state-critical',
+            )}
           />
-          {platformHealthy ? 'Platform Healthy · heartbeat 20 s' : 'Critical incidents open'}
+          {!collapsed &&
+            (platformHealthy ? 'Platform Healthy · heartbeat 20 s' : 'Critical incidents open')}
         </div>
-        <AccountMenu />
+        <AccountMenu collapsed={collapsed} />
       </div>
     </aside>
   );

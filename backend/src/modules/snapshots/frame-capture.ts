@@ -54,14 +54,46 @@ interface RgbaImage {
 }
 
 /**
- * Strip RTSP credentials from any text before it reaches logs or error details.
- * resolveCameraSource injects `rtsp://user:pass@host`, and ffmpeg echoes the
- * input URL in its stderr, so the userinfo must be redacted from anything we
- * propagate.
+ * Strip credentials/secrets from any text before it reaches logs or error
+ * details. `resolveCameraSource` builds credentialed URLs that ffmpeg then
+ * echoes verbatim in its stderr, in two distinct shapes — BOTH must be scrubbed:
+ *
+ *   1. userinfo:            rtsp://user:pass@host/path
+ *   2. Dahua/Hikvision-style query/path params, `_`- or `&`-separated and often
+ *      present *before* any `@* (so the userinfo regex never sees them):
+ *        rtsp://192.0.2.10:554/user=admin_password=pw_channel=1_stream=0
+ *
+ * We also redact bearer/basic tokens and Authorization headers that surface when
+ * cameras are reached over HTTP(S). Non-secret ffmpeg diagnostics (method names,
+ * status codes, error strings, non-sensitive fields like `channel=`) are left
+ * intact so the details stay useful for debugging.
  */
+const SECRET_PARAM_KEYS =
+  'user(?:name)?|pass(?:word|wd)?|pwd|passwd|auth(?:orization)?|access[_-]?token|api[_-]?key|token|secret|credentials?|sig(?:nature)?|psk|key';
+
+// A secret key=value pair. The value ends at a standard URL delimiter OR at the
+// start of the next `_key=` token (the underscore-separated Dahua convention),
+// so adjacent non-secret fields are preserved rather than swallowed.
+const SECRET_PARAM_RE = new RegExp(
+  `(?<![A-Za-z0-9])(${SECRET_PARAM_KEYS})=(?:(?!_[A-Za-z][\\w-]*=)[^\\s&?#/;'"<>\\\\])*`,
+  'gi',
+);
+
 export function redactRtsp(text: string): string {
-  return text.replace(/(rtsps?:\/\/)[^/@\s]*@/gi, '$1***@');
+  if (!text) return text;
+  return text
+    // 1. scheme://user:pass@host  ->  scheme://***@host  (any URL scheme)
+    .replace(/([a-z][a-z0-9+.-]*:\/\/)[^/@\s]*@/gi, '$1***@')
+    // 2. sensitive key=value pairs embedded in the path/query
+    .replace(SECRET_PARAM_RE, (_m, key: string) => `${key}=***`)
+    // 3. Authorization header values, and standalone bearer/basic tokens
+    .replace(/\b((?:proxy-)?authorization)\s*:\s*[^\r\n]+/gi, '$1: ***')
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/-]{8,}=*/gi, 'Bearer ***')
+    .replace(/\bBasic\s+[A-Za-z0-9+/]{8,}={0,2}/gi, 'Basic ***');
 }
+
+/** Broader alias — identical scrubbing, clearer name for non-RTSP callers. */
+export const redactSecrets = redactRtsp;
 
 /**
  * Spawn ffmpeg to pull a single frame off the RTSP stream and return the raw
@@ -117,7 +149,7 @@ export function runFfmpegCapture(
         new SnapshotCaptureError(
           missing
             ? 'ffmpeg binary not found — snapshot frame could not be captured'
-            : `ffmpeg failed to start: ${err.message}`
+            : redactRtsp(`ffmpeg failed to start: ${err.message}`)
         )
       );
     });

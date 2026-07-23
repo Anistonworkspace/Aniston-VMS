@@ -110,6 +110,16 @@ export async function startSession(
   if (input.kind !== 'PLAYBACK') await requireLiveViewPermission(actor);
   const camera = await requireCamera(actor.id, input.cameraId);
 
+  // A DRAFT camera has been registered (identity only) but never configured or
+  // activated — its RTSP fields are null and MediaMTX has nothing to publish.
+  // Refuse to start any live or VOD session against it so callers get a clear
+  // "not yet configured" signal instead of a downstream publish/probe failure.
+  if (camera.provisioningState !== 'CONFIGURED') {
+    throw new ConflictError(
+      'Camera is not configured for streaming — finish configuring and activating it first'
+    );
+  }
+
   const activeCount = await prisma.streamSession.count({
     where: { cameraId: camera.id, endedAt: null },
   });

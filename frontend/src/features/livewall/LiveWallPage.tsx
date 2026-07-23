@@ -2,14 +2,15 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { FetchBaseQueryError } from '@reduxjs/toolkit/query/react';
 import { Bookmark, Save, Trash2, VideoOff, X } from 'lucide-react';
-import { Button, Input, ToastContainer } from '@/components/ui';
+import { Button, Input, SegmentedControl, ToastContainer } from '@/components/ui';
 import { useToast } from '@/hooks/useToast';
 import { useListCamerasQuery } from '@/features/cameras/cameras.api';
 import { useListZoneSummariesQuery } from '@/features/overview/overview.api';
 import { CameraStatusBadge } from '@/features/cameras/CameraStatusBadge';
 import { getApiErrorMessage } from '@/lib/apiError';
 import { cn } from '@/lib/utils';
-import { LiveTile } from './LiveTile';
+import { WallTile } from './WallTile';
+import { useCameraViewMode, type CameraViewMode } from './useCameraViewMode';
 import {
   ALL_KINDS,
   KIND_GRID_CLASS,
@@ -77,6 +78,7 @@ export function LiveWallPage(): JSX.Element {
   const [kind, setKind] = useState<LayoutKind>(() => readStoredWall()?.kind ?? 'L2x2');
   const [cameraIds, setCameraIds] = useState<string[]>(() => readStoredWall()?.cameraIds ?? []);
   const [view, setView] = useState<WallView>(() => readStoredWall()?.view ?? 'focus');
+  const [viewMode, setViewMode] = useCameraViewMode();
   const [focusedId, setFocusedId] = useState<string | null>(
     () => readStoredWall()?.focusedId ?? null
   );
@@ -130,9 +132,15 @@ export function LiveWallPage(): JSX.Element {
     () => new Map((cameras?.items ?? []).map((camera) => [camera.id, camera])),
     [cameras]
   );
+  // Only CONFIGURED cameras have a stream to render — DRAFT (registered but not
+  // yet placed/wired) cameras are never offered to the wall or auto-filled in.
+  const streamable = useMemo(
+    () => (cameras?.items ?? []).filter((camera) => camera.provisioningState === 'CONFIGURED'),
+    [cameras]
+  );
   const available = useMemo(
-    () => (cameras?.items ?? []).filter((camera) => !cameraIds.includes(camera.id)),
-    [cameras, cameraIds]
+    () => streamable.filter((camera) => !cameraIds.includes(camera.id)),
+    [streamable, cameraIds]
   );
   const loadedLayout = layouts?.find((layout) => layout.id === loadedLayoutId) ?? null;
 
@@ -141,14 +149,14 @@ export function LiveWallPage(): JSX.Element {
   const autoFilledRef = useRef(false);
   useEffect(() => {
     if (autoFilledRef.current) return;
-    const items = cameras?.items ?? [];
+    const items = streamable;
     if (items.length === 0) return;
     autoFilledRef.current = true;
     const fill = items.slice(0, capacity).map((c) => c.id);
     // A specific zone was requested → show that zone's cameras, replacing any
     // restored wall. Otherwise keep a restored wall and only fill an empty one.
     setCameraIds((ids) => (zoneId ? fill : ids.length > 0 ? ids : fill));
-  }, [cameras, capacity, zoneId]);
+  }, [streamable, capacity, zoneId]);
 
   // Focus view: the focused camera plays big; fall back to the first tile when
   // the focused one was removed (or never chosen).
@@ -222,25 +230,43 @@ export function LiveWallPage(): JSX.Element {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="font-heading text-2xl font-semibold text-ink">Live Wall</h1>
-          <p className="mt-1 text-sm text-muted">
-            {cameraIds.length} of {capacity} cameras ·{' '}
-            {view === 'focus' ? 'big player + side list' : 'tile grid'} · low-latency sub-streams
-          </p>
-          {zoneId && (
-            <button
-              type="button"
-              onClick={clearZone}
-              aria-label="Clear zone filter"
-              className="mt-2 inline-flex h-7 items-center gap-1.5 rounded-full bg-sage/15 px-3 text-xs font-medium text-sage transition-colors hover:bg-sage/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage"
-            >
-              <span className="truncate max-w-[12rem]">Zone: {activeZoneName ?? 'selected'}</span>
-              <X size={13} />
-            </button>
-          )}
+      <div className="space-y-3">
+        {/* Header band: title/description on the left, the wall-wide view-mode
+            toggle at the top-right (aligned with the heading; it wraps below the
+            heading on narrow screens via flex-wrap). */}
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="font-heading text-2xl font-semibold text-ink">Live Wall</h1>
+            <p className="mt-1 text-sm text-muted">
+              {cameraIds.length} of {capacity} cameras ·{' '}
+              {view === 'focus' ? 'big player + side list' : 'tile grid'} · low-latency sub-streams
+            </p>
+            {zoneId && (
+              <button
+                type="button"
+                onClick={clearZone}
+                aria-label="Clear zone filter"
+                className="mt-2 inline-flex h-7 items-center gap-1.5 rounded-full bg-sage/15 px-3 text-xs font-medium text-sage transition-colors hover:bg-sage/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage"
+              >
+                <span className="truncate max-w-[12rem]">Zone: {activeZoneName ?? 'selected'}</span>
+                <X size={13} />
+              </button>
+            )}
+          </div>
+          {/* Camera Stream / Screenshots view mode — wall-wide, persisted */}
+          <SegmentedControl<CameraViewMode>
+            value={viewMode}
+            onChange={setViewMode}
+            ariaLabel="Camera view mode"
+            options={[
+              { value: 'stream', label: 'Camera Stream' },
+              { value: 'screenshots', label: 'Screenshots' },
+            ]}
+            className="shrink-0"
+          />
         </div>
+
+        {/* Wall controls — kept in their original order/positions */}
         <div className="flex flex-wrap items-center gap-2">
           {/* Grid kind */}
           <div
@@ -390,9 +416,10 @@ export function LiveWallPage(): JSX.Element {
           {/* Main player (theater view) */}
           <div className="min-w-0">
             {mainCamera ? (
-              <LiveTile
+              <WallTile
                 key={mainCamera.id}
                 camera={mainCamera}
+                viewMode={viewMode}
                 onRemove={() => removeCamera(mainCamera.id)}
               />
             ) : (
@@ -454,7 +481,7 @@ export function LiveWallPage(): JSX.Element {
               return (
                 <div key={id} className="group flex items-start gap-3">
                   <div className="relative w-44 shrink-0">
-                    <LiveTile camera={camera} onRemove={() => removeCamera(id)} />
+                    <WallTile camera={camera} viewMode={viewMode} onRemove={() => removeCamera(id)} />
                     <button
                       type="button"
                       onClick={() => setFocusedId(id)}
@@ -489,7 +516,7 @@ export function LiveWallPage(): JSX.Element {
           {cameraIds.map((id) => {
             const camera = cameraById.get(id);
             return camera ? (
-              <LiveTile key={id} camera={camera} onRemove={() => removeCamera(id)} />
+              <WallTile key={id} camera={camera} viewMode={viewMode} onRemove={() => removeCamera(id)} />
             ) : (
               <div
                 key={id}

@@ -1,6 +1,7 @@
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
+import { useSidebarCollapsed } from './useSidebarCollapsed';
 
 // Aniston VMS authenticated shell — full-bleed "inset dashboard" frame.
 // The app frame (bg-sidebar, overflow-hidden) fills the whole viewport edge-to-
@@ -14,12 +15,14 @@ import { Topbar } from './Topbar';
 // The full-viewport wrapper keeps overflow-hidden so the body itself never
 // scrolls.
 export function AppShell(): JSX.Element {
+  const { collapsed, expand, collapse } = useSidebarCollapsed();
+
   return (
     <div className="h-dvh w-full overflow-hidden">
       <div className="flex h-full w-full overflow-hidden bg-sidebar font-inter text-ink antialiased">
-        <Sidebar />
-        <div className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden rounded-l-frame bg-surface">
-          <Topbar />
+        <Sidebar collapsed={collapsed} onExpand={expand} onCollapse={collapse} />
+        <div className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden rounded-l-frame bg-surface shadow-panel">
+          <Topbar collapsed={collapsed} onExpand={expand} />
           <main className="min-h-0 flex-1 overflow-y-auto no-scrollbar px-6 pb-10 pt-6 lg:px-8">
             <Outlet />
           </main>

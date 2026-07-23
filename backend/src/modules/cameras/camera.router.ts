@@ -7,7 +7,8 @@ import * as cameraService from './camera.service.js';
 import {
   cameraIdParamsSchema,
   cameraListQuerySchema,
-  createCameraSchema,
+  registerCameraSchema,
+  configureCameraSchema,
   createReferenceImageSchema,
   referenceImageIdParamsSchema,
   referenceImageListQuerySchema,
@@ -16,7 +17,8 @@ import {
 } from './camera.schemas.js';
 import type {
   CameraListQuery,
-  CreateCameraInput,
+  RegisterCameraInput,
+  ConfigureCameraInput,
   CreateReferenceImageInput,
   TestCameraConnectionInput,
   UpdateCameraInput,
@@ -56,14 +58,15 @@ cameraRouter.get(
   })
 );
 
-// POST /cameras — create
+// POST /cameras — register (step 1 of the split workflow: identity only). The
+// camera is born DRAFT; site/network/stream config is added later via configure.
 cameraRouter.post(
   '/',
   requireRole(...CAMERA_WRITE_ROLES),
-  validateRequest({ body: createCameraSchema }),
+  validateRequest({ body: registerCameraSchema }),
   asyncHandler(async (req, res) => {
-    const body = req.body as CreateCameraInput;
-    const data = await cameraService.createCamera(body, authUser(req), req);
+    const body = req.body as RegisterCameraInput;
+    const data = await cameraService.registerCamera(body, authUser(req), req);
     res.status(201).json({ success: true, data });
   })
 );
@@ -91,6 +94,48 @@ cameraRouter.patch(
     const params = req.params as unknown as { id: string };
     const body = req.body as UpdateCameraInput;
     const data = await cameraService.updateCamera(params.id, body, authUser(req), req);
+    res.json({ success: true, data });
+  })
+);
+
+// PUT /cameras/:id/configure — step 2: save placement + network + stream config
+// onto a registered camera. State-preserving (never activates on its own).
+cameraRouter.put(
+  '/:id/configure',
+  requireRole(...CAMERA_WRITE_ROLES),
+  validateRequest({ params: cameraIdParamsSchema, body: configureCameraSchema }),
+  asyncHandler(async (req, res) => {
+    const params = req.params as unknown as { id: string };
+    const body = req.body as ConfigureCameraInput;
+    const data = await cameraService.configureCamera(params.id, body, authUser(req), req);
+    res.json({ success: true, data });
+  })
+);
+
+// POST /cameras/:id/activate — step 3: DRAFT → CONFIGURED. The server RE-RUNS the
+// connection test against the stored config and only flips on success; a failing
+// probe returns 200 with { activated: false, test } so the UI can show why.
+// 409 if already CONFIGURED, 400 if config is incomplete.
+cameraRouter.post(
+  '/:id/activate',
+  requireRole(...CAMERA_WRITE_ROLES),
+  validateRequest({ params: cameraIdParamsSchema }),
+  asyncHandler(async (req, res) => {
+    const params = req.params as unknown as { id: string };
+    const data = await cameraService.activateCamera(params.id, authUser(req), req);
+    res.json({ success: true, data });
+  })
+);
+
+// POST /cameras/:id/deactivate — CONFIGURED → DRAFT (config retained, health
+// reset). 409 if the camera is already DRAFT.
+cameraRouter.post(
+  '/:id/deactivate',
+  requireRole(...CAMERA_WRITE_ROLES),
+  validateRequest({ params: cameraIdParamsSchema }),
+  asyncHandler(async (req, res) => {
+    const params = req.params as unknown as { id: string };
+    const data = await cameraService.deactivateCamera(params.id, authUser(req), req);
     res.json({ success: true, data });
   })
 );

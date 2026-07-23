@@ -29,6 +29,13 @@ coverage/
 *.lcov
 .nyc_output/
 
+# Local scratch / debug / verification artifacts (not for commit)
+__probe.cjs
+.tmp-nginx-repro/
+.verify-shots/
+frontend/vitest-out.txt
+scripts/verify-delete-modal.mjs
+
 # Testing
 .vitest/
 playwright-report/

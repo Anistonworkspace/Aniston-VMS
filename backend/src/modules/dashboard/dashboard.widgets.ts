@@ -174,7 +174,11 @@ export interface EvidenceSnapshotDto {
 export async function getLatestEvidence(userId: string): Promise<EvidenceSnapshotDto | null> {
   const scope = await getUserScope(userId);
   const snap = await prisma.snapshot.findFirst({
-    where: { kind: 'EVIDENCE', camera: cameraScopeWhere(scope) },
+    // Only CONFIGURED cameras capture evidence, so `camera.site` is always set.
+    where: {
+      kind: 'EVIDENCE',
+      camera: { AND: [cameraScopeWhere(scope), { provisioningState: 'CONFIGURED' }] },
+    },
     orderBy: { capturedAt: 'desc' },
     include: {
       camera: {
@@ -190,8 +194,8 @@ export async function getLatestEvidence(userId: string): Promise<EvidenceSnapsho
   return {
     id: snap.id,
     cameraLabel: snap.camera.cameraCode,
-    zoneName: snap.camera.site.zone.name,
-    siteName: snap.camera.site.name,
+    zoneName: snap.camera.site!.zone.name,
+    siteName: snap.camera.site!.name,
     capturedAt: snap.capturedAt.toISOString(),
     imageUrl: signFileUrl(snap.id, 'thumb'),
   };

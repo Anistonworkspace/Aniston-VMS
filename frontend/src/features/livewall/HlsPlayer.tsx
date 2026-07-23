@@ -26,7 +26,27 @@ export function HlsPlayer({ src, className, onStatus }: HlsPlayerProps): JSX.Ele
 
     let hls: Hls | null = null;
     if (Hls.isSupported()) {
-      hls = new Hls({ liveDurationInfinity: true });
+      // COLD-START: a first view of an on-demand camera (especially an HEVC sub
+      // stream transcoded to H.264) triggers MediaMTX runOnDemand, whose
+      // `runOnDemandStartTimeout` is 15s (see mediamtx.adapter.ts). The backend
+      // returns the HLS URL as soon as the path config is accepted — before the
+      // transcode has produced its first segment — so the manifest 404s during
+      // spin-up. hls.js's default manifest errorRetry budget is a single retry
+      // (~1-2s), which gives up long before the stream is ready and paints a
+      // spurious error that needs a manual Retry. Widen the manifest retry
+      // budget to ride out the declared 15s window instead of tight-looping
+      // (the ERROR handler below still stops on genuine fatals).
+      hls = new Hls({
+        liveDurationInfinity: true,
+        manifestLoadPolicy: {
+          default: {
+            maxTimeToFirstByteMs: 10_000,
+            maxLoadTimeMs: 20_000,
+            timeoutRetry: { maxNumRetry: 4, retryDelayMs: 0, maxRetryDelayMs: 0 },
+            errorRetry: { maxNumRetry: 8, retryDelayMs: 1_000, maxRetryDelayMs: 2_000 },
+          },
+        },
+      });
       hls.loadSource(src);
       hls.attachMedia(video);
       hls.on(Hls.Events.ERROR, (_event, data) => {

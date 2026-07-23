@@ -18,9 +18,10 @@ import { isOperatorPlusRole } from '@/features/auth/auth.types';
 import type { Role } from '@/features/auth/auth.types';
 import { timeAgo } from '@/features/overview/timeAgo';
 import { getApiErrorMessage } from '@/lib/apiError';
-import { cn } from '@/lib/utils';
+import { cn, formatDateTime } from '@/lib/utils';
 import { CameraStatusBadge } from './CameraStatusBadge';
 import { prettyEnum } from '@/lib/prettyEnum';
+import { formatCoordinates } from './coordinates';
 import {
   useCaptureSnapshotMutation,
   useGetCameraHealthQuery,
@@ -372,13 +373,16 @@ export function CameraDetailDrawer({
                   >
                     <img
                       src={snapshot.thumbUrl}
-                      alt={`Snapshot from ${timeAgo(snapshot.capturedAt)}`}
+                      alt={`Snapshot captured ${formatDateTime(snapshot.capturedAt)}`}
                       loading="lazy"
                       className="h-full w-full object-cover"
                     />
-                    <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent px-1.5 pb-1 pt-3 text-[10px] text-white">
-                      {timeAgo(snapshot.capturedAt)}
-                    </span>
+                    <time
+                      dateTime={snapshot.capturedAt}
+                      className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent px-1.5 pb-1 pt-3 text-[10px] font-medium tabular-nums text-white"
+                    >
+                      {formatDateTime(snapshot.capturedAt)}
+                    </time>
                   </a>
                 ))}
               </div>
@@ -393,6 +397,10 @@ export function CameraDetailDrawer({
             <h3 className="text-sm font-semibold text-ink">Device</h3>
             <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3">
               <Detail label="Site" value={health.site?.name} />
+              <Detail
+                label="Coordinates"
+                value={formatCoordinates(health.latitude, health.longitude) ?? undefined}
+              />
               <Detail
                 label="Router"
                 value={

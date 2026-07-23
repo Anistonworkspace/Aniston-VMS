@@ -22,6 +22,7 @@ import {
 } from './health.diagnosis.js';
 import { beat } from './platform.heartbeat.js';
 import { registerRepeatableTick, unregisterRepeatableTick } from '../../lib/scheduler.queue.js';
+import { resolveCameraSource } from '../playback/mediamtx.adapter.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Jittered health scheduler (docs/02-TRD.md §2): every tick, take up to
@@ -34,7 +35,22 @@ import { registerRepeatableTick, unregisterRepeatableTick } from '../../lib/sche
 const HYSTERESIS_KEY = (cameraId: string): string => `health:hysteresis:${cameraId}`;
 const LAST_RUN_KEY = (cameraId: string): string => `health:lastrun:${cameraId}`;
 
-type CameraWithRouter = Camera & { router: Router };
+// A camera the scheduler will actually probe. The findMany below filters to
+// provisioningState 'CONFIGURED', which guarantees the stream config + router
+// relation are populated (enforced at the CONFIGURED gate in camera.service.ts).
+// Encoding that guarantee here lets the probe pipeline read these fields without
+// re-checking nulls the query has already excluded.
+export type ConfiguredCameraWithRouter = Camera & {
+  router: Router;
+  siteId: string;
+  mainRtspUrlEncrypted: string;
+  rtspUsernameEncrypted: string;
+  rtspPasswordEncrypted: string;
+  expectedCodec: string;
+  expectedResolution: string;
+  expectedFps: number;
+  expectedBitrateKbps: number;
+};
 
 let registered = false;
 let running = false;
@@ -46,7 +62,7 @@ export function startHealthScheduler(): void {
   // BullMQ repeatable (restart-safe, one delivery per minute across instances).
   void registerRepeatableTick('health-scheduler', { pattern: '* * * * *' }, async () => {
     beat('health-scheduler');
-    await tick().catch((err: unknown) =>
+    await healthTick().catch((err: unknown) =>
       logger.error('Health tick failed', { error: String(err) })
     );
   }).catch((err: unknown) =>
@@ -59,7 +75,9 @@ export function startHealthScheduler(): void {
     transport: 'bullmq-repeatable',
   });
   // Kick an immediate first tick so dev environments show data right away.
-  void tick().catch((err: unknown) => logger.error('Health tick failed', { error: String(err) }));
+  void healthTick().catch((err: unknown) =>
+    logger.error('Health tick failed', { error: String(err) })
+  );
 }
 
 export function stopHealthScheduler(): void {
@@ -67,20 +85,27 @@ export function stopHealthScheduler(): void {
   unregisterRepeatableTick('health-scheduler');
 }
 
-async function tick(): Promise<void> {
+export async function healthTick(): Promise<void> {
   if (running) return; // don't overlap slow ticks
   running = true;
   try {
     const dueBefore = new Date(Date.now() - env.HEALTH_CHECK_INTERVAL_MINUTES * 60_000);
-    const cameras = await prisma.camera.findMany({
+    // Cast is sound: the CONFIGURED filter + `include: router` below guarantee
+    // the stream config columns and router relation are non-null on every row.
+    const cameras = (await prisma.camera.findMany({
       where: {
+        // Only CONFIGURED cameras have stream config to probe. DRAFT cameras
+        // (registered, not yet configured/activated) have null RTSP fields, so
+        // health-checking them would be meaningless and would spam INVALID_*
+        // failures — they are gated out of the scheduler entirely.
+        provisioningState: 'CONFIGURED',
         maintenanceMode: false,
         OR: [{ healthChecks: { none: { startedAt: { gt: dueBefore } } } }],
       },
       include: { router: true },
       orderBy: { updatedAt: 'asc' },
       take: env.HEALTH_CAMS_PER_MINUTE,
-    });
+    })) as ConfiguredCameraWithRouter[];
     if (cameras.length === 0) return;
     await Promise.allSettled(
       cameras.map(
@@ -126,8 +151,15 @@ const skipped = (why: string): CheckResult => ({
 });
 
 async function runStages(
-  cam: CameraWithRouter
-): Promise<{ staged: StagedResults; signalDbm: number | null }> {
+  cam: ConfiguredCameraWithRouter
+): Promise<{
+  staged: StagedResults;
+  signalDbm: number | null;
+  // Codec measured on the SUB stream this run (drives the Live Wall transcode
+  // decision). `null` = not measured this run — the caller must then leave the
+  // persisted value untouched rather than clobbering a known-good codec.
+  detectedSubCodec: string | null;
+}> {
   const fault = await getSimFault(cam.cameraCode);
   if (env.HEALTH_SIM_MODE) {
     const sim = simulateStages(fault, {
@@ -144,6 +176,9 @@ async function runStages(
         video: sim.video,
       },
       signalDbm: sim.signalDbm,
+      // No real stream to probe — mirror the simulated video codec so sim/dev
+      // environments still populate a detected codec (only when video succeeded).
+      detectedSubCodec: sim.video.success ? (sim.video.codec ?? null) : null,
     };
   }
 
@@ -165,6 +200,7 @@ async function runStages(
         video: skipped('Skipped — router down'),
       },
       signalDbm: cam.router.signalStrength,
+      detectedSubCodec: null,
     };
   }
   const rtspPort = await withRetry(() => tcpProbe(u.hostname, rtspPortNum));
@@ -177,20 +213,45 @@ async function runStages(
         video: skipped('Skipped — camera port closed'),
       },
       signalDbm: cam.router.signalStrength,
+      detectedSubCodec: null,
     };
   }
   const rtspAuth = await withRetry(() => rtspDescribe(mainUrl, username, password));
   if (!rtspAuth.success) {
+    // Label the skipped video check by the *actual* RTSP failure. Only genuine
+    // auth/path rejections are credential problems; a protocol/session/timeout
+    // fault (e.g. RTSP 454) must not be reported as "auth failed".
+    const authOrPath =
+      rtspAuth.errorCode === 'INVALID_CREDENTIALS' ||
+      rtspAuth.errorCode === 'INVALID_STREAM_PATH';
+    const why = authOrPath
+      ? 'Skipped — auth/path failed'
+      : `Skipped — RTSP DESCRIBE failed (${rtspAuth.errorCode ?? 'unknown'})`;
     return {
-      staged: { routerTcp, rtspPort, rtspAuth, video: skipped('Skipped — auth failed') },
+      staged: { routerTcp, rtspPort, rtspAuth, video: skipped(why) },
       signalDbm: cam.router.signalStrength,
+      detectedSubCodec: null,
     };
   }
   const authedUrl = new URL(mainUrl);
   authedUrl.username = encodeURIComponent(username);
   authedUrl.password = encodeURIComponent(password);
   const video = await ffprobeStream(authedUrl.toString());
-  return { staged: { routerTcp, rtspPort, rtspAuth, video }, signalDbm: cam.router.signalStrength };
+
+  // DETECTION-AUTHORITATIVE Live Wall: probe the SUB stream (what the wall
+  // actually plays) to measure its real codec. The main-stream `video` check
+  // above cannot stand in — main and sub can carry different codecs. Auth is
+  // already proven (rtspAuth.success), so the sub URL should connect too; a
+  // failed/timed-out sub probe yields `null`, which the caller treats as "not
+  // measured" and leaves the persisted codec untouched (no clobber on a blip).
+  const subProbe = await ffprobeStream(resolveCameraSource(cam, 'LIVE_SUB'));
+  const detectedSubCodec = subProbe.success ? (subProbe.codec ?? null) : null;
+
+  return {
+    staged: { routerTcp, rtspPort, rtspAuth, video },
+    signalDbm: cam.router.signalStrength,
+    detectedSubCodec,
+  };
 }
 
 async function recentSuccessRate(cameraId: string): Promise<number> {
@@ -208,7 +269,15 @@ async function recentSuccessRate(cameraId: string): Promise<number> {
 
 async function siteFailingRatio(siteId: string, excludeCameraId: string): Promise<number> {
   const siblings = await prisma.camera.findMany({
-    where: { siteId, id: { not: excludeCameraId }, maintenanceMode: false },
+    // DRAFT siblings are never health-checked and sit at status UNKNOWN, which
+    // would otherwise be counted as "failing" and poison the site-wide ratio
+    // used for hysteresis — restrict to CONFIGURED cameras only.
+    where: {
+      siteId,
+      id: { not: excludeCameraId },
+      provisioningState: 'CONFIGURED',
+      maintenanceMode: false,
+    },
     select: { status: true },
   });
   if (siblings.length === 0) return 1; // only camera at site → assume site-wide
@@ -216,13 +285,13 @@ async function siteFailingRatio(siteId: string, excludeCameraId: string): Promis
   return failing / siblings.length;
 }
 
-export async function runCameraCheck(cam: CameraWithRouter): Promise<{
+export async function runCameraCheck(cam: ConfiguredCameraWithRouter): Promise<{
   status: CameraStatus;
   healthScore: number;
   diagnosis: string | null;
 }> {
   const startedAt = new Date();
-  const { staged, signalDbm } = await runStages(cam);
+  const { staged, signalDbm, detectedSubCodec } = await runStages(cam);
 
   const [rate, failingRatio] = await Promise.all([
     recentSuccessRate(cam.id),
@@ -282,6 +351,9 @@ export async function runCameraCheck(cam: CameraWithRouter): Promise<{
         healthScore: outcome.healthScore,
         diagnosis: outcome.allHealthy ? null : outcome.diagnosis,
         ...(outcome.allHealthy ? { lastHealthyAt: completedAt } : {}),
+        // Only persist when actually measured this run; null means "not probed"
+        // (outage/blip) and must not clobber the last known-good sub codec.
+        ...(detectedSubCodec != null ? { detectedSubCodec } : {}),
       },
     }),
   ]);

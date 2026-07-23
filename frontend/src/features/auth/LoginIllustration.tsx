@@ -1,69 +1,206 @@
 // Self-contained inline SVG illustration for the sign-in "welcome" panel.
-// Evokes the reference mock (two figures high-fiving on a soft stage) without
-// pulling in any external asset or network dependency. Purely decorative.
+// Evokes the reference mock — an intelligent security camera watching over a
+// connected network of sites — without pulling in any external asset or
+// network dependency. Purely decorative; colours reuse the --auth-* palette.
 export function LoginIllustration({ className }: { className?: string }): JSX.Element {
   return (
     <svg
-      viewBox="0 0 320 300"
+      viewBox="0 0 420 360"
       className={className}
       role="img"
-      aria-label="Two people celebrating with a high five"
+      aria-label="A smart security camera monitoring a connected network of sites"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
     >
-      {/* Soft stage */}
-      <ellipse cx="160" cy="238" rx="118" ry="26" fill="#ffffff" opacity="0.12" />
-      <ellipse cx="160" cy="176" rx="96" ry="96" fill="#ffffff" opacity="0.08" />
+      <defs>
+        <linearGradient id="li-body" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#ffffff" />
+          <stop offset="1" stopColor="#d5e5f4" />
+        </linearGradient>
+        <linearGradient id="li-hood" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#f3f8fd" />
+          <stop offset="1" stopColor="#c7dcef" />
+        </linearGradient>
+        <radialGradient id="li-lens" cx="0.4" cy="0.4" r="0.7">
+          <stop offset="0" stopColor="#3f7fb8" />
+          <stop offset="0.55" stopColor="#183a5c" />
+          <stop offset="1" stopColor="#0c1e34" />
+        </radialGradient>
+        <linearGradient id="li-tile" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#ffffff" />
+          <stop offset="1" stopColor="#dcebf8" />
+        </linearGradient>
+        <radialGradient id="li-hub" cx="0.5" cy="0.35" r="0.75">
+          <stop offset="0" stopColor="#ffffff" />
+          <stop offset="1" stopColor="#dcecfa" />
+        </radialGradient>
+        <pattern id="li-dots" width="15" height="15" patternUnits="userSpaceOnUse">
+          <circle cx="2" cy="2" r="1.5" fill="#8fb4d6" />
+        </pattern>
+        <radialGradient id="li-fade" cx="0.5" cy="0.4" r="0.62">
+          <stop offset="0" stopColor="#ffffff" stopOpacity="1" />
+          <stop offset="0.65" stopColor="#ffffff" stopOpacity="0.55" />
+          <stop offset="1" stopColor="#ffffff" stopOpacity="0" />
+        </radialGradient>
+        <mask id="li-fademask">
+          <rect x="0" y="0" width="420" height="360" fill="url(#li-fade)" />
+        </mask>
+      </defs>
 
-      {/* Sparkles */}
-      <g fill="#f4d47c" opacity="0.9">
-        <path d="M160 70l3 8 8 3-8 3-3 8-3-8-8-3 8-3z" />
-        <circle cx="96" cy="104" r="3" />
-        <circle cx="228" cy="120" r="3.5" />
-        <circle cx="120" cy="70" r="2.5" />
-        <circle cx="210" cy="78" r="2.5" />
+      {/* Dotted network backdrop, faded toward the edges */}
+      <g mask="url(#li-fademask)" opacity="0.5">
+        <rect x="10" y="6" width="400" height="210" fill="url(#li-dots)" />
       </g>
 
-      {/* Left figure */}
-      <g>
-        <path d="M118 236l-6-58a20 20 0 0140 0l-6 58z" fill="#e0876c" />
-        <rect x="112" y="150" width="34" height="52" rx="16" fill="#3d99f0" />
-        {/* raised arm to the high-five point */}
-        <path
-          d="M142 158c14-6 26-16 34-28"
-          stroke="#f0b99f"
-          strokeWidth="11"
-          strokeLinecap="round"
+      {/* Ground platform */}
+      <ellipse cx="210" cy="322" rx="168" ry="26" fill="#cfe1f1" opacity="0.55" />
+
+      {/* ── Security camera ─────────────────────────────── */}
+      <g transform="rotate(-7 232 120)">
+        {/* Wall plate + mounting arm */}
+        <rect x="336" y="86" width="14" height="70" rx="5" fill="#c4d5e6" />
+        <rect x="300" y="116" width="46" height="14" rx="7" fill="#d3e2f0" />
+        <circle cx="343" cy="121" r="4" fill="#a9c0d6" />
+        {/* Sunshield / hood */}
+        <rect x="150" y="86" width="150" height="18" rx="9" fill="url(#li-hood)" />
+        {/* Body */}
+        <rect
+          x="156"
+          y="98"
+          width="164"
+          height="62"
+          rx="31"
+          fill="url(#li-body)"
+          stroke="#cfe0f0"
+          strokeWidth="1.5"
         />
-        <circle cx="129" cy="132" r="18" fill="#f0b99f" />
-        <path d="M111 128a18 18 0 0136 0c-6-6-12-9-18-9s-12 3-18 9z" fill="#1e3a5f" />
-      </g>
-
-      {/* Right figure */}
-      <g>
-        <path d="M202 236l6-58a20 20 0 00-40 0l6 58z" fill="#243b6b" />
-        <rect x="174" y="150" width="34" height="52" rx="16" fill="#5aa9ef" />
-        {/* raised arm to the high-five point */}
-        <path
-          d="M178 158c-14-6-26-16-34-28"
-          stroke="#f0b99f"
-          strokeWidth="11"
-          strokeLinecap="round"
+        {/* Body highlight */}
+        <rect x="170" y="106" width="120" height="6" rx="3" fill="#ffffff" opacity="0.7" />
+        {/* Rear status LED */}
+        <circle cx="298" cy="129" r="3.5" fill="#168c8c" />
+        {/* Lens housing */}
+        <circle cx="176" cy="129" r="35" fill="#eaf2fa" stroke="#cbdcee" strokeWidth="1.5" />
+        <circle cx="176" cy="129" r="27" fill="url(#li-lens)" />
+        <circle cx="176" cy="129" r="27" fill="none" stroke="#0c1e34" strokeWidth="2" />
+        <circle
+          cx="176"
+          cy="129"
+          r="31"
+          fill="none"
+          stroke="#168c8c"
+          strokeOpacity="0.45"
+          strokeWidth="2"
         />
-        <circle cx="191" cy="132" r="18" fill="#f0b99f" />
-        <path d="M173 130a18 18 0 0136-4c-7-5-13-7-19-6s-11 4-17 10z" fill="#5a4a3a" />
+        <circle cx="167" cy="120" r="7" fill="#9fd0ee" opacity="0.85" />
+        <circle cx="184" cy="138" r="3" fill="#3f67d8" opacity="0.7" />
       </g>
 
-      {/* High-five spark */}
-      <g transform="translate(160 128)">
-        <path d="M0-13l3 9 9 3-9 3-3 9-3-9-9-3 9-3z" fill="#ffffff" />
+      {/* ── Network topology ────────────────────────────── */}
+      {/* Connectors */}
+      <g stroke="#9db9d4" strokeWidth="2" strokeDasharray="1 7" strokeLinecap="round">
+        <path d="M210 250 L110 286" />
+        <path d="M210 250 L206 314" />
+        <path d="M210 250 L305 296" />
+      </g>
+      {/* Connector accent dots */}
+      <circle cx="160" cy="268" r="3.5" fill="#e2a93b" />
+      <circle cx="208" cy="282" r="3.5" fill="#168c8c" />
+      <circle cx="258" cy="273" r="3.5" fill="#e2a93b" />
+
+      {/* Hub tile (radar) */}
+      <g>
+        <rect
+          x="180"
+          y="222"
+          width="60"
+          height="56"
+          rx="16"
+          fill="url(#li-hub)"
+          stroke="#d3e2f0"
+          strokeWidth="1.5"
+        />
+        <circle
+          cx="210"
+          cy="250"
+          r="18"
+          fill="none"
+          stroke="#168c8c"
+          strokeOpacity="0.25"
+          strokeWidth="2"
+        />
+        <circle
+          cx="210"
+          cy="250"
+          r="11"
+          fill="none"
+          stroke="#168c8c"
+          strokeOpacity="0.5"
+          strokeWidth="2"
+        />
+        <circle cx="210" cy="250" r="4.5" fill="#168c8c" />
       </g>
 
-      {/* Feet */}
-      <ellipse cx="120" cy="238" rx="10" ry="4" fill="#243b6b" />
-      <ellipse cx="146" cy="238" rx="10" ry="4" fill="#243b6b" />
-      <ellipse cx="174" cy="238" rx="10" ry="4" fill="#c56b52" />
-      <ellipse cx="200" cy="238" rx="10" ry="4" fill="#c56b52" />
+      {/* Left building tile */}
+      <g>
+        <rect
+          x="82"
+          y="262"
+          width="52"
+          height="48"
+          rx="13"
+          fill="url(#li-tile)"
+          stroke="#d3e2f0"
+          strokeWidth="1.5"
+        />
+        <rect x="96" y="278" width="10" height="18" rx="1.5" fill="#3f67d8" opacity="0.85" />
+        <rect x="110" y="273" width="12" height="23" rx="1.5" fill="#142b4a" opacity="0.85" />
+        <rect x="99" y="281" width="3" height="3" fill="#ffffff" />
+        <rect x="114" y="277" width="3" height="3" fill="#ffffff" />
+      </g>
+
+      {/* Bottom building tile */}
+      <g>
+        <rect
+          x="180"
+          y="298"
+          width="52"
+          height="48"
+          rx="13"
+          fill="url(#li-tile)"
+          stroke="#d3e2f0"
+          strokeWidth="1.5"
+        />
+        <rect x="194" y="312" width="24" height="24" rx="2" fill="#168c8c" opacity="0.85" />
+        <rect x="199" y="317" width="4" height="4" fill="#ffffff" />
+        <rect x="209" y="317" width="4" height="4" fill="#ffffff" />
+        <rect x="199" y="326" width="4" height="4" fill="#ffffff" />
+        <rect x="209" y="326" width="4" height="4" fill="#ffffff" />
+      </g>
+
+      {/* Right location-pin tile */}
+      <g>
+        <rect
+          x="280"
+          y="272"
+          width="52"
+          height="48"
+          rx="13"
+          fill="url(#li-tile)"
+          stroke="#d3e2f0"
+          strokeWidth="1.5"
+        />
+        <path
+          d="M306 284c-7 0-12 5-12 12 0 8 12 18 12 18s12-10 12-18c0-7-5-12-12-12z"
+          fill="#3f67d8"
+        />
+        <circle cx="306" cy="296" r="4.5" fill="#ffffff" />
+      </g>
+
+      {/* Floating accents */}
+      <circle cx="70" cy="150" r="3" fill="#168c8c" opacity="0.6" />
+      <circle cx="356" cy="196" r="3.5" fill="#3f67d8" opacity="0.55" />
+      <circle cx="330" cy="150" r="2.5" fill="#e2a93b" opacity="0.7" />
+      <circle cx="96" cy="210" r="2.5" fill="#3f67d8" opacity="0.5" />
     </svg>
   );
 }

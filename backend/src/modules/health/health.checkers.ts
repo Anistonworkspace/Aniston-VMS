@@ -178,12 +178,16 @@ export async function rtspDescribe(
       status = Number(/^RTSP\/1\.0 (\d{3})/.exec(res)?.[1] ?? 0);
     }
     if (status === 200) return { success: true, responseTimeMs: elapsed() };
-    if (status === 401)
+    // 401 (Unauthorized) and 403 (Forbidden) are genuine credential/authorization
+    // rejections — the operator must fix the stored username/password. Anything
+    // else (e.g. 454 Method Not Valid In This State) is a protocol/session fault,
+    // not a credentials problem, and is handled by the fall-through below.
+    if (status === 401 || status === 403)
       return {
         success: false,
         responseTimeMs: elapsed(),
         errorCode: 'INVALID_CREDENTIALS',
-        errorMessage: 'RTSP 401 after auth',
+        errorMessage: `RTSP ${status} — credentials/authorization rejected`,
       };
     if (status === 404)
       return {

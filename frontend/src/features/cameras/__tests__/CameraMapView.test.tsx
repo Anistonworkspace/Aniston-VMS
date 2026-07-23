@@ -1,14 +1,16 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
 import type { Camera } from '../cameras.types';
 import { CameraMapView } from '../CameraMapView';
 
 // Shared spies/records, accessible from inside the hoisted mock factory.
 const h = vi.hoisted(() => ({
   markers: [] as Array<{ element: HTMLElement; anchor: unknown; lngLat: unknown }>,
+  mapOptions: [] as Array<Record<string, unknown>>,
   fitBounds: vi.fn(),
   addControl: vi.fn(),
   removeMap: vi.fn(),
+  resize: vi.fn(),
 }));
 
 vi.mock('maplibre-gl', () => {
@@ -16,6 +18,10 @@ vi.mock('maplibre-gl', () => {
     addControl = h.addControl;
     fitBounds = h.fitBounds;
     remove = h.removeMap;
+    resize = h.resize;
+    constructor(opts: Record<string, unknown>) {
+      h.mapOptions.push(opts);
+    }
   }
   class NavigationControl {}
   class LngLatBounds {
@@ -64,6 +70,7 @@ function makeCamera(over: Partial<Camera>): Camera {
 
 beforeEach(() => {
   h.markers.length = 0;
+  h.mapOptions.length = 0;
   h.fitBounds.mockClear();
   h.addControl.mockClear();
   document.body.innerHTML = '';
@@ -119,5 +126,70 @@ describe('CameraMapView', () => {
     expect(screen.getByText('Healthy')).toBeInTheDocument();
     expect(screen.getByText('Critical')).toBeInTheDocument();
     expect(screen.getByText('Maintenance')).toBeInTheDocument();
+  });
+
+  it('uses a permanent (non-compact) attribution control, not the circular "i" button', () => {
+    render(<CameraMapView cameras={[]} onOpen={vi.fn()} />);
+    expect(h.mapOptions).toHaveLength(1);
+    // compact:false is what renders the always-visible OSM credit instead of
+    // the collapsed "i" toggle on desktop and mobile.
+    expect(h.mapOptions[0].attributionControl).toEqual({ compact: false });
+  });
+});
+
+describe('CameraMapView fullscreen button', () => {
+  afterEach(() => {
+    // The Fullscreen API is not implemented in jsdom; scrub the shims we install
+    // so they never leak into unrelated suites.
+    delete (HTMLElement.prototype as { requestFullscreen?: unknown }).requestFullscreen;
+    delete (document as { exitFullscreen?: unknown }).exitFullscreen;
+    Object.defineProperty(document, 'fullscreenElement', {
+      value: null,
+      configurable: true,
+      writable: true,
+    });
+  });
+
+  it('renders a labelled fullscreen toggle button', () => {
+    render(<CameraMapView cameras={[]} onOpen={vi.fn()} />);
+    expect(screen.getByRole('button', { name: /enter fullscreen/i })).toBeInTheDocument();
+  });
+
+  it('requests fullscreen on the map wrapper when clicked', () => {
+    const requestFullscreen = vi.fn().mockResolvedValue(undefined);
+    (HTMLElement.prototype as { requestFullscreen?: unknown }).requestFullscreen =
+      requestFullscreen;
+
+    render(<CameraMapView cameras={[]} onOpen={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /enter fullscreen/i }));
+
+    expect(requestFullscreen).toHaveBeenCalledTimes(1);
+    // The element that goes fullscreen is the map wrapper, so the legend and the
+    // toggle itself stay visible in the fullscreen view.
+    expect(requestFullscreen.mock.instances[0]).toBe(screen.getByTestId('camera-map'));
+  });
+
+  it('swaps to an exit control and exits fullscreen on the next click', () => {
+    const exitFullscreen = vi.fn().mockResolvedValue(undefined);
+    (document as { exitFullscreen?: unknown }).exitFullscreen = exitFullscreen;
+
+    render(<CameraMapView cameras={[]} onOpen={vi.fn()} />);
+    const wrapper = screen.getByTestId('camera-map');
+
+    // Simulate the browser entering fullscreen (e.g. our request resolved).
+    Object.defineProperty(document, 'fullscreenElement', {
+      value: wrapper,
+      configurable: true,
+      writable: true,
+    });
+    fireEvent(document, new Event('fullscreenchange'));
+
+    const exitButton = screen.getByRole('button', { name: /exit fullscreen/i });
+    expect(exitButton).toBeInTheDocument();
+
+    fireEvent.click(exitButton);
+    expect(exitFullscreen).toHaveBeenCalledTimes(1);
+    // Map resizes to the new viewport whenever fullscreen state changes.
+    expect(h.resize).toHaveBeenCalled();
   });
 });

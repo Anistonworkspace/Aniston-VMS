@@ -32,11 +32,18 @@ export function LiveTile({ camera, onRemove }: LiveTileProps): JSX.Element {
   const [startError, setStartError] = useState<string | null>(null);
   const [playerStatus, setPlayerStatus] = useState<PlayerStatus>('loading');
   const [attempt, setAttempt] = useState(0);
+  const heartbeatRef = useRef<number | undefined>(undefined);
+
+  const stopHeartbeat = useCallback(() => {
+    if (heartbeatRef.current !== undefined) {
+      window.clearInterval(heartbeatRef.current);
+      heartbeatRef.current = undefined;
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
     let sessionId: string | null = null;
-    let timer: number | undefined;
 
     setSession(null);
     setStartError(null);
@@ -52,7 +59,7 @@ export function LiveTile({ camera, onRemove }: LiveTileProps): JSX.Element {
         }
         sessionId = started.id;
         setSession(started);
-        timer = window.setInterval(() => {
+        heartbeatRef.current = window.setInterval(() => {
           void heartbeat({ id: started.id });
         }, HEARTBEAT_INTERVAL_MS);
       })
@@ -62,10 +69,18 @@ export function LiveTile({ camera, onRemove }: LiveTileProps): JSX.Element {
 
     return () => {
       cancelled = true;
-      if (timer !== undefined) window.clearInterval(timer);
+      stopHeartbeat();
       if (sessionId) void endStream({ id: sessionId, reason: 'tile closed' });
     };
-  }, [camera.id, attempt, startStream, heartbeat, endStream]);
+  }, [camera.id, attempt, startStream, heartbeat, endStream, stopHeartbeat]);
+
+  // A fatal player error is terminal (hls.js has exhausted its retries). Stop the
+  // heartbeat so the dead session stops pinning its per-camera concurrency slot —
+  // the server reaper reclaims it after the heartbeat timeout, and a manual Retry
+  // (or tile removal) frees it immediately via the effect cleanup above.
+  useEffect(() => {
+    if (playerStatus === 'error') stopHeartbeat();
+  }, [playerStatus, stopHeartbeat]);
 
   const showError = startError !== null || playerStatus === 'error';
   const showLoading = !showError && (session === null || playerStatus === 'loading');

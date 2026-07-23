@@ -23,3 +23,6 @@ export { AnimatedPopover } from './AnimatedPopover';
 
 export { ToastContainer } from './Toast';
 export type { ToastItem, ToastVariant } from './Toast';
+
+export { SegmentedControl } from './SegmentedControl';
+export type { SegmentedControlProps, SegmentedOption } from './SegmentedControl';

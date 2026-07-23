@@ -1,9 +1,9 @@
 import { motion } from 'framer-motion';
-import { Cctv, Trash2, Wrench } from 'lucide-react';
+import { Cctv, SlidersHorizontal, Trash2, Wrench } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { listItem } from '@/lib/animations';
 import { timeAgo } from '@/features/overview/timeAgo';
-import { CameraStatusBadge } from './CameraStatusBadge';
+import { CameraStatusBadge, DraftBadge } from './CameraStatusBadge';
 import { prettyEnum } from '@/lib/prettyEnum';
 import type { Camera, CameraStatus } from './cameras.types';
 
@@ -18,27 +18,50 @@ const BAR: Record<CameraStatus, string> = {
 export function CameraCard({
   camera,
   onOpen,
+  onConfigure,
   selectable = false,
   onSelect,
 }: {
   camera: Camera;
   onOpen: (id: string) => void;
+  /** DRAFT cameras open the configure (placement + stream) flow instead of the health drawer. */
+  onConfigure?: (camera: Camera) => void;
   /** In selection mode the card picks the camera for deletion instead of navigating. */
   selectable?: boolean;
   onSelect?: (camera: Camera) => void;
 }): JSX.Element {
   const score = Math.max(0, Math.min(100, camera.healthScore));
+  const isDraft = camera.provisioningState === 'DRAFT';
+
+  const handleClick = (): void => {
+    if (selectable) {
+      onSelect?.(camera);
+      return;
+    }
+    if (isDraft) {
+      onConfigure?.(camera);
+      return;
+    }
+    onOpen(camera.id);
+  };
+
+  const label = selectable
+    ? `Select ${camera.name} to delete`
+    : isDraft
+      ? `Configure ${camera.name}`
+      : undefined;
 
   return (
     <motion.article variants={listItem}>
       <button
         type="button"
-        onClick={() => (selectable ? onSelect?.(camera) : onOpen(camera.id))}
+        onClick={handleClick}
         aria-pressed={selectable ? false : undefined}
-        aria-label={selectable ? `Select ${camera.name} to delete` : undefined}
+        aria-label={label}
         className={cn(
           'relative w-full rounded-card bg-card p-5 text-left shadow-soft transition-shadow duration-150 hover:shadow-soft-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage',
-          selectable && 'ring-2 ring-coral/40 hover:ring-coral'
+          selectable && 'ring-2 ring-coral/40 hover:ring-coral',
+          isDraft && !selectable && 'ring-1 ring-dashed ring-state-unknown/40'
         )}
       >
         {selectable && (
@@ -64,40 +87,53 @@ export function CameraCard({
               </p>
             </div>
           </div>
-          <CameraStatusBadge status={camera.status} />
+          {isDraft ? <DraftBadge /> : <CameraStatusBadge status={camera.status} />}
         </div>
 
-        <div className="mt-4 flex items-center justify-between gap-2 text-xs text-tertiary">
-          <span>
-            Health <span className="font-semibold tabular-nums text-ink">{score}</span>/100
-          </span>
-          <span className="flex min-w-0 items-center gap-2">
-            {camera.maintenanceMode && (
-              <span className="flex shrink-0 items-center gap-1 text-state-maintenance">
-                <Wrench size={12} strokeWidth={1.5} /> maintenance
+        {isDraft ? (
+          // DRAFT cameras aren't health-monitored yet — prompt the user to finish
+          // provisioning instead of showing a meaningless health bar.
+          <div className="mt-4 flex items-center gap-2 text-xs font-medium text-state-unknown">
+            <SlidersHorizontal size={12} strokeWidth={1.5} />
+            <span className="truncate">Not configured — click to place &amp; connect</span>
+          </div>
+        ) : (
+          <>
+            <div className="mt-4 flex items-center justify-between gap-2 text-xs text-tertiary">
+              <span>
+                Health <span className="font-semibold tabular-nums text-ink">{score}</span>/100
               </span>
-            )}
-            <span className="truncate">
-              {camera.lastHealthyAt ? `healthy ${timeAgo(camera.lastHealthyAt)}` : 'never healthy'}
-            </span>
-          </span>
-        </div>
-        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-canvas">
-          <div
-            className={cn('h-full rounded-full', BAR[camera.status] ?? BAR.UNKNOWN)}
-            style={{ width: `${score}%` }}
-          />
-        </div>
+              <span className="flex min-w-0 items-center gap-2">
+                {camera.maintenanceMode && (
+                  <span className="flex shrink-0 items-center gap-1 text-state-maintenance">
+                    <Wrench size={12} strokeWidth={1.5} /> maintenance
+                  </span>
+                )}
+                <span className="truncate">
+                  {camera.lastHealthyAt
+                    ? `healthy ${timeAgo(camera.lastHealthyAt)}`
+                    : 'never healthy'}
+                </span>
+              </span>
+            </div>
+            <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-canvas">
+              <div
+                className={cn('h-full rounded-full', BAR[camera.status] ?? BAR.UNKNOWN)}
+                style={{ width: `${score}%` }}
+              />
+            </div>
 
-        {camera.diagnosis && camera.status !== 'HEALTHY' && (
-          <p
-            className={cn(
-              'mt-3 truncate text-xs font-medium',
-              camera.status === 'CRITICAL' ? 'text-state-critical' : 'text-state-warning'
+            {camera.diagnosis && camera.status !== 'HEALTHY' && (
+              <p
+                className={cn(
+                  'mt-3 truncate text-xs font-medium',
+                  camera.status === 'CRITICAL' ? 'text-state-critical' : 'text-state-warning'
+                )}
+              >
+                {prettyEnum(camera.diagnosis)}
+              </p>
             )}
-          >
-            {prettyEnum(camera.diagnosis)}
-          </p>
+          </>
         )}
       </button>
     </motion.article>

@@ -7,7 +7,7 @@ test.describe('authentication', () => {
     await expect(page.locator('#login-email')).toBeVisible();
     await expect(page.locator('#login-password')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
-    await expect(page.getByRole('button', { name: /use demo credentials/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Show password' })).toBeVisible();
   });
 
   test('rejects invalid credentials and stays on /login', async ({ page }) => {
