@@ -18,6 +18,8 @@ import { useGetCurrentUserQuery } from '@/features/auth/auth.api';
 import { isAdminRole, isCameraWriteRole } from '@/features/auth/auth.types';
 import { useListZoneSummariesQuery } from '@/features/overview/overview.api';
 import { useToast } from '@/hooks/useToast';
+import type { FetchBaseQueryError } from '@reduxjs/toolkit/query/react';
+import type { SerializedError } from '@reduxjs/toolkit';
 import { getApiErrorMessage } from '@/lib/apiError';
 import { cn } from '@/lib/utils';
 import { listContainer, pageChild, pageTransition } from '@/lib/animations';
@@ -187,7 +189,7 @@ export function CamerasPage(): JSX.Element {
       success('Camera removed');
       exitSelection(); // closes modal, exits selection, restores previous view; tags refetch the list
     } catch (err) {
-      setErrorMessage(getApiErrorMessage(err as Parameters<typeof getApiErrorMessage>[0])); // immediate, from the caught error → modal stays open, camera stays
+      setErrorMessage(getApiErrorMessage(err as FetchBaseQueryError | SerializedError)); // immediate, from the caught error → modal stays open, camera stays
     }
   }
 
@@ -271,9 +273,7 @@ export function CamerasPage(): JSX.Element {
             aria-label="Clear zone filter"
             className="inline-flex h-9 items-center gap-1.5 rounded-full bg-sage/15 px-3 text-xs font-medium text-sage transition-colors hover:bg-sage/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage"
           >
-            <span className="truncate max-w-[12rem]">
-              Zone: {activeZoneName ?? 'selected'}
-            </span>
+            <span className="truncate max-w-[12rem]">Zone: {activeZoneName ?? 'selected'}</span>
             <X size={13} />
           </button>
         )}

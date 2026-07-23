@@ -1,0 +1,132 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Aniston VMS — PRODUCTION compose (isolated deploy on the shared EC2 host).
+#
+# This host also runs several unrelated stacks on other subdomains (their own
+# containers, volumes, nginx vhosts and certs). NONE of them may be affected.
+# Isolation is enforced structurally:
+#
+#   • Fixed project name `aniston-vms`  → volumes  aniston-vms_postgres_data /
+#     aniston-vms_redis_data, network   aniston-vms_default. These names cannot
+#     collide with any other project on the box.
+#   • EXACTLY ONE published host port: 127.0.0.1:${FRONTEND_HOST_PORT:-8095} →
+#     frontend:80. Postgres, Redis, backend and MediaMTX publish NOTHING to the
+#     host — they talk over the private aniston-vms_default network only. That is
+#     why the host's PM2 process on :4000 and the other stacks' data ports never
+#     collide with this one.
+#   • Images are pulled from GHCR (built + pushed by CI). Nothing is built here —
+#     the EC2 disk is nearly full.
+#
+# Run it from the repo root with the app env file supplying substitutions:
+#   IMAGE_TAG=<sha> docker compose --env-file .env -f docker/docker-compose.prod.yml up -d
+# (scripts/deploy-prod.sh does exactly this.)
+# ─────────────────────────────────────────────────────────────────────────────
+name: aniston-vms
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: aniston_vms_postgres
+    restart: unless-stopped
+    # No host port — reachable only as `postgres:5432` on aniston-vms_default.
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aniston_vms}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-aniston_vms}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: aniston_vms_redis
+    restart: unless-stopped
+    # No host port — reachable only as `redis:6379` on aniston-vms_default.
+    # Password-protected even on the private network (defence in depth); the
+    # backend authenticates via REDIS_URL (redis://:<pass>@redis:6379) from .env.
+    command:
+      [
+        'redis-server',
+        '--appendonly',
+        'yes',
+        '--requirepass',
+        '${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env}',
+      ]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', '-a', '${REDIS_PASSWORD}', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    image: ghcr.io/anistonworkspace/aniston-vms-backend:${IMAGE_TAG:-latest}
+    container_name: aniston_vms_backend
+    restart: unless-stopped
+    # No host port — the frontend container's nginx proxies /api and /socket.io
+    # to backend:4000 over the private network.
+    env_file: ../.env
+    environment:
+      # MediaMTX control-API endpoint (backend-side). The browser never sees these
+      # — it uses same-origin /media/* paths — so the internal compose hostnames
+      # are correct here. Without MEDIAMTX_API_URL the backend would hit its own
+      # localhost:9997 and every path/transcode registration would fail.
+      MEDIAMTX_API_URL: http://mediamtx:9997
+      MEDIAMTX_RTSP_URL: rtsp://mediamtx:8554
+      MEDIAMTX_HLS_URL: http://mediamtx:8888
+      MEDIAMTX_WEBRTC_URL: http://mediamtx:8889
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:4000/api/health']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  frontend:
+    image: ghcr.io/anistonworkspace/aniston-vms-frontend:${IMAGE_TAG:-latest}
+    container_name: aniston_vms_frontend
+    restart: unless-stopped
+    # The ONLY published port on the whole stack. Bound to loopback; the host
+    # nginx vhost for vms.anistonav.com terminates TLS and proxies to it. The
+    # container's own nginx does the real routing (SPA fallback, /api + /socket.io
+    # → backend, /media/* → mediamtx with auth_request gating).
+    ports:
+      - '127.0.0.1:${FRONTEND_HOST_PORT:-8095}:80'
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  # MediaMTX RTSP relay + on-demand transcoder. Core playback infra (the Live Wall
+  # pulls each camera sub-stream through here; non-browser codecs transcode to
+  # H.264 on demand). No host port — the frontend nginx proxies /media/hls →
+  # mediamtx:8888 and /media/webrtc → mediamtx:8889 (both auth-gated by the
+  # backend), and the control API (:9997) is backend-only.
+  mediamtx:
+    # Pinned (not `latest-ffmpeg`) so a `compose pull` can never silently swap in
+    # an upstream build with a changed config schema and break playback.
+    image: bluenviron/mediamtx:1.19.2-ffmpeg
+    container_name: aniston_vms_mediamtx
+    restart: unless-stopped
+    volumes:
+      # Prod-specific config (no simulator cam-00N paths). Path is relative to the
+      # compose file's dir (docker/), so this is docker/mediamtx.prod.yml.
+      - ./mediamtx.prod.yml:/mediamtx.yml:ro
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:9997/v3/config/paths/list']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  postgres_data:
+  redis_data:

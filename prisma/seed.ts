@@ -148,7 +148,7 @@ async function main(): Promise<void> {
     console.error(
       'Refusing to run prisma/seed.ts in production: it wipes ALL data (including users). ' +
         'This destructive seed has no production override by design. ' +
-        'Use `npm run db:seed:admin` for safe admin provisioning.',
+        'Use `npm run db:seed:admin` for safe admin provisioning.'
     );
     process.exit(1);
   }
@@ -156,7 +156,7 @@ async function main(): Promise<void> {
   if (process.env.ALLOW_DESTRUCTIVE_DEV_SEED !== 'true') {
     console.error(
       'Refusing to run destructive seed: prisma/seed.ts wipes ALL data (including users) before reseeding. ' +
-        'Set ALLOW_DESTRUCTIVE_DEV_SEED=true to confirm you are targeting a disposable development database.',
+        'Set ALLOW_DESTRUCTIVE_DEV_SEED=true to confirm you are targeting a disposable development database.'
     );
     process.exit(1);
   }
@@ -1113,7 +1113,7 @@ async function main(): Promise<void> {
 
   console.info(
     'Seed complete: 4 regions, 13 zones, 2 sites, 2 routers, 6 cameras, ' +
-      `no seeded users, 1 escalation policy (${steps.length} steps), ` +
+      `0 users, 1 escalation policy (${steps.length} steps), ` +
       `${rules.length} alert rules, 5 incidents, ${events.length} events, ` +
       `4 notifications, ${checks.length} health checks, ${snaps.length} snapshots, ` +
       '6 SD statuses, 6 segments, 4 SIM usage rows, ' +

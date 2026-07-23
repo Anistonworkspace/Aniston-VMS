@@ -1,0 +1,67 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# MediaMTX config — PRODUCTION (Aniston VMS).
+#
+# Same server/auth policy as simulator/mediamtx.yml, but WITHOUT the simulated
+# cam-001…006 path declarations — real cameras are registered dynamically by the
+# backend via the control API (MEDIAMTX_API_URL=http://mediamtx:9997). Mounted
+# read-only by docker/docker-compose.prod.yml.
+#
+# This service publishes NO host port; every address below is reachable only on
+# the isolated aniston-vms_default bridge (backend + frontend containers). The
+# frontend nginx proxies /media/hls → :8888 and /media/webrtc → :8889, both gated
+# by the backend's auth_request; the control API (:9997) is backend-only.
+# ─────────────────────────────────────────────────────────────────────────────
+
+logLevel: info
+logDestinations: [stdout]
+
+# Control/introspection API used by the backend to register paths and by health
+# probes. Bound on all interfaces INSIDE the container, but the container has no
+# host port and the API action is IP-gated to loopback/RFC-1918 below.
+api: yes
+apiAddress: :9997
+
+rtspAddress: :8554
+rtspTransports: [tcp, udp]
+rtspAuthMethods: [basic]
+
+# publish/read/playback keep MediaMTX's default open policy (the media plane is
+# already isolated to the private bridge). The api/metrics/pprof actions are
+# restricted to loopback + Docker/private ranges so nothing on the host or LAN
+# can drive the control API even if a port were ever exposed by mistake.
+authInternalUsers:
+  - user: any
+    pass:
+    permissions:
+      - action: publish
+      - action: read
+      - action: playback
+  - user: any
+    pass:
+    ips: [127.0.0.1, '::1', 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]
+    permissions:
+      - action: api
+      - action: metrics
+      - action: pprof
+
+rtmp: no
+srt: no
+
+hls: yes
+hlsAddress: :8888
+hlsAlwaysRemux: yes
+hlsVariant: mpegts
+hlsSegmentCount: 4
+hlsSegmentDuration: 1s
+hlsAllowOrigin: '*'
+
+webrtc: yes
+webrtcAddress: :8889
+webrtcAllowOrigin: '*'
+webrtcAdditionalHosts: [localhost, 127.0.0.1, mediamtx]
+
+# Catch-all so the backend can register/relay any camera path on demand without
+# editing this file. Per-camera options (auth, source, etc.) are set live over
+# the control API when a camera is onboarded.
+paths:
+  all_others: {}

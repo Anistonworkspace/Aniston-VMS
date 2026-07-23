@@ -10,7 +10,10 @@ services:
     container_name: aniston_vms_postgres
     restart: unless-stopped
     ports:
-      - '127.0.0.1:5432:5432'
+      # Host 5432 is taken by an unrelated 'aniston-postgres' container already
+      # running on this machine, so publish on 15432 instead. Container-internal
+      # port stays 5432 (backend reaches it via the 'postgres' service hostname).
+      - '127.0.0.1:15432:5432'
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-aniston_vms}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -28,7 +31,10 @@ services:
     container_name: aniston_vms_redis
     restart: unless-stopped
     ports:
-      - '127.0.0.1:6379:6379'
+      # Host 6379 is taken by an unrelated 'aniston-redis' container already
+      # running on this machine, so publish on 16379 instead. Container-internal
+      # port stays 6379 (backend reaches it via the 'redis' service hostname).
+      - '127.0.0.1:16379:6379'
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
@@ -56,7 +62,12 @@ services:
       # to the browser (host-mapped ports). Without this the backend hits its own
       # localhost:9997 and every Live Wall publish/transcode registration fails.
       MEDIAMTX_API_URL: http://mediamtx:9997
-      NODE_ENV: production
+      # Run in development mode for this local demo. The stack is designed to run
+      # with sim modes ON (HEALTH_SIM_MODE / PLAYBACK_SIM_MODE / ALERT_MOCK_MODE
+      # default true) so the Live Wall / health / alerts show data without real
+      # cameras. env.ts forbids those sim flags when NODE_ENV=production, so a
+      # production value here makes the backend fail config validation and crash.
+      NODE_ENV: development
       # Demo/dev stack only: headroom for Playwright E2E runs. The suite drives many
       # data-rich page loads (dashboard/zones/incidents/health) that each fan out to
       # ~10 API calls, so the global limiter (default 100/60s) is the real ceiling —
