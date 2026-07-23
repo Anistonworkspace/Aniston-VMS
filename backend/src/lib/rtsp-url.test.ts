@@ -172,12 +172,15 @@ describe('injectRtspCredentials', () => {
   });
 
   it('percent-encodes an @ in the password so a path-cred URL still parses (regression: prod digest cameras)', () => {
-    // Mirrors the real failing prod camera: password contains `@`, creds are in
-    // the path, and DESCRIBE succeeded via Digest but ffprobe 401'd because no
-    // userinfo was injected. `@` MUST become %40 or it breaks the authority.
-    const url = 'rtsp://122.180.29.77/user=admin_password=Mcd@12345_channel=1_stream=0';
-    expect(injectRtspCredentials(url, 'admin', 'Mcd@12345')).toBe(
-      'rtsp://admin:Mcd%4012345@122.180.29.77/user=admin_password=Mcd@12345_channel=1_stream=0'
+    // Mirrors the real-world failing camera SHAPE (all values FABRICATED per the
+    // file header — documentation IP + fake password): password contains `@`,
+    // creds live in the path, DESCRIBE succeeds via Digest but ffprobe 401s unless
+    // userinfo is injected. Two invariants: the `@` in the PATH must NOT be read as
+    // userinfo (so injection still fires), and the `@` in the PASSWORD MUST become
+    // %40 or it breaks the authority.
+    const url = 'rtsp://198.51.100.7/user=admin_password=FAKE@pw99_channel=1_stream=0';
+    expect(injectRtspCredentials(url, 'admin', 'FAKE@pw99')).toBe(
+      'rtsp://admin:FAKE%40pw99@198.51.100.7/user=admin_password=FAKE@pw99_channel=1_stream=0'
     );
   });
 

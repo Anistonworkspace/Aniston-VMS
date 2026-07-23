@@ -439,21 +439,21 @@ describe('testCameraConnection — real (non-sim) probe', () => {
     ffprobeStreamMock.mockResolvedValue(passingProbe);
 
     const result = await testCameraConnection({
-      mainRtspUrl: 'rtsp://122.180.29.77/user=admin_password=Mcd@12345_channel=1_stream=0',
+      mainRtspUrl: 'rtsp://198.51.100.7/user=admin_password=FAKE@pw99_channel=1_stream=0',
       rtspUsername: 'admin',
-      rtspPassword: 'Mcd@12345',
+      rtspPassword: 'FAKE@pw99',
     });
 
     expect(result.success).toBe(true);
     // DESCRIBE still gets the raw URL + separate creds (it builds its own Digest header)…
     expect(rtspDescribeMock).toHaveBeenCalledWith(
-      'rtsp://122.180.29.77/user=admin_password=Mcd@12345_channel=1_stream=0',
+      'rtsp://198.51.100.7/user=admin_password=FAKE@pw99_channel=1_stream=0',
       'admin',
-      'Mcd@12345'
+      'FAKE@pw99'
     );
     // …but ffprobe MUST receive the creds in the userinfo (percent-encoded @).
     expect(ffprobeStreamMock).toHaveBeenCalledWith(
-      'rtsp://admin:Mcd%4012345@122.180.29.77/user=admin_password=Mcd@12345_channel=1_stream=0'
+      'rtsp://admin:FAKE%40pw99@198.51.100.7/user=admin_password=FAKE@pw99_channel=1_stream=0'
     );
   });
 
