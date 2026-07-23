@@ -129,7 +129,7 @@ function toIncidentSummaryStatus(status: IncidentStatus): IncidentSummaryStatus 
 
 export async function listRecentIncidentSummaries(
   userId: string,
-  limit = WIDGET_LIMIT,
+  limit = WIDGET_LIMIT
 ): Promise<IncidentSummaryDto[]> {
   const scope = await getUserScope(userId);
   const rows = await prisma.incident.findMany({
@@ -190,6 +190,10 @@ export async function getLatestEvidence(userId: string): Promise<EvidenceSnapsho
     },
   });
   if (!snap) return null;
+  // The `camera` relation filter above only matches snapshots whose camera row
+  // still exists, so this is unreachable at runtime — but cameraId is nullable
+  // now, so narrow the widened type for the field accesses below.
+  if (!snap.camera) return null;
 
   return {
     id: snap.id,

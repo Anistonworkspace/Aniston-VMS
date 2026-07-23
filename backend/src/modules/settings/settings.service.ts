@@ -154,8 +154,11 @@ export async function getCapacityOverview() {
 
   const liveBySite = new Map<string, number>();
   for (const s of activeLive) {
-    // A live session implies a streaming (CONFIGURED) camera, so siteId is set.
-    liveBySite.set(s.camera.siteId!, (liveBySite.get(s.camera.siteId!) ?? 0) + 1);
+    // A live session normally implies a streaming (CONFIGURED) camera with a
+    // siteId. A camera hard-deleted mid-session leaves the row's camera null —
+    // skip it since it can no longer be attributed to a site.
+    if (!s.camera?.siteId) continue;
+    liveBySite.set(s.camera.siteId, (liveBySite.get(s.camera.siteId) ?? 0) + 1);
   }
   const camsBySite = new Map<string, { count: number; dailyGb: number }>();
   let totalDailyGb = 0;
@@ -262,7 +265,7 @@ export async function createBackup(actor: AuthUser, input: CreateBackupInput) {
       try {
         const buf = await storage.get(s.originalKey);
         const stamp = s.capturedAt.toISOString().replace(/:/g, '-');
-        zip.file(`snapshots/${s.camera.cameraCode}/${stamp}_${s.id}.jpg`, buf);
+        zip.file(`snapshots/${s.camera?.cameraCode ?? 'unknown-camera'}/${stamp}_${s.id}.jpg`, buf);
         included = true;
         filesIncluded += 1;
       } catch {
@@ -272,8 +275,8 @@ export async function createBackup(actor: AuthUser, input: CreateBackupInput) {
       rows.push(
         [
           s.id,
-          csvCell(s.camera.cameraCode),
-          csvCell(s.camera.name),
+          csvCell(s.camera?.cameraCode ?? ''),
+          csvCell(s.camera?.name ?? ''),
           s.capturedAt.toISOString(),
           s.kind,
           String(s.stamped),

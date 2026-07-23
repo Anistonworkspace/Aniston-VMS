@@ -224,7 +224,7 @@ export async function deleteWindow(actor: AuthUser, id: string): Promise<void> {
 
 export interface TaskDto {
   id: string;
-  cameraId: string;
+  cameraId: string | null;
   type: TaskType;
   source: TaskSource;
   status: TaskStatus;
@@ -394,7 +394,9 @@ export async function transitionTaskStatus(
   const data: Prisma.MaintenanceTaskUpdateInput = { status: next };
 
   if (next === 'IN_PROGRESS' && !task.beforeSnapshotId) {
-    const camera = await prisma.camera.findUnique({ where: { id: task.cameraId } });
+    const camera = task.cameraId
+      ? await prisma.camera.findUnique({ where: { id: task.cameraId } })
+      : null;
     if (camera) {
       const snapshot = await captureSnapshot(camera, SnapshotKind.SUB, new Date());
       if (snapshot) {
@@ -411,7 +413,9 @@ export async function transitionTaskStatus(
   if (next === 'DONE') {
     data.completedAt = new Date();
     if (!task.afterSnapshotId) {
-      const camera = await prisma.camera.findUnique({ where: { id: task.cameraId } });
+      const camera = task.cameraId
+        ? await prisma.camera.findUnique({ where: { id: task.cameraId } })
+        : null;
       if (camera) {
         const snapshot = await captureSnapshot(camera, SnapshotKind.SUB, new Date());
         if (snapshot) {

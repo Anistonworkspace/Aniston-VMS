@@ -79,9 +79,20 @@ export async function canAccessSite(scope: ResolvedScope, siteId: string): Promi
   return site !== null;
 }
 
-/** True when the given camera is visible under the resolved scope. */
-export async function canAccessCamera(scope: ResolvedScope, cameraId: string): Promise<boolean> {
+/**
+ * True when the given camera is visible under the resolved scope.
+ *
+ * `cameraId` may be null for records whose camera was hard-deleted (history is
+ * retained via ON DELETE SET NULL). Such orphaned history has no site to scope
+ * against, so it is only visible to org-wide (ALL) scopes — handled first — and
+ * fails closed for every zone/site-scoped caller.
+ */
+export async function canAccessCamera(
+  scope: ResolvedScope,
+  cameraId: string | null
+): Promise<boolean> {
   if (scope.all) return true;
+  if (cameraId === null) return false;
   const camera = await prisma.camera.findFirst({
     where: { AND: [{ id: cameraId }, cameraScopeWhere(scope)] },
     select: { id: true },

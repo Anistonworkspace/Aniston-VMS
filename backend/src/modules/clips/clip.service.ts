@@ -37,7 +37,7 @@ async function requireCamera(userId: string, cameraId: string) {
 
 function toPublicClip(clip: ClipExport): {
   id: string;
-  cameraId: string;
+  cameraId: string | null;
   requestedById: string;
   startAt: Date;
   endAt: Date;
@@ -66,7 +66,7 @@ function toPublicClip(clip: ClipExport): {
     downloadUrl:
       clip.status === 'DONE' && clip.s3Key
         ? signStorageUrl(clip.s3Key, {
-            filename: `clip-${clip.cameraId}-${clip.id}.mp4`,
+            filename: `clip-${clip.cameraId ?? 'camera'}-${clip.id}.mp4`,
             contentType: 'video/mp4',
           })
         : null,
@@ -209,8 +209,12 @@ export async function runClipExportJob(clipExportId: string): Promise<void> {
       1,
       Math.round((clip.endAt.getTime() - clip.startAt.getTime()) / 1000)
     );
-    const buffer = simulateClipBytes(clip.camera.cameraCode, clip.id, durationSeconds);
-    const key = `clips/${clip.cameraId}/${clip.id}.mp4`;
+    // The camera may have been hard-deleted after this job was queued; the clip
+    // row keeps its cameraId=null. Fall back to stable seeds so the historical
+    // export still succeeds.
+    const cameraCode = clip.camera?.cameraCode ?? 'deleted-camera';
+    const buffer = simulateClipBytes(cameraCode, clip.id, durationSeconds);
+    const key = `clips/${clip.cameraId ?? 'orphaned'}/${clip.id}.mp4`;
     await storage.put(key, buffer, 'video/mp4');
     await prisma.clipExport.update({
       where: { id: clipExportId },

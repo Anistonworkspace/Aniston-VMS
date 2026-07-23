@@ -52,8 +52,16 @@ describe('normalizeRtspUrl — sanitizing transforms', () => {
     ['strips wrapping double quotes', '"rtsp://cam.example/s"', 'rtsp://cam.example/s'],
     ['strips wrapping single quotes', "'rtsp://cam.example/s'", 'rtsp://cam.example/s'],
     ['strips wrapping smart quotes', '“rtsp://cam.example/s”', 'rtsp://cam.example/s'],
-    ['strips nested/mismatched wrapping quotes with inner spaces', '  "  rtsp://cam.example/s  "  ', 'rtsp://cam.example/s'],
-    ['decodes named &amp; entity', 'rtsp://h:554/a&amp;onvif=0.sdp?x', 'rtsp://h:554/a&onvif=0.sdp?x'],
+    [
+      'strips nested/mismatched wrapping quotes with inner spaces',
+      '  "  rtsp://cam.example/s  "  ',
+      'rtsp://cam.example/s',
+    ],
+    [
+      'decodes named &amp; entity',
+      'rtsp://h:554/a&amp;onvif=0.sdp?x',
+      'rtsp://h:554/a&onvif=0.sdp?x',
+    ],
     ['decodes decimal &#38; entity', 'rtsp://h/a&#38;b', 'rtsp://h/a&b'],
     ['decodes hex &#x26; entity', 'rtsp://h/a&#x26;b', 'rtsp://h/a&b'],
     ['collapses double-encoded &amp;amp;', 'rtsp://h/a&amp;amp;b', 'rtsp://h/a&b'],
@@ -152,9 +160,25 @@ describe('injectRtspCredentials', () => {
     );
   });
 
-  it('leaves a legacy path-cred URL untouched (no double credentials)', () => {
+  it('injects userinfo even when legacy path-cred tokens are present (path creds do NOT authenticate a digest-required camera)', () => {
+    // The `…/user=x_password=y` tokens live in the request-URI path; libavformat
+    // (ffmpeg/ffprobe) never uses them for RTSP auth, so a camera that challenges
+    // for Digest 401s unless the creds are also in the userinfo. Injecting is
+    // additive and safe — the path tokens stay intact for cameras that read them.
     const legacy = 'rtsp://10.20.40.11:554/user=admin_password=FAKEpw9_channel=1_stream=0';
-    expect(injectRtspCredentials(legacy, 'admin', 'x')).toBe(legacy);
+    expect(injectRtspCredentials(legacy, 'admin', 'x')).toBe(
+      'rtsp://admin:x@10.20.40.11:554/user=admin_password=FAKEpw9_channel=1_stream=0'
+    );
+  });
+
+  it('percent-encodes an @ in the password so a path-cred URL still parses (regression: prod digest cameras)', () => {
+    // Mirrors the real failing prod camera: password contains `@`, creds are in
+    // the path, and DESCRIBE succeeded via Digest but ffprobe 401'd because no
+    // userinfo was injected. `@` MUST become %40 or it breaks the authority.
+    const url = 'rtsp://122.180.29.77/user=admin_password=Mcd@12345_channel=1_stream=0';
+    expect(injectRtspCredentials(url, 'admin', 'Mcd@12345')).toBe(
+      'rtsp://admin:Mcd%4012345@122.180.29.77/user=admin_password=Mcd@12345_channel=1_stream=0'
+    );
   });
 
   it('leaves the URL untouched when username is empty', () => {
@@ -190,11 +214,7 @@ describe('redactRtsp — scrubs every credential shape, preserves non-secret fie
       'sent Bearer aaaabbbbccccddddeeee to gateway',
       'sent Bearer *** to gateway',
     ],
-    [
-      'standalone Basic token',
-      'header was Basic dXNlcjpwYXNzd29yZA==',
-      'header was Basic ***',
-    ],
+    ['standalone Basic token', 'header was Basic dXNlcjpwYXNzd29yZA==', 'header was Basic ***'],
     [
       'nothing secret is left unchanged',
       'DESCRIBE rtsp://cam.example:554/stream1 RTSP/1.0 200 OK',

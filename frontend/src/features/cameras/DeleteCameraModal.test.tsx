@@ -33,7 +33,10 @@ describe('DeleteCameraModal', () => {
     expect(screen.getByText('Front Door')).toBeInTheDocument();
     expect(screen.getByText(/CAM-001/)).toBeInTheDocument();
     expect(screen.getByText(/HQ/)).toBeInTheDocument();
-    expect(screen.getByText(/never deletes historical incidents/i)).toBeInTheDocument();
+    // Copy now promises the delete succeeds and history is retained (not blocked).
+    expect(
+      screen.getByText(/removes it permanently.*retained and stay accessible/is)
+    ).toBeInTheDocument();
   });
 
   it('calls onCancel and onConfirm from the buttons', () => {
@@ -50,9 +53,11 @@ describe('DeleteCameraModal', () => {
     expect(screen.getByRole('button', { name: /cancel/i })).toBeDisabled();
   });
 
-  it('renders the error message and keeps the modal open', () => {
-    setup({ errorMessage: 'This camera cannot be removed because it still has recorded history.' });
-    expect(screen.getByRole('alert')).toHaveTextContent(/recorded history/i);
+  it('renders a generic failure message and keeps the modal open', () => {
+    // History no longer blocks deletion, so the only errors are transient
+    // failures (network / server). The modal just surfaces whatever it is given.
+    setup({ errorMessage: 'Something went wrong while removing the camera. Please try again.' });
+    expect(screen.getByRole('alert')).toHaveTextContent(/something went wrong/i);
     expect(screen.getByText('Front Door')).toBeInTheDocument();
   });
 });

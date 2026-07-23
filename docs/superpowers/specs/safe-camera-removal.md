@@ -1,3 +1,12 @@
+> ⚠️ **SUPERSEDED (2026-07-23).** This spec described a *history-guarded* delete:
+> a camera with any retained history (incidents, recordings, snapshots, health
+> records) was **blocked** from removal and the API returned `409 ConflictError`.
+> That behavior has been reversed. Camera foreign keys are now `ON DELETE SET NULL`,
+> so **any camera can always be deleted**; its historical rows are retained with
+> `cameraId` nulled. The `deleteCamera` service no longer performs the retained-history
+> guard or the P2003→409 mapping, and the UI no longer blocks removal. This document
+> is kept for historical context only — do not implement from it.
+
 # Design Spec — Safely Removing an Added Camera
 
 **Status:** Approved design (pre-plan). Ready to hand to the writing-plans skill.

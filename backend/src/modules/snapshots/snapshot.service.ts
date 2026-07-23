@@ -204,7 +204,7 @@ export async function getSnapshotFile(
 
 export interface SnapshotDto extends SimScores {
   id: string;
-  cameraId: string;
+  cameraId: string | null;
   capturedAt: Date;
   kind: SnapshotKind;
   thumbUrl: string;

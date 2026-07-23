@@ -44,18 +44,27 @@ afterEach(() => {
 
 describe('resolveCameraSource', () => {
   it('injects credentials into a bare rtsp URL and uses the SUB stream for LIVE_SUB', () => {
-    expect(resolveCameraSource(makeCamera(), 'LIVE_SUB')).toBe('rtsp://admin:s3cr3t@cam.example/sub');
+    expect(resolveCameraSource(makeCamera(), 'LIVE_SUB')).toBe(
+      'rtsp://admin:s3cr3t@cam.example/sub'
+    );
   });
 
   it('uses the MAIN stream for LIVE_MAIN and PLAYBACK', () => {
-    expect(resolveCameraSource(makeCamera(), 'LIVE_MAIN')).toBe('rtsp://admin:s3cr3t@cam.example/main');
-    expect(resolveCameraSource(makeCamera(), 'PLAYBACK')).toBe('rtsp://admin:s3cr3t@cam.example/main');
+    expect(resolveCameraSource(makeCamera(), 'LIVE_MAIN')).toBe(
+      'rtsp://admin:s3cr3t@cam.example/main'
+    );
+    expect(resolveCameraSource(makeCamera(), 'PLAYBACK')).toBe(
+      'rtsp://admin:s3cr3t@cam.example/main'
+    );
   });
 
-  it('leaves a URL that embeds credentials in the path untouched (no double-injection)', () => {
+  it('injects userinfo into a path-cred URL (path tokens do NOT authenticate a Digest camera)', () => {
+    // Legacy `…/user=x_password=y` path tokens are part of the request-URI, not
+    // RTSP auth. MediaMTX/ffmpeg 401 without userinfo, so we inject the stored
+    // creds; the path tokens stay intact. This is the live-wall/streaming fix.
     const embedded = 'enc:rtsp://192.0.2.10:554/user=admin_password=pw_channel=0';
     expect(resolveCameraSource(makeCamera({ subRtspUrlEncrypted: embedded }), 'LIVE_SUB')).toBe(
-      'rtsp://192.0.2.10:554/user=admin_password=pw_channel=0'
+      'rtsp://admin:s3cr3t@192.0.2.10:554/user=admin_password=pw_channel=0'
     );
   });
 
@@ -66,18 +75,19 @@ describe('resolveCameraSource', () => {
     );
   });
 
-  it('normalizes an HTML-encoded ampersand (&amp;) in the stored URL back to a literal &', () => {
-    const encoded = 'enc:rtsp://192.0.2.10:554/user=admin_password=pw_channel=1_stream=0&amp;onvif=0.sdp';
+  it('normalizes an HTML-encoded ampersand (&amp;) in the stored URL back to a literal & (and injects creds)', () => {
+    const encoded =
+      'enc:rtsp://192.0.2.10:554/user=admin_password=pw_channel=1_stream=0&amp;onvif=0.sdp';
     expect(resolveCameraSource(makeCamera({ subRtspUrlEncrypted: encoded }), 'LIVE_SUB')).toBe(
-      'rtsp://192.0.2.10:554/user=admin_password=pw_channel=1_stream=0&onvif=0.sdp'
+      'rtsp://admin:s3cr3t@192.0.2.10:554/user=admin_password=pw_channel=1_stream=0&onvif=0.sdp'
     );
   });
 
-  it('collapses accidental double-encoding (&amp;amp;) to a single &', () => {
+  it('collapses accidental double-encoding (&amp;amp;) to a single & (and injects creds)', () => {
     const encoded =
       'enc:rtsp://192.0.2.10:554/user=admin_password=pw_channel=1_stream=0&amp;amp;onvif=0.sdp';
     expect(resolveCameraSource(makeCamera({ subRtspUrlEncrypted: encoded }), 'LIVE_SUB')).toBe(
-      'rtsp://192.0.2.10:554/user=admin_password=pw_channel=1_stream=0&onvif=0.sdp'
+      'rtsp://admin:s3cr3t@192.0.2.10:554/user=admin_password=pw_channel=1_stream=0&onvif=0.sdp'
     );
   });
 });
@@ -190,7 +200,9 @@ describe('publishStream', () => {
 
   it('throws a clear error when the MediaMTX API is unreachable', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
-    await expect(publishStream('live/x/CAM/s', makeCamera(), 'LIVE_SUB')).rejects.toThrow(/unreachable/i);
+    await expect(publishStream('live/x/CAM/s', makeCamera(), 'LIVE_SUB')).rejects.toThrow(
+      /unreachable/i
+    );
   });
 
   it('treats HTTP 400 (path already exists) as an idempotent success', async () => {
@@ -200,7 +212,9 @@ describe('publishStream', () => {
 
   it('throws on other non-2xx responses', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 }));
-    await expect(publishStream('live/x/CAM/s', makeCamera(), 'LIVE_SUB')).rejects.toThrow(/HTTP 500/);
+    await expect(publishStream('live/x/CAM/s', makeCamera(), 'LIVE_SUB')).rejects.toThrow(
+      /HTTP 500/
+    );
   });
 });
 

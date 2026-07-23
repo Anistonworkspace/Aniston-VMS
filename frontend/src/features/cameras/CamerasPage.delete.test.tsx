@@ -12,8 +12,24 @@ const h = vi.hoisted(() => ({
 }));
 
 const cameras = [
-  { id: 'cam-1', name: 'Front Door', cameraCode: 'CAM-001', status: 'HEALTHY', healthScore: 90, maintenanceMode: false, site: { id: 's1', name: 'HQ' } },
-  { id: 'cam-2', name: 'Lobby', cameraCode: 'CAM-002', status: 'WARNING', healthScore: 60, maintenanceMode: false, site: { id: 's1', name: 'HQ' } },
+  {
+    id: 'cam-1',
+    name: 'Front Door',
+    cameraCode: 'CAM-001',
+    status: 'HEALTHY',
+    healthScore: 90,
+    maintenanceMode: false,
+    site: { id: 's1', name: 'HQ' },
+  },
+  {
+    id: 'cam-2',
+    name: 'Lobby',
+    cameraCode: 'CAM-002',
+    status: 'WARNING',
+    healthScore: 60,
+    maintenanceMode: false,
+    site: { id: 's1', name: 'HQ' },
+  },
 ];
 
 vi.mock('./cameras.api', () => ({
@@ -138,9 +154,12 @@ describe('CamerasPage — delete', () => {
     );
   });
 
-  it('on failure keeps the modal open, shows the error, and leaves the camera in the list', async () => {
+  it('on a transient failure keeps the modal open, shows the error, and leaves the camera in the list', async () => {
+    // History no longer blocks deletion, so the only remaining failure is a
+    // transient server/network error. A bare 500 (no structured body) surfaces
+    // the generic fallback copy from getApiErrorMessage.
     h.del.mockReturnValueOnce({
-      unwrap: () => Promise.reject({ status: 409, data: { error: { code: 'CONFLICT', message: 'still has recorded history' } } }),
+      unwrap: () => Promise.reject({ status: 500, data: undefined }),
     });
     renderPage();
     fireEvent.click(screen.getByRole('button', { name: /delete camera/i }));
@@ -152,7 +171,7 @@ describe('CamerasPage — delete', () => {
     fireEvent.click(screen.getByRole('button', { name: /select front door to delete/i }));
     const dialog = screen.getByRole('dialog');
     fireEvent.click(within(dialog).getByRole('button', { name: /^delete camera$/i }));
-    expect(await screen.findByText(/still has recorded history/i)).toBeInTheDocument();
+    expect(await screen.findByText(/something went wrong/i)).toBeInTheDocument();
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     // The camera card is still present in the grid (its selection button remains),
     // proving the failed delete left the list untouched. (Note: the name also

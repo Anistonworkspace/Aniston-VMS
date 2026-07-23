@@ -407,14 +407,14 @@ model Camera {
 
 model ReferenceImage {
   id           String   @id @default(uuid())
-  cameraId     String   @map("camera_id")
+  cameraId     String?  @map("camera_id")
   s3Key        String   @map("s3_key")
   approvedById String   @map("approved_by")
   approvedAt   DateTime @map("approved_at")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  camera     Camera @relation(fields: [cameraId], references: [id])
+  camera     Camera? @relation(fields: [cameraId], references: [id], onDelete: SetNull)
   approvedBy User   @relation(fields: [approvedById], references: [id], onDelete: Restrict)
 
   @@map("reference_images")
@@ -426,7 +426,7 @@ model ReferenceImage {
 
 model HealthCheck {
   id             String    @id @default(uuid())
-  cameraId       String    @map("camera_id")
+  cameraId       String?   @map("camera_id")
   checkType      CheckType @map("check_type")
   startedAt      DateTime  @map("started_at")
   completedAt    DateTime? @map("completed_at")
@@ -444,17 +444,15 @@ model HealthCheck {
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")
 
-  camera Camera @relation(fields: [cameraId], references: [id])
+  camera Camera? @relation(fields: [cameraId], references: [id], onDelete: SetNull)
 
-  // NOTE: table is PARTITION BY RANGE (started_at), monthly — applied via raw SQL
-  // in a migration; Prisma cannot express declarative partitioning.
   @@index([cameraId, startedAt])
   @@map("health_checks")
 }
 
 model ConnectionQualityHourly {
   id              String   @id @default(uuid())
-  cameraId        String   @map("camera_id")
+  cameraId        String?  @map("camera_id")
   hour            DateTime @db.Timestamptz(6)
   successRate     Float    @map("success_rate")
   medianLatencyMs Int      @map("median_latency_ms")
@@ -463,7 +461,7 @@ model ConnectionQualityHourly {
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
-  camera Camera @relation(fields: [cameraId], references: [id])
+  camera Camera? @relation(fields: [cameraId], references: [id], onDelete: SetNull)
 
   @@unique([cameraId, hour])
   @@map("connection_quality_hourly")
@@ -471,7 +469,7 @@ model ConnectionQualityHourly {
 
 model Snapshot {
   id               String       @id @default(uuid())
-  cameraId         String       @map("camera_id")
+  cameraId         String?      @map("camera_id")
   capturedAt       DateTime     @map("captured_at")
   kind             SnapshotKind
   originalKey      String       @map("original_key")
@@ -493,7 +491,7 @@ model Snapshot {
   createdAt        DateTime     @default(now()) @map("created_at")
   updatedAt        DateTime     @updatedAt @map("updated_at")
 
-  camera                   Camera            @relation(fields: [cameraId], references: [id])
+  camera                   Camera?           @relation(fields: [cameraId], references: [id], onDelete: SetNull)
   incidentsAsPrevious      Incident[]        @relation("IncidentPreviousSnapshot")
   incidentsAsFault         Incident[]        @relation("IncidentFaultSnapshot")
   maintenanceTasksAsBefore MaintenanceTask[] @relation("MaintenanceTaskBeforeSnapshot")
@@ -505,7 +503,7 @@ model Snapshot {
 
 model SdCardStatus {
   id               String    @id @default(uuid())
-  cameraId         String    @unique @map("camera_id")
+  cameraId         String?   @unique @map("camera_id")
   present          Boolean
   capacityGb       Float?    @map("capacity_gb")
   freeGb           Float?    @map("free_gb")
@@ -515,14 +513,14 @@ model SdCardStatus {
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
-  camera Camera @relation(fields: [cameraId], references: [id])
+  camera Camera? @relation(fields: [cameraId], references: [id], onDelete: SetNull)
 
   @@map("sd_card_status")
 }
 
 model RecordingSegment {
   id           String         @id @default(uuid())
-  cameraId     String         @map("camera_id")
+  cameraId     String?        @map("camera_id")
   source       String         @default("sd_card")
   track        RecordingTrack
   startAt      DateTime       @map("start_at")
@@ -531,7 +529,7 @@ model RecordingSegment {
   createdAt    DateTime       @default(now()) @map("created_at")
   updatedAt    DateTime       @updatedAt @map("updated_at")
 
-  camera Camera @relation(fields: [cameraId], references: [id])
+  camera Camera? @relation(fields: [cameraId], references: [id], onDelete: SetNull)
 
   @@index([cameraId, startAt])
   @@map("recording_segments")
@@ -717,7 +715,7 @@ model MaintenanceWindow {
 
 model MaintenanceTask {
   id               String     @id @default(uuid())
-  cameraId         String     @map("camera_id")
+  cameraId         String?    @map("camera_id")
   type             TaskType
   source           TaskSource
   status           TaskStatus
@@ -729,7 +727,7 @@ model MaintenanceTask {
   createdAt        DateTime   @default(now()) @map("created_at")
   updatedAt        DateTime   @updatedAt @map("updated_at")
 
-  camera         Camera    @relation(fields: [cameraId], references: [id])
+  camera         Camera?   @relation(fields: [cameraId], references: [id], onDelete: SetNull)
   assignedTo     User?     @relation("MaintenanceTaskAssignedTo", fields: [assignedToId], references: [id], onDelete: Restrict)
   beforeSnapshot Snapshot? @relation("MaintenanceTaskBeforeSnapshot", fields: [beforeSnapshotId], references: [id])
   afterSnapshot  Snapshot? @relation("MaintenanceTaskAfterSnapshot", fields: [afterSnapshotId], references: [id])
@@ -743,7 +741,7 @@ model MaintenanceTask {
 
 model StreamSession {
   id              String     @id @default(uuid())
-  cameraId        String     @map("camera_id")
+  cameraId        String?    @map("camera_id")
   userId          String     @map("user_id")
   kind            StreamKind
   mediamtxPath    String     @map("mediamtx_path")
@@ -756,7 +754,7 @@ model StreamSession {
   createdAt       DateTime   @default(now()) @map("created_at")
   updatedAt       DateTime   @updatedAt @map("updated_at")
 
-  camera Camera @relation(fields: [cameraId], references: [id])
+  camera Camera? @relation(fields: [cameraId], references: [id], onDelete: SetNull)
   user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@index([cameraId, endedAt])
@@ -766,7 +764,7 @@ model StreamSession {
 
 model ClipExport {
   id            String     @id @default(uuid())
-  cameraId      String     @map("camera_id")
+  cameraId      String?    @map("camera_id")
   requestedById String     @map("requested_by")
   startAt       DateTime   @map("start_at")
   endAt         DateTime   @map("end_at")
@@ -778,7 +776,7 @@ model ClipExport {
   createdAt     DateTime   @default(now()) @map("created_at")
   updatedAt     DateTime   @updatedAt @map("updated_at")
 
-  camera      Camera    @relation(fields: [cameraId], references: [id])
+  camera      Camera?   @relation(fields: [cameraId], references: [id], onDelete: SetNull)
   requestedBy User      @relation(fields: [requestedById], references: [id], onDelete: Restrict)
   incident    Incident? @relation(fields: [incidentId], references: [id])
 

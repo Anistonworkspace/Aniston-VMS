@@ -1,15 +1,10 @@
 import crypto from 'node:crypto';
 import type { Request } from 'express';
-import { Prisma } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 import type { Camera } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
 import { audit, auditWithinTx } from '../../lib/audit.js';
-import {
-  ConflictError,
-  ForbiddenError,
-  NotFoundError,
-  ValidationError,
-} from '../../middleware/errorHandler.js';
+import { ForbiddenError, NotFoundError, ValidationError } from '../../middleware/errorHandler.js';
 import { canAccessCamera, canAccessSite, cameraScopeWhere, getUserScope } from '../../lib/scope.js';
 import type { AuthUser } from '../../middleware/auth.js';
 import { encrypt, decrypt } from '../../utils/encryption.js';
@@ -33,6 +28,7 @@ import {
   simulateStages,
   type CheckResult,
 } from '../health/health.checkers.js';
+import { injectRtspCredentials } from '../../lib/rtsp-url.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Cameras — leaf of the Region → Zone → Site → Router → Camera hierarchy
@@ -397,7 +393,12 @@ export async function testCameraConnection(
       },
     };
   }
-  const video = await ffprobeStream(input.mainRtspUrl);
+  // ffprobe (unlike rtspDescribe) has no separate credential params — it can only
+  // authenticate with creds embedded in the URL userinfo. Inject them so a camera
+  // that requires RTSP Digest auth (DESCRIBE above proved it does) doesn't 401 →
+  // `ffprobe exit 1`. Mirrors resolveCameraSource() used by live-wall/streaming.
+  const probeUrl = injectRtspCredentials(input.mainRtspUrl, input.rtspUsername, input.rtspPassword);
+  const video = await ffprobeStream(probeUrl);
   return { success: video.success, simMode: false, describe, video };
 }
 
@@ -474,42 +475,22 @@ export async function updateCamera(
 
 export async function deleteCamera(id: string, actor: AuthUser, req: Request) {
   const before = await findCameraOrThrow(id, actor); // 404 out-of-scope-missing / 403 forbidden
-  const [incidentCount, referenceImageCount] = await Promise.all([
-    prisma.incident.count({ where: { cameraId: id } }),
-    prisma.referenceImage.count({ where: { cameraId: id } }),
-  ]);
-  if (incidentCount > 0)
-    throw new ConflictError('Cannot delete a camera that still has recorded incidents');
-  if (referenceImageCount > 0) {
-    throw new ConflictError('Cannot delete a camera that still has approved reference images');
-  }
 
+  // Removing a camera is ALWAYS allowed — any and every camera can be deleted.
+  // Every table that references a camera (incidents, health_checks, snapshots,
+  // connection_quality_hourly, sd_card_status, recording_segments,
+  // reference_images, maintenance_tasks, maintenance_windows, stream_sessions,
+  // clip_exports) has an ON DELETE SET NULL foreign key, so historical rows are
+  // preserved with their camera_id nulled instead of blocking the delete. There is
+  // no "retained history" 409 path any more.
+  //
   // Delete + audit as one atomic unit: auditWithinTx writes inside the same
   // transaction, so we never lose the audit trail for a delete (the old
-  // best-effort audit(req, …) swallowed failures). Throwing anywhere inside the
-  // callback rolls the whole transaction back, so nothing is left half-removed.
+  // best-effort audit(req, …) swallowed failures). If the audit write fails, the
+  // whole transaction rolls back rather than leaving a camera removed with no
+  // audit record; the error propagates to the global handler unchanged.
   await prisma.$transaction(async (tx) => {
-    // Scope the P2003 → 409 conversion to the delete itself. A foreign-key
-    // violation HERE means the camera still has retained history. An audit-side
-    // DB failure must NOT be caught here, or it would be mislabeled as
-    // "retained history"; it propagates instead (→ 500 via the global handler),
-    // which is the correct signal for a genuine server-side audit failure.
-    try {
-      await tx.camera.delete({ where: { id } });
-    } catch (err) {
-      // The remaining RESTRICT foreign keys (health_checks, snapshots,
-      // connection_quality_hourly, sd_card_status, recording_segments,
-      // maintenance_tasks, stream_sessions, clip_exports) throw Prisma P2003.
-      // The global errorHandler only maps P2002/P2025, so without this a camera
-      // with history would 500 and leak a Prisma message. Convert to a clean 409.
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2003') {
-        throw new ConflictError(
-          "This camera can't be removed because it still has recorded history " +
-            '(recordings, snapshots, or health records). Its history is retained.'
-        );
-      }
-      throw err; // unknown delete errors bubble to the global errorHandler unchanged
-    }
+    await tx.camera.delete({ where: { id } });
 
     await auditWithinTx(tx, {
       userId: actor.id,

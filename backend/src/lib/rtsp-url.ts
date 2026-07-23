@@ -36,8 +36,6 @@ export class InvalidRtspUrlError extends Error {
 const RTSP_SCHEME_RE = /^rtsps?:\/\//i;
 // rtsp://user:pass@host — credentials already in the URL userinfo.
 const HAS_USERINFO_RE = /^rtsps?:\/\/[^/@]+@/i;
-// Some ONVIF/Hikvision/Dahua variants embed creds in the path (…/user=x_password=y).
-const EMBEDS_CREDS_RE = /(?:user|usr|password|pwd)=/i;
 
 // Any C0 control char (incl. CR/LF/TAB), a raw space, or DEL. A well-formed RTSP
 // URL has none of these after trimming; a raw CR/LF is an injection attempt.
@@ -139,17 +137,23 @@ export function isValidRtspUrl(raw: unknown): boolean {
 }
 
 /**
- * Inject stored username/password into a bare `rtsp://host/…` URL as userinfo.
- * Left UNTOUCHED when the URL already carries credentials — either as userinfo
- * (`user:pass@`) or as legacy path tokens (`…/user=x_password=y`) — so a legacy
- * vendor URL never gets a second, wrong set of credentials prepended, and a
- * fully-pasted credentialed URL keeps working verbatim.
+ * Inject stored username/password into an `rtsp://host/…` URL as userinfo.
+ * Left UNTOUCHED only when the URL ALREADY has real userinfo (`user:pass@`) or
+ * no username is stored — a fully-pasted credentialed URL keeps working verbatim.
+ *
+ * Legacy vendor path tokens (`…/user=x_password=y`) are NOT treated as valid
+ * credentials: libavformat (ffmpeg/ffprobe) and MediaMTX never use path tokens
+ * for RTSP auth, so a Digest-challenging camera 401s unless the creds are in the
+ * userinfo too. We therefore still inject; the path tokens stay intact (they're
+ * part of the request-URI) and the injection is additive. This is what makes
+ * Test Connection, live-wall snapshots, and MediaMTX streaming authenticate
+ * against real Hikvision/Dahua cameras that store creds in separate fields.
  *
  * Assumes `rawUrl` is already normalized. Credentials are percent-encoded so
  * `@`/`:`/`/` in a password can't break the authority.
  */
 export function injectRtspCredentials(rawUrl: string, username: string, password: string): string {
-  if (!username || HAS_USERINFO_RE.test(rawUrl) || EMBEDS_CREDS_RE.test(rawUrl)) return rawUrl;
+  if (!username || HAS_USERINFO_RE.test(rawUrl)) return rawUrl;
   return rawUrl.replace(
     RTSP_SCHEME_RE,
     (m) => `${m}${encodeURIComponent(username)}:${encodeURIComponent(password)}@`

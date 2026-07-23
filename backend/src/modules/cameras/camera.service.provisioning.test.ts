@@ -71,12 +71,10 @@ vi.mock('../../config/env.js', async (importOriginal) => {
   return { ...actual, env: { ...actual.env, HEALTH_SIM_MODE: false } };
 });
 
-const { registerCamera, configureCamera, activateCamera, deactivateCamera } = await import(
-  './camera.service.js'
-);
-const { ConflictError, ForbiddenError, NotFoundError, ValidationError } = await import(
-  '../../middleware/errorHandler.js'
-);
+const { registerCamera, configureCamera, activateCamera, deactivateCamera, testCameraConnection } =
+  await import('./camera.service.js');
+const { ConflictError, ForbiddenError, NotFoundError, ValidationError } =
+  await import('../../middleware/errorHandler.js');
 
 const actor = { id: 'user-1', role: 'PROJECT_ADMIN' as const, email: 'admin@example.com' };
 const reqStub = { ip: '10.0.0.9' } as unknown as Request;
@@ -213,9 +211,11 @@ describe('registerCamera — identity-only DRAFT create', () => {
   it('does NOT check site scope (a DRAFT camera has no site to scope against)', async () => {
     prismaMock.camera.create.mockResolvedValue(draftRow);
 
-    await registerCamera({ cameraCode: 'CAM-042', name: 'Front Door' } as Parameters<
-      typeof registerCamera
-    >[0], actor, reqStub);
+    await registerCamera(
+      { cameraCode: 'CAM-042', name: 'Front Door' } as Parameters<typeof registerCamera>[0],
+      actor,
+      reqStub
+    );
 
     expect(canAccessSiteMock).not.toHaveBeenCalled();
   });
@@ -223,9 +223,11 @@ describe('registerCamera — identity-only DRAFT create', () => {
   it('audits camera.register with a sanitized, secret-free newValue', async () => {
     prismaMock.camera.create.mockResolvedValue(draftRow);
 
-    const safe = await registerCamera({ cameraCode: 'CAM-042', name: 'Front Door' } as Parameters<
-      typeof registerCamera
-    >[0], actor, reqStub);
+    const safe = await registerCamera(
+      { cameraCode: 'CAM-042', name: 'Front Door' } as Parameters<typeof registerCamera>[0],
+      actor,
+      reqStub
+    );
 
     const auditData = prismaMock.auditLog.create.mock.calls[0]![0]!.data;
     expect(auditData).toMatchObject({
@@ -423,5 +425,53 @@ describe('deactivateCamera — CONFIGURED → DRAFT, config retained', () => {
       action: 'camera.deactivate',
       entityId: 'cam-1',
     });
+  });
+});
+
+// ── testCameraConnection — real-probe credential injection ────────────────────
+// Regression: prod cameras store creds in the separate rtspUsername/rtspPassword
+// fields and use a legacy path-cred URL. rtspDescribe authenticates via Digest,
+// but ffprobe can ONLY auth with creds in the URL userinfo. The endpoint used to
+// hand ffprobe the raw URL → 401 → "ffprobe exit 1" for every real camera.
+describe('testCameraConnection — real (non-sim) probe', () => {
+  it('injects the stored credentials into the URL handed to ffprobe (path-cred digest camera)', async () => {
+    rtspDescribeMock.mockResolvedValue(passingProbe);
+    ffprobeStreamMock.mockResolvedValue(passingProbe);
+
+    const result = await testCameraConnection({
+      mainRtspUrl: 'rtsp://122.180.29.77/user=admin_password=Mcd@12345_channel=1_stream=0',
+      rtspUsername: 'admin',
+      rtspPassword: 'Mcd@12345',
+    });
+
+    expect(result.success).toBe(true);
+    // DESCRIBE still gets the raw URL + separate creds (it builds its own Digest header)…
+    expect(rtspDescribeMock).toHaveBeenCalledWith(
+      'rtsp://122.180.29.77/user=admin_password=Mcd@12345_channel=1_stream=0',
+      'admin',
+      'Mcd@12345'
+    );
+    // …but ffprobe MUST receive the creds in the userinfo (percent-encoded @).
+    expect(ffprobeStreamMock).toHaveBeenCalledWith(
+      'rtsp://admin:Mcd%4012345@122.180.29.77/user=admin_password=Mcd@12345_channel=1_stream=0'
+    );
+  });
+
+  it('does NOT run ffprobe when DESCRIBE fails (no false-negative masking)', async () => {
+    rtspDescribeMock.mockResolvedValue({
+      success: false,
+      responseTimeMs: 4000,
+      errorCode: 'CAMERA_TIMEOUT',
+      errorMessage: 'RTSP timeout',
+    });
+
+    const result = await testCameraConnection({
+      mainRtspUrl: 'rtsp://10.0.0.5/stream',
+      rtspUsername: 'admin',
+      rtspPassword: 'pw',
+    });
+
+    expect(result.success).toBe(false);
+    expect(ffprobeStreamMock).not.toHaveBeenCalled();
   });
 });

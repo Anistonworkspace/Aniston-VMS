@@ -44,9 +44,8 @@ const prismaMock = {
 vi.mock('../../lib/prisma.js', () => ({ prisma: prismaMock }));
 
 const { deleteCamera } = await import('./camera.service.js');
-const { ConflictError, ForbiddenError, NotFoundError } = await import(
-  '../../middleware/errorHandler.js'
-);
+const { ConflictError, ForbiddenError, NotFoundError } =
+  await import('../../middleware/errorHandler.js');
 
 const actor = { id: 'user-1', role: 'PROJECT_ADMIN' as const, email: 'admin@example.com' };
 const reqStub = { ip: '10.0.0.9' } as unknown as Request;
@@ -93,8 +92,8 @@ beforeEach(() => {
   prismaMock.referenceImage.count.mockResolvedValue(0);
   txMock.camera.delete.mockResolvedValue(cameraRow);
   txMock.auditLog.create.mockResolvedValue({});
-  prismaMock.$transaction.mockImplementation(
-    async (fn: (tx: typeof txMock) => Promise<unknown>) => fn(txMock),
+  prismaMock.$transaction.mockImplementation(async (fn: (tx: typeof txMock) => Promise<unknown>) =>
+    fn(txMock)
   );
 });
 
@@ -118,20 +117,28 @@ describe('deleteCamera — guard rails (must never reach the delete)', () => {
     expect(prismaMock.$transaction).not.toHaveBeenCalled();
     expect(txMock.camera.delete).not.toHaveBeenCalled();
   });
+});
 
-  it('409s when the camera has recorded incidents (history is preserved)', async () => {
+describe('deleteCamera — retained history no longer blocks deletion', () => {
+  // Camera FKs are now ON DELETE SET NULL, so recorded history is preserved (its
+  // cameraId is nulled) instead of blocking the delete. The counts below are set
+  // non-zero on purpose: deleteCamera must NOT consult them — if a history guard
+  // were ever re-introduced, these tests would fail.
+  it('deletes a camera that has recorded incidents (history is retained)', async () => {
     prismaMock.incident.count.mockResolvedValue(2);
 
-    await expect(deleteCamera('cam-1', actor, reqStub)).rejects.toBeInstanceOf(ConflictError);
-    expect(prismaMock.$transaction).not.toHaveBeenCalled();
-    expect(txMock.camera.delete).not.toHaveBeenCalled();
+    await deleteCamera('cam-1', actor, reqStub);
+
+    expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+    expect(txMock.camera.delete).toHaveBeenCalledWith({ where: { id: 'cam-1' } });
   });
 
-  it('409s when the camera has approved reference images', async () => {
+  it('deletes a camera that has approved reference images (history is retained)', async () => {
     prismaMock.referenceImage.count.mockResolvedValue(1);
 
-    await expect(deleteCamera('cam-1', actor, reqStub)).rejects.toBeInstanceOf(ConflictError);
-    expect(txMock.camera.delete).not.toHaveBeenCalled();
+    await deleteCamera('cam-1', actor, reqStub);
+
+    expect(txMock.camera.delete).toHaveBeenCalledWith({ where: { id: 'cam-1' } });
   });
 });
 
@@ -179,20 +186,20 @@ describe('deleteCamera — transactional delete + audit', () => {
   });
 });
 
-describe('deleteCamera — error mapping (P2003 → 409, everything else propagates)', () => {
-  it('maps a REAL Prisma P2003 (retained FK history) to a 409 ConflictError, not a 500', async () => {
-    // Construct a genuine PrismaClientKnownRequestError — production narrows on
-    // `err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2003'`,
-    // so a plain `{ code: 'P2003' }` object would NOT exercise the same branch.
+describe('deleteCamera — delete failures propagate unchanged (no error mapping)', () => {
+  it('propagates even a Prisma P2003 unchanged — the old FK→409 mapping is gone', async () => {
+    // Camera FKs are now ON DELETE SET NULL, so a P2003 can no longer be raised
+    // by the delete. But if any Prisma error ever surfaced, it must propagate
+    // as-is: there is no longer a catch that relabels it as a 409 ConflictError.
     const fkError = new Prisma.PrismaClientKnownRequestError(
       'Foreign key constraint failed on the field: `camera_id`',
-      { code: 'P2003', clientVersion: 'test' },
+      { code: 'P2003', clientVersion: 'test' }
     );
-    expect(fkError).toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
     txMock.camera.delete.mockRejectedValue(fkError);
 
     const err = await deleteCamera('cam-1', actor, reqStub).catch((e) => e);
-    expect(err).toBeInstanceOf(ConflictError);
+    expect(err).toBe(fkError); // the exact same object, unmapped
+    expect(err).not.toBeInstanceOf(ConflictError);
     // A delete that never landed must not leave an audit row behind.
     expect(txMock.auditLog.create).not.toHaveBeenCalled();
   });

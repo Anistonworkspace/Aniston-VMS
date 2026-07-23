@@ -47,12 +47,15 @@ export function DeleteCameraModal({
         </div>
 
         <p className="rounded-tile bg-surface px-3 py-2.5 text-xs leading-relaxed text-tertiary">
-          Removing a camera never deletes historical incidents, recordings, snapshots, or health
-          records. If the camera has any retained history, it cannot be removed.
+          Deleting a camera removes it permanently. Its historical incidents, recordings, snapshots,
+          and health records are retained and stay accessible as belonging to a deleted camera.
         </p>
 
         {errorMessage && (
-          <p role="alert" className="rounded-tile bg-coral/10 px-3 py-2 text-xs font-medium text-coral">
+          <p
+            role="alert"
+            className="rounded-tile bg-coral/10 px-3 py-2 text-xs font-medium text-coral"
+          >
             {errorMessage}
           </p>
         )}
@@ -61,7 +64,13 @@ export function DeleteCameraModal({
           <Button variant="secondary" size="sm" onClick={onCancel} disabled={loading}>
             Cancel
           </Button>
-          <Button variant="danger" size="sm" onClick={onConfirm} loading={loading} disabled={loading}>
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={onConfirm}
+            loading={loading}
+            disabled={loading}
+          >
             {loading ? 'Deleting…' : 'Delete camera'}
           </Button>
         </div>

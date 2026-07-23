@@ -1,3 +1,12 @@
+> ⚠️ **SUPERSEDED (2026-07-23).** This plan implemented a *history-guarded* delete
+> (block removal + return `409 ConflictError` when a camera has retained history).
+> That approach was reversed: camera foreign keys are now `ON DELETE SET NULL`, so
+> **any camera can always be deleted** and its history is retained with `cameraId`
+> nulled. The guard, the P2003→409 mapping, the blocked-delete tests, and the
+> "cannot be removed" UI copy have all been removed. Kept for historical context
+> only — do not implement from it. See `specs/safe-camera-removal.md` for the
+> matching superseded spec.
+
 # Implementation Plan — Safely Removing an Added Camera
 
 **Design source:** `docs/superpowers/specs/safe-camera-removal.md` (approved).
