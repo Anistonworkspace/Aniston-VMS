@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { env } from '../../config/env.js';
 import { redis } from '../../lib/redis.js';
+import { redactRtsp } from '../../lib/rtsp-url.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Stage 2 checkers — each returns a CheckResult; the pipeline in
@@ -224,17 +225,68 @@ interface FfprobeStream {
   bit_rate?: string;
 }
 
+/**
+ * Turn ffprobe's stderr into a safe, operator-actionable failure reason.
+ *
+ * When the input stream can't be opened, ffprobe echoes the full input URL
+ * followed by the concrete cause on the last line of stderr, e.g.
+ *   `rtsp://user:pass@host/path: Server returned 401 Unauthorized`
+ *   `rtsp://user:pass@host/path: method SETUP failed: 461 Unsupported Transport`
+ *   `rtsp://user:pass@host/path: Invalid data found when processing input`
+ *
+ * We surface that cause so a failed Test Connection tells the operator WHY —
+ * but only after `redactRtsp()` scrubs every credential shape, and with the
+ * leading (now-redacted) URL trimmed so the message is the reason alone.
+ * Falls back to a generic `ffprobe exit <code>` if stderr is empty.
+ */
+function ffprobeFailureReason(stderr: string, code: number | null): string {
+  const last = stderr
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .at(-1);
+  if (!last) return `ffprobe exit ${code}`;
+  const reason = redactRtsp(last)
+    // drop a leading "rtsp://…: " URL prefix so only the human reason remains
+    .replace(/^rtsps?:\/\/\S+?:\s+/i, '')
+    .trim();
+  return (reason || `ffprobe exit ${code}`).slice(0, 300);
+}
+
 export function ffprobeStream(
   rtspUrl: string,
   timeoutMs = env.HEALTH_FFPROBE_TIMEOUT_MS
 ): Promise<CheckResult> {
   return new Promise((resolve) => {
     const elapsed = timed();
+    // `-v error` (not `quiet`): stdout stays clean JSON (`-of json`) on success,
+    // while stderr carries the concrete failure reason on error. Without this the
+    // probe could only ever report an opaque exit code — undiagnosable in the field.
     const args = [
       '-v',
-      'quiet',
-      '-rtsp_transport',
-      'tcp',
+      'error',
+      // Transport ladder: try RTP-over-TCP (interleaved, lossless) FIRST, then fall
+      // back to UDP when TCP setup fails. This is ffmpeg's NATIVE form of a TCP→UDP
+      // ladder — one process, no shell — so the identical strategy is reusable in the
+      // snapshot capture and the MediaMTX transcode command string (see
+      // frame-capture.ts / mediamtx.adapter.ts). Replaces a hard `-rtsp_transport tcp`
+      // that had NO fallback: a camera whose media session only survives over UDP
+      // (DESCRIBE 200 ok, but TCP-interleaved RTP read → EPERM / "Operation not
+      // permitted") could never be validated here even though MediaMTX
+      // (rtspTransport: automatic) streams it fine in production. TCP-capable cameras
+      // are unaffected — TCP is still attempted first, so no packet-loss regression.
+      '-rtsp_flags',
+      'prefer_tcp',
+      // Bounded socket I/O: a half-open / silent media path fails with a real reason
+      // instead of hanging until the SIGKILL backstop below (which can only report an
+      // opaque timeout). Microseconds. Generous (= full probe budget) so it never
+      // pre-empts the prefer_tcp negotiation on a merely-slow camera.
+      // Use `-timeout` (the demuxer's documented socket-I/O AVOption), NOT `-rw_timeout`:
+      // ffprobe tolerates the latter but the ffmpeg CLI in v8.x rejects it and exits 8,
+      // so `-timeout` keeps this checker byte-for-byte consistent with the reusable
+      // strategy the snapshot capture (frame-capture.ts) actually depends on.
+      '-timeout',
+      String(timeoutMs * 1000),
       '-select_streams',
       'v:0',
       '-show_streams',
@@ -244,6 +296,7 @@ export function ffprobeStream(
       rtspUrl,
     ];
     let out = '';
+    let errOut = '';
     let settled = false;
     const proc = spawn('ffprobe', args, { windowsHide: true });
     const timer = setTimeout(() => {
@@ -258,6 +311,7 @@ export function ffprobeStream(
       });
     }, timeoutMs);
     proc.stdout.on('data', (d) => (out += d.toString()));
+    proc.stderr.on('data', (d) => (errOut += d.toString()));
     proc.once('error', (err: NodeJS.ErrnoException) => {
       if (settled) return;
       settled = true;
@@ -286,7 +340,7 @@ export function ffprobeStream(
           success: false,
           responseTimeMs: elapsed(),
           errorCode: 'UNSTABLE_STREAM',
-          errorMessage: `ffprobe exit ${code}`,
+          errorMessage: ffprobeFailureReason(errOut, code),
         });
         return;
       }

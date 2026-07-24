@@ -85,10 +85,27 @@ export interface CameraListQuery {
   q?: string;
 }
 
-/** PATCH /cameras/:id — backend updateCameraSchema (partial identity/config + maintenanceMode). */
+/** PATCH /cameras/:id — backend updateCameraSchema (partial identity/config +
+ * maintenanceMode + snapshotIntervalMinutes). The edit modal sends the config
+ * subset; RTSP secrets are omitted unless re-entered. */
 export interface UpdateCameraInput {
   name?: string;
   maintenanceMode?: boolean;
+  snapshotIntervalMinutes?: number;
+  siteId?: string;
+  routerId?: string;
+  mainRtspUrl?: string;
+  subRtspUrl?: string;
+  rtspUsername?: string;
+  rtspPassword?: string;
+  onvifPort?: number;
+  playbackAdapter?: PlaybackAdapter;
+  expectedCodec?: string;
+  expectedResolution?: string;
+  expectedFps?: number;
+  expectedBitrateKbps?: number;
+  latitude?: number;
+  longitude?: number;
 }
 
 /**
@@ -120,10 +137,12 @@ export interface ConfigureCameraInput {
   rtspPassword: string;
   onvifPort?: number;
   playbackAdapter?: PlaybackAdapter;
-  expectedCodec: string;
-  expectedResolution: string;
-  expectedFps: number;
-  expectedBitrateKbps: number;
+  // Expected-stream profile removed from the Configure UI — the backend
+  // (configureCameraSchema) fills standard defaults when these are omitted.
+  expectedCodec?: string;
+  expectedResolution?: string;
+  expectedFps?: number;
+  expectedBitrateKbps?: number;
   latitude: number;
   longitude: number;
 }

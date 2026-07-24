@@ -1,7 +1,11 @@
 import type { Camera } from '@prisma/client';
 import { env } from '../../config/env.js';
 import { logger } from '../../lib/logger.js';
-import { normalizeRtspUrl, injectRtspCredentials, InvalidRtspUrlError } from '../../lib/rtsp-url.js';
+import {
+  normalizeRtspUrl,
+  injectRtspCredentials,
+  InvalidRtspUrlError,
+} from '../../lib/rtsp-url.js';
 import { isBrowserPlayableCodec } from '../../lib/codec.js';
 import { decrypt } from '../../utils/encryption.js';
 
@@ -143,7 +147,12 @@ function needsH264Transcode(camera: Camera, kind: StreamKind): boolean {
 function transcodeCommand(source: string): string {
   return [
     'ffmpeg -nostdin -loglevel warning',
-    '-rtsp_transport tcp -i',
+    // Source pull uses TCP-first with UDP fallback (see health.checkers.ts) so an
+    // HEVC camera whose media only survives over UDP still transcodes, instead of a
+    // hard `-rtsp_transport tcp` with no fallback. A single ffmpeg process, so the
+    // native ladder works inside this MediaMTX runOnDemand command string (no shell).
+    // The publish side below stays TCP — it targets localhost MediaMTX and is reliable.
+    '-rtsp_flags prefer_tcp -i',
     source,
     '-an',
     '-c:v libx264 -preset ultrafast -tune zerolatency -profile:v baseline -pix_fmt yuv420p -g 48',

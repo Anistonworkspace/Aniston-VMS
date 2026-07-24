@@ -86,10 +86,14 @@ export const configureCameraSchema = z.object({
   rtspPassword: z.string().min(1).max(200),
   onvifPort: z.coerce.number().int().min(1).max(65535).optional(),
   playbackAdapter: playbackAdapterEnum.optional(),
-  expectedCodec: z.string().min(1).max(50),
-  expectedResolution: z.string().min(1).max(50),
-  expectedFps: z.coerce.number().int().min(1).max(240),
-  expectedBitrateKbps: z.coerce.number().int().min(1).max(1_000_000),
+  // Expected-stream profile is no longer collected in the UI (removed from the
+  // Configure modal). Every camera now gets the standard defaults applied here
+  // so the CONFIGURED gate, health diagnosis and capacity planning stay fed with
+  // non-null values. .default() fills them in whenever the client omits them.
+  expectedCodec: z.string().min(1).max(50).default('H.264'),
+  expectedResolution: z.string().min(1).max(50).default('1920x1080'),
+  expectedFps: z.coerce.number().int().min(1).max(240).default(15),
+  expectedBitrateKbps: z.coerce.number().int().min(1).max(1_000_000).default(2048),
   // CR-6 — the configure step sets the camera's map position (MapLibre pin);
   // Delhi NCR in practice, but any valid WGS-84 pair is fine. Nullable in the DB
   // until placed (DRAFT); required here so a CONFIGURED camera is always placed.

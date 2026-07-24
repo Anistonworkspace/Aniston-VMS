@@ -76,20 +76,22 @@ const SECRET_PARAM_KEYS =
 // so adjacent non-secret fields are preserved rather than swallowed.
 const SECRET_PARAM_RE = new RegExp(
   `(?<![A-Za-z0-9])(${SECRET_PARAM_KEYS})=(?:(?!_[A-Za-z][\\w-]*=)[^\\s&?#/;'"<>\\\\])*`,
-  'gi',
+  'gi'
 );
 
 export function redactRtsp(text: string): string {
   if (!text) return text;
-  return text
-    // 1. scheme://user:pass@host  ->  scheme://***@host  (any URL scheme)
-    .replace(/([a-z][a-z0-9+.-]*:\/\/)[^/@\s]*@/gi, '$1***@')
-    // 2. sensitive key=value pairs embedded in the path/query
-    .replace(SECRET_PARAM_RE, (_m, key: string) => `${key}=***`)
-    // 3. Authorization header values, and standalone bearer/basic tokens
-    .replace(/\b((?:proxy-)?authorization)\s*:\s*[^\r\n]+/gi, '$1: ***')
-    .replace(/\bBearer\s+[A-Za-z0-9._~+/-]{8,}=*/gi, 'Bearer ***')
-    .replace(/\bBasic\s+[A-Za-z0-9+/]{8,}={0,2}/gi, 'Basic ***');
+  return (
+    text
+      // 1. scheme://user:pass@host  ->  scheme://***@host  (any URL scheme)
+      .replace(/([a-z][a-z0-9+.-]*:\/\/)[^/@\s]*@/gi, '$1***@')
+      // 2. sensitive key=value pairs embedded in the path/query
+      .replace(SECRET_PARAM_RE, (_m, key: string) => `${key}=***`)
+      // 3. Authorization header values, and standalone bearer/basic tokens
+      .replace(/\b((?:proxy-)?authorization)\s*:\s*[^\r\n]+/gi, '$1: ***')
+      .replace(/\bBearer\s+[A-Za-z0-9._~+/-]{8,}=*/gi, 'Bearer ***')
+      .replace(/\bBasic\s+[A-Za-z0-9+/]{8,}={0,2}/gi, 'Basic ***')
+  );
 }
 
 /** Broader alias — identical scrubbing, clearer name for non-RTSP callers. */
@@ -110,8 +112,19 @@ export function runFfmpegCapture(
       '-nostdin',
       '-loglevel',
       'error',
-      '-rtsp_transport',
-      'tcp',
+      // TCP-first with UDP fallback (see health.checkers.ts): captures a frame from a
+      // camera whose media only survives over UDP, instead of failing on a hard
+      // `-rtsp_transport tcp`. TCP-capable cameras still use TCP first.
+      '-rtsp_flags',
+      'prefer_tcp',
+      // Bounded socket I/O (microseconds) so a silent media path errors cleanly rather
+      // than hanging until the SIGKILL backstop. MUST be `-timeout`, not `-rw_timeout`:
+      // the ffmpeg (not ffprobe) CLI in v8.x rejects `-rw_timeout` on the RTSP demuxer
+      // with "Option rw_timeout not found" and exits 8 before opening the stream — i.e.
+      // *every* capture failed with "ffmpeg exited 8 without producing a frame". `-timeout`
+      // is the RTSP demuxer's documented socket-I/O timeout AVOption.
+      '-timeout',
+      String(timeoutMs * 1000),
       '-i',
       rtspUrl,
       '-an',
@@ -220,7 +233,9 @@ function downscaleRgba(src: RgbaImage, maxDim: number): RgbaImage {
 }
 
 function encodeJpeg(img: RgbaImage, quality: number): Buffer {
-  return Buffer.from(encode({ data: img.data, width: img.width, height: img.height }, quality).data);
+  return Buffer.from(
+    encode({ data: img.data, width: img.width, height: img.height }, quality).data
+  );
 }
 
 /**
@@ -251,9 +266,7 @@ export function generateSyntheticFrame(
 ): CapturedFrame {
   const width = 640;
   const height = 360;
-  const seed = createHash('sha256')
-    .update(`${camera.id}|${kind}|${at.toISOString()}`)
-    .digest();
+  const seed = createHash('sha256').update(`${camera.id}|${kind}|${at.toISOString()}`).digest();
   const r0 = seed[0];
   const g0 = seed[1];
   const b0 = seed[2];

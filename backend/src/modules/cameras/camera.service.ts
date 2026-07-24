@@ -10,7 +10,7 @@ import type { AuthUser } from '../../middleware/auth.js';
 import { encrypt, decrypt } from '../../utils/encryption.js';
 import { storage, signStorageUrl } from '../../lib/storage.js';
 import type { PaginationInput } from '@aniston-vms/shared';
-import { CameraProvisioning } from '@aniston-vms/shared';
+import { CameraProvisioning, CameraStatus } from '@aniston-vms/shared';
 import { assertTransition } from './camera.provisioning.js';
 import type {
   CameraListQuery,
@@ -301,7 +301,16 @@ export async function activateCamera(
 
   const camera = await prisma.camera.update({
     where: { id },
-    data: { provisioningState: CameraProvisioning.CONFIGURED },
+    data: {
+      provisioningState: CameraProvisioning.CONFIGURED,
+      // Seed the initial health state honestly from the advisory video probe so the
+      // operator sees the truth the moment the camera goes CONFIGURED, instead of a
+      // misleading green: activation gates on reachability + auth (DESCRIBE), so a
+      // camera whose live frame could not be validated activates as WARNING, not
+      // HEALTHY. The health scheduler owns this field (with hysteresis) from its next
+      // tick — this is only the seed until then.
+      status: test.video.success ? CameraStatus.HEALTHY : CameraStatus.WARNING,
+    },
   });
   const safe = sanitizeCamera(camera);
   await audit(req, {
@@ -371,8 +380,15 @@ export async function testCameraConnection(
       fps: input.expectedFps ?? 15,
       bitrateKbps: input.expectedBitrateKbps ?? 2048,
     });
+    // Resilient provisioning: `success` (which gates activation) reflects
+    // reachability + authentication (the DESCRIBE/rtspAuth stage), NOT the live-video
+    // stage. The video probe is advisory — a camera can be correctly wired and
+    // authenticated yet momentarily fail a single-frame read (transport quirk, keyframe
+    // interval, transient bitrate), and blocking activation on that stranded operators
+    // with a green DESCRIBE and a red "Probe failed". Continuous health monitoring
+    // owns the live-video verdict from here on.
     return {
-      success: sim.rtspAuth.success && sim.video.success,
+      success: sim.rtspAuth.success,
       simMode: true,
       describe: sim.rtspAuth,
       video: sim.video,
@@ -399,7 +415,12 @@ export async function testCameraConnection(
   // `ffprobe exit 1`. Mirrors resolveCameraSource() used by live-wall/streaming.
   const probeUrl = injectRtspCredentials(input.mainRtspUrl, input.rtspUsername, input.rtspPassword);
   const video = await ffprobeStream(probeUrl);
-  return { success: video.success, simMode: false, describe, video };
+  // Resilient provisioning: gate on DESCRIBE (reachability + auth), which already
+  // passed to reach here. The live-video probe is advisory — its result is returned so
+  // callers/UI can surface it, but a video-only failure must not block activation of a
+  // demonstrably reachable + authenticated camera. Continuous health monitoring owns
+  // the live-video verdict from activation onward.
+  return { success: describe.success, simMode: false, describe, video };
 }
 
 export async function updateCamera(

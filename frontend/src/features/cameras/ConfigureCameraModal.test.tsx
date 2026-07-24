@@ -13,7 +13,12 @@ const h = vi.hoisted(() => {
       Promise.resolve({
         activated: true,
         camera: { id: 'cam-1', name: 'Dock 3 entry' },
-        test: { success: true, simMode: true, describe: { success: true }, video: { success: true } },
+        test: {
+          success: true,
+          simMode: true,
+          describe: { success: true },
+          video: { success: true },
+        },
       }),
   });
   return {
@@ -107,7 +112,13 @@ function setup(overrides: Partial<React.ComponentProps<typeof ConfigureCameraMod
   const onClose = vi.fn();
   const notify = { success: vi.fn(), error: vi.fn() };
   render(
-    <ConfigureCameraModal open camera={draftCamera} onClose={onClose} notify={notify} {...overrides} />
+    <ConfigureCameraModal
+      open
+      camera={draftCamera}
+      onClose={onClose}
+      notify={notify}
+      {...overrides}
+    />
   );
   return { onClose, notify };
 }
@@ -124,7 +135,7 @@ function fillRequired(): void {
   fill(/sub rtsp url/i, 'rtsp://10.20.40.11:554/stream2');
   fill(/rtsp user/i, 'admin');
   fill(/rtsp password/i, 's3cret');
-  // codec/resolution/fps/bitrate prefill with defaults; only coords are missing.
+  // Expected-stream values are applied server-side as defaults; only coords are missing here.
   fill(/latitude/i, '28.600148');
   fill(/longitude/i, '77.19458');
 }
@@ -147,7 +158,6 @@ describe('ConfigureCameraModal — step 2 placement + stream config', () => {
     expect(screen.getByLabelText('Router')).toBeInTheDocument();
     expect(screen.getByLabelText(/main rtsp url/i)).toBeInTheDocument();
     expect(screen.getByLabelText('Playback adapter')).toBeInTheDocument();
-    expect(screen.getByLabelText(/codec/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/latitude/i)).toBeInTheDocument();
     // Draft cameras get both the draft-save and activate actions.
     expect(screen.getByRole('button', { name: /save as draft/i })).toBeInTheDocument();
@@ -197,8 +207,6 @@ describe('ConfigureCameraModal — step 2 placement + stream config', () => {
           mainRtspUrl: 'rtsp://10.20.40.11:554/stream1',
           latitude: 28.600148,
           longitude: 77.19458,
-          expectedFps: 15,
-          expectedBitrateKbps: 2048,
         }),
       })
     );
@@ -226,10 +234,7 @@ describe('ConfigureCameraModal — step 2 placement + stream config', () => {
     fireEvent.click(screen.getByRole('button', { name: /save & activate/i }));
 
     await waitFor(() =>
-      expect(notify.error).toHaveBeenCalledWith(
-        'Activation failed',
-        'No RTSP response from camera'
-      )
+      expect(notify.error).toHaveBeenCalledWith('Activation failed', 'No RTSP response from camera')
     );
     expect(h.configure).toHaveBeenCalledTimes(1); // config was still saved
     expect(onClose).not.toHaveBeenCalled();

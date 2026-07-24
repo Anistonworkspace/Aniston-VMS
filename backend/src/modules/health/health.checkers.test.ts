@@ -39,9 +39,11 @@ import { ffprobeStream, rtspDescribe } from './health.checkers.js';
 function fakeProc() {
   const proc = new EventEmitter() as EventEmitter & {
     stdout: EventEmitter;
+    stderr: EventEmitter;
     kill: ReturnType<typeof vi.fn>;
   };
   proc.stdout = new EventEmitter();
+  proc.stderr = new EventEmitter();
   proc.kill = vi.fn();
   return proc;
 }
@@ -74,6 +76,101 @@ describe('ffprobeStream — fail closed on binary problems', () => {
     expect(res.success).toBe(false);
     expect(res.errorCode).toBe('FFPROBE_ERROR');
     expect(res.errorMessage).toBe('boom');
+  });
+
+  // Regression guard: ffmpeg/ffprobe 8.x removed -rw_timeout from the RTSP demuxer.
+  // The health probe must spawn ffprobe with -timeout (microseconds), never the
+  // removed flag — otherwise every camera reads CRITICAL with a bogus reason.
+  it('spawns ffprobe with -timeout (microseconds), never the removed -rw_timeout', async () => {
+    const proc = fakeProc();
+    spawnMock.mockReturnValue(proc);
+
+    const pending = ffprobeStream('rtsp://10.20.40.11:554/stream1', 15_000);
+    proc.stdout.emit('data', Buffer.from(JSON.stringify({ streams: [] })));
+    proc.emit('close', 0);
+    await pending;
+
+    const args = spawnMock.mock.calls[0][1] as string[];
+    expect(args).toContain('-timeout');
+    expect(args).not.toContain('-rw_timeout');
+    expect(args[args.indexOf('-timeout') + 1]).toBe('15000000');
+  });
+});
+
+describe('ffprobeStream — surfaces the real reason on non-zero exit', () => {
+  beforeEach(() => spawnMock.mockReset());
+
+  // ffprobe echoes the full credentialed input URL on the last stderr line before
+  // the concrete cause. Creds below are FABRICATED (RFC 5737 IP, fake password) —
+  // the assertions prove they are scrubbed before the reason reaches a caller/UI.
+  it('extracts ffprobe stderr reason and redacts every credential (UNSTABLE_STREAM)', async () => {
+    const proc = fakeProc();
+    spawnMock.mockReturnValue(proc);
+
+    const pending = ffprobeStream('rtsp://admin:FAKEpw99@198.51.100.7:554/stream1');
+    proc.stderr.emit(
+      'data',
+      Buffer.from(
+        'rtsp://admin:FAKEpw99@198.51.100.7:554/user=admin_password=FAKEpw99_channel=1_stream=0: ' +
+          'Server returned 401 Unauthorized\n'
+      )
+    );
+    proc.emit('close', 1);
+
+    const res = await pending;
+    expect(res.success).toBe(false);
+    expect(res.errorCode).toBe('UNSTABLE_STREAM');
+    // The human-readable cause survives, the leading URL prefix is trimmed.
+    expect(res.errorMessage).toBe('Server returned 401 Unauthorized');
+    // Hard guarantee: no credential shape leaks into the surfaced message.
+    expect(res.errorMessage).not.toContain('FAKEpw99');
+    expect(res.errorMessage).not.toContain('admin');
+    expect(res.errorMessage).not.toContain('@');
+  });
+
+  it('falls back to a generic exit message when ffprobe writes nothing to stderr', async () => {
+    const proc = fakeProc();
+    spawnMock.mockReturnValue(proc);
+
+    const pending = ffprobeStream('rtsp://10.20.40.11:554/stream1');
+    proc.emit('close', 1);
+
+    const res = await pending;
+    expect(res.success).toBe(false);
+    expect(res.errorCode).toBe('UNSTABLE_STREAM');
+    expect(res.errorMessage).toBe('ffprobe exit 1');
+  });
+
+  it('parses stdout JSON on a clean exit (guards the -v error switch)', async () => {
+    const proc = fakeProc();
+    spawnMock.mockReturnValue(proc);
+
+    const pending = ffprobeStream('rtsp://10.20.40.11:554/stream1');
+    proc.stdout.emit(
+      'data',
+      Buffer.from(
+        JSON.stringify({
+          streams: [
+            {
+              codec_type: 'video',
+              codec_name: 'h264',
+              width: 1920,
+              height: 1080,
+              avg_frame_rate: '15/1',
+              bit_rate: '2048000',
+            },
+          ],
+        })
+      )
+    );
+    proc.emit('close', 0);
+
+    const res = await pending;
+    expect(res.success).toBe(true);
+    expect(res.codec).toBe('H264');
+    expect(res.resolution).toBe('1920x1080');
+    expect(res.fps).toBe(15);
+    expect(res.bitrateKbps).toBe(2048);
   });
 });
 

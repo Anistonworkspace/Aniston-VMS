@@ -82,10 +82,6 @@ describe('configureCameraSchema — full placement + stream config, all required
     'subRtspUrl',
     'rtspUsername',
     'rtspPassword',
-    'expectedCodec',
-    'expectedResolution',
-    'expectedFps',
-    'expectedBitrateKbps',
     'latitude',
     'longitude',
   ])('requires %s', (field) => {
@@ -94,9 +90,28 @@ describe('configureCameraSchema — full placement + stream config, all required
     expect(configureCameraSchema.safeParse(body).success).toBe(false);
   });
 
+  // Expected-stream profile is no longer collected in the UI, so the schema
+  // fills standard defaults whenever the client omits these fields — that keeps
+  // the CONFIGURED gate, health diagnosis and capacity planning fed with
+  // non-null values without asking the operator for them.
+  it('applies standard expected-stream defaults when omitted', () => {
+    const body: Record<string, unknown> = { ...validConfig };
+    delete body.expectedCodec;
+    delete body.expectedResolution;
+    delete body.expectedFps;
+    delete body.expectedBitrateKbps;
+    const parsed = configureCameraSchema.parse(body);
+    expect(parsed.expectedCodec).toBe('H.264');
+    expect(parsed.expectedResolution).toBe('1920x1080');
+    expect(parsed.expectedFps).toBe(15);
+    expect(parsed.expectedBitrateKbps).toBe(2048);
+  });
+
   it('rejects out-of-range coordinates', () => {
     expect(configureCameraSchema.safeParse({ ...validConfig, latitude: 91 }).success).toBe(false);
-    expect(configureCameraSchema.safeParse({ ...validConfig, longitude: -181 }).success).toBe(false);
+    expect(configureCameraSchema.safeParse({ ...validConfig, longitude: -181 }).success).toBe(
+      false
+    );
   });
 
   it('rejects a malformed RTSP url without echoing it back', () => {

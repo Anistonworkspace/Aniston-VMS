@@ -365,8 +365,10 @@ describe('activateCamera — server-run test gate for DRAFT → CONFIGURED', () 
 
     expect(result.activated).toBe(true);
     expect(result.test.success).toBe(true);
+    // Both probe stages green (default mocks) → seeded HEALTHY on activation.
     expect(prismaMock.camera.update.mock.calls[0]![0]!.data).toEqual({
       provisioningState: 'CONFIGURED',
+      status: 'HEALTHY',
     });
     expect(prismaMock.auditLog.create.mock.calls[0]![0]!.data).toMatchObject({
       action: 'camera.activate',
@@ -375,8 +377,39 @@ describe('activateCamera — server-run test gate for DRAFT → CONFIGURED', () 
     });
   });
 
-  it('does NOT flip (stays DRAFT) and does NOT audit when the probe FAILS', async () => {
+  it('does NOT flip (stays DRAFT) and does NOT audit when DESCRIBE FAILS', async () => {
     prismaMock.camera.findUnique.mockResolvedValue(configuredDraftRow);
+    // Reachability + auth (DESCRIBE) is the activation gate. A red DESCRIBE means the
+    // camera is unreachable or the creds are wrong — that legitimately blocks the flip.
+    // (ffprobe is short-circuited when DESCRIBE fails, so it is never even called here.)
+    rtspDescribeMock.mockResolvedValue({
+      success: false,
+      responseTimeMs: 4000,
+      errorCode: 'CAMERA_TIMEOUT',
+      errorMessage: 'nope',
+    });
+
+    const result = await activateCamera('cam-1', actor, reqStub);
+
+    expect(result.activated).toBe(false);
+    expect(result.test.success).toBe(false);
+    expect(result.camera.provisioningState).toBe('DRAFT');
+    expect(ffprobeStreamMock).not.toHaveBeenCalled();
+    expect(prismaMock.camera.update).not.toHaveBeenCalled();
+    expect(prismaMock.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  it('activates as WARNING (not HEALTHY) when DESCRIBE passes but the advisory video probe fails', async () => {
+    prismaMock.camera.findUnique.mockResolvedValue(configuredDraftRow);
+    prismaMock.camera.update.mockResolvedValue({
+      ...configuredDraftRow,
+      provisioningState: 'CONFIGURED',
+    });
+    // Reachable + authenticated (DESCRIBE green), but the single live-frame read fails —
+    // a transport quirk / keyframe-interval / transient-bitrate hiccup. That is advisory,
+    // NOT a hard gate: activation still proceeds, seeded honestly as WARNING (not a
+    // misleading green), and the health scheduler owns the verdict from its next tick.
+    rtspDescribeMock.mockResolvedValue(passingProbe);
     ffprobeStreamMock.mockResolvedValue({
       success: false,
       responseTimeMs: 0,
@@ -386,11 +419,17 @@ describe('activateCamera — server-run test gate for DRAFT → CONFIGURED', () 
 
     const result = await activateCamera('cam-1', actor, reqStub);
 
-    expect(result.activated).toBe(false);
-    expect(result.test.success).toBe(false);
-    expect(result.camera.provisioningState).toBe('DRAFT');
-    expect(prismaMock.camera.update).not.toHaveBeenCalled();
-    expect(prismaMock.auditLog.create).not.toHaveBeenCalled();
+    expect(result.activated).toBe(true);
+    expect(result.test.success).toBe(true);
+    expect(result.test.video.success).toBe(false);
+    expect(prismaMock.camera.update.mock.calls[0]![0]!.data).toEqual({
+      provisioningState: 'CONFIGURED',
+      status: 'WARNING',
+    });
+    expect(prismaMock.auditLog.create.mock.calls[0]![0]!.data).toMatchObject({
+      action: 'camera.activate',
+      entityId: 'cam-1',
+    });
   });
 });
 
@@ -455,6 +494,30 @@ describe('testCameraConnection — real (non-sim) probe', () => {
     expect(ffprobeStreamMock).toHaveBeenCalledWith(
       'rtsp://admin:FAKE%40pw99@198.51.100.7/user=admin_password=FAKE@pw99_channel=1_stream=0'
     );
+  });
+
+  it('succeeds (advisory) when DESCRIBE passes but the live-video probe fails', async () => {
+    // Reachable + authenticated, but the single-frame ffprobe read fails. Resilient
+    // provisioning gates `success` on DESCRIBE only, so the connection test PASSES and
+    // the failing video read is surfaced (advisory) rather than reported as a hard fail.
+    rtspDescribeMock.mockResolvedValue(passingProbe);
+    ffprobeStreamMock.mockResolvedValue({
+      success: false,
+      responseTimeMs: 0,
+      errorCode: 'WRONG_RESOLUTION',
+      errorMessage: 'bad frame',
+    });
+
+    const result = await testCameraConnection({
+      mainRtspUrl: 'rtsp://198.51.100.7/stream',
+      rtspUsername: 'admin',
+      rtspPassword: 'pw',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.describe.success).toBe(true);
+    expect(result.video.success).toBe(false);
+    expect(ffprobeStreamMock).toHaveBeenCalled();
   });
 
   it('does NOT run ffprobe when DESCRIBE fails (no false-negative masking)', async () => {

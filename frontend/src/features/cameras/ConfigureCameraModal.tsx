@@ -3,7 +3,7 @@ import type { ChangeEvent } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { FetchBaseQueryError } from '@reduxjs/toolkit/query';
-import { CheckCircle2, PlugZap, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, PlugZap, XCircle } from 'lucide-react';
 import { AnimatedModal, Button, Input } from '@/components/ui';
 import { getApiErrorMessage } from '@/lib/apiError';
 import { cn } from '@/lib/utils';
@@ -62,26 +62,26 @@ interface FormState {
   rtspPassword: string;
   onvifPort: string;
   playbackAdapter: PlaybackAdapter;
-  expectedCodec: string;
-  expectedResolution: string;
-  expectedFps: string;
-  expectedBitrateKbps: string;
 }
 
-/** Reason text for a failed activation probe (a 200 with `activated: false`). */
+/**
+ * Reason text for a failed activation (a 200 with `activated: false`). Activation
+ * gates on DESCRIBE — reachability + authentication — so the DESCRIBE stage carries
+ * the blocking reason; the live-video stage is advisory and never blocks activation.
+ */
 function activationFailureReason(test: TestConnectionResult): string {
   return (
-    test.video.errorMessage ??
-    test.video.errorCode ??
     test.describe.errorMessage ??
     test.describe.errorCode ??
+    test.video.errorMessage ??
+    test.video.errorCode ??
     'Connection test failed against the saved configuration.'
   );
 }
 
 /**
  * Configure a registered (DRAFT) camera — or edit a placed one. Collects the
- * site/router/map placement, RTSP network details and expected-stream profile,
+ * site/router/map placement and RTSP network details,
  * then either saves the config state-preserving or (for a DRAFT) saves and
  * activates: activation RE-RUNS the probe server-side against the stored config
  * and only flips DRAFT → CONFIGURED on success.
@@ -103,10 +103,6 @@ export function ConfigureCameraModal({
     rtspPassword: '',
     onvifPort: '',
     playbackAdapter: 'NONE',
-    expectedCodec: 'H.264',
-    expectedResolution: '1920x1080',
-    expectedFps: '15',
-    expectedBitrateKbps: '2048',
   });
   const [pin, setPin] = useState<{ lat: number; lng: number } | null>(null);
   const [latText, setLatText] = useState('');
@@ -138,11 +134,6 @@ export function ConfigureCameraModal({
       rtspPassword: '',
       onvifPort: camera.onvifPort != null ? String(camera.onvifPort) : '',
       playbackAdapter: camera.playbackAdapter,
-      expectedCodec: camera.expectedCodec ?? 'H.264',
-      expectedResolution: camera.expectedResolution ?? '1920x1080',
-      expectedFps: camera.expectedFps != null ? String(camera.expectedFps) : '15',
-      expectedBitrateKbps:
-        camera.expectedBitrateKbps != null ? String(camera.expectedBitrateKbps) : '2048',
     });
     if (camera.latitude != null && camera.longitude != null) {
       setPin({ lat: camera.latitude, lng: camera.longitude });
@@ -252,10 +243,6 @@ export function ConfigureCameraModal({
     form.routerId !== '' &&
     canProbe &&
     form.subRtspUrl.trim() !== '' &&
-    form.expectedCodec.trim() !== '' &&
-    form.expectedResolution.trim() !== '' &&
-    Number(form.expectedFps) >= 1 &&
-    Number(form.expectedBitrateKbps) >= 1 &&
     pin !== null;
 
   const busy = isSaving || isActivating;
@@ -269,10 +256,6 @@ export function ConfigureCameraModal({
     rtspPassword: form.rtspPassword,
     onvifPort: form.onvifPort ? Number(form.onvifPort) : undefined,
     playbackAdapter: form.playbackAdapter,
-    expectedCodec: form.expectedCodec.trim(),
-    expectedResolution: form.expectedResolution.trim(),
-    expectedFps: Number(form.expectedFps),
-    expectedBitrateKbps: Number(form.expectedBitrateKbps),
     latitude: pin!.lat,
     longitude: pin!.lng,
   });
@@ -285,12 +268,6 @@ export function ConfigureCameraModal({
         rtspUsername: form.rtspUsername.trim(),
         rtspPassword: form.rtspPassword,
         cameraCode: camera.cameraCode,
-        expectedCodec: form.expectedCodec.trim() || undefined,
-        expectedResolution: form.expectedResolution.trim() || undefined,
-        expectedFps: form.expectedFps ? Number(form.expectedFps) : undefined,
-        expectedBitrateKbps: form.expectedBitrateKbps
-          ? Number(form.expectedBitrateKbps)
-          : undefined,
       }).unwrap();
     } catch (err) {
       notify.error('Probe failed', getApiErrorMessage(err as FetchBaseQueryError));
@@ -323,7 +300,17 @@ export function ConfigureCameraModal({
       await configureCamera({ id: camera.id, body: buildBody() }).unwrap();
       const result = await activateCamera(camera.id).unwrap();
       if (result.activated) {
-        notify.success('Camera activated', `${result.camera.name} is live and streaming.`);
+        // Activation gates on reachability + auth; the live-video stage is advisory.
+        // Tell the operator the truth: "live and streaming" only when video was
+        // validated, otherwise flag that health monitoring will verify the stream.
+        if (result.test.video.success) {
+          notify.success('Camera activated', `${result.camera.name} is live and streaming.`);
+        } else {
+          notify.success(
+            'Camera activated',
+            `${result.camera.name} is reachable and authenticated. Live video wasn't validated yet — health monitoring will track the stream.`
+          );
+        }
         onClose();
       } else {
         notify.error('Activation failed', activationFailureReason(result.test));
@@ -346,6 +333,46 @@ export function ConfigureCameraModal({
           <div className="space-y-4">
             <section className="space-y-3">
               <h3 className="text-sm font-semibold text-ink">Placement</h3>
+              <div className="space-y-2">
+                <span className="block text-xs font-medium text-secondary">
+                  Map position * — click to drop the pin, drag to fine-tune
+                </span>
+                <div
+                  ref={mapContainerRef}
+                  className="h-64 w-full overflow-hidden rounded-lg border border-hairline"
+                  role="application"
+                  aria-label="Camera position picker"
+                />
+                <div className="grid grid-cols-2 gap-3">
+                  <Input
+                    label="Latitude *"
+                    inputMode="decimal"
+                    placeholder="28.600148"
+                    value={latText}
+                    onChange={handleLatChange}
+                    onBlur={() => setLatTouched(true)}
+                    error={latError}
+                  />
+                  <Input
+                    label="Longitude *"
+                    inputMode="decimal"
+                    placeholder="77.19458"
+                    value={lngText}
+                    onChange={handleLngChange}
+                    onBlur={() => setLngTouched(true)}
+                    error={lngError}
+                  />
+                </div>
+                <p className="text-xs tabular-nums text-muted">
+                  {pin ? `Pinned at ${pin.lat}, ${pin.lng}` : 'No position pinned yet.'}
+                </p>
+              </div>
+            </section>
+          </div>
+
+          <div className="space-y-4">
+            <section className="space-y-3">
+              <h3 className="text-sm font-semibold text-ink">Site &amp; router</h3>
               <div className="grid grid-cols-2 gap-3">
                 <label className="block text-sm">
                   <span className="mb-1 block text-xs font-medium text-secondary">Site *</span>
@@ -388,44 +415,7 @@ export function ConfigureCameraModal({
                   </select>
                 </label>
               </div>
-              <div className="space-y-2">
-                <span className="block text-xs font-medium text-secondary">
-                  Map position * — click to drop the pin, drag to fine-tune
-                </span>
-                <div
-                  ref={mapContainerRef}
-                  className="h-64 w-full overflow-hidden rounded-lg border border-hairline"
-                  role="application"
-                  aria-label="Camera position picker"
-                />
-                <div className="grid grid-cols-2 gap-3">
-                  <Input
-                    label="Latitude *"
-                    inputMode="decimal"
-                    placeholder="28.600148"
-                    value={latText}
-                    onChange={handleLatChange}
-                    onBlur={() => setLatTouched(true)}
-                    error={latError}
-                  />
-                  <Input
-                    label="Longitude *"
-                    inputMode="decimal"
-                    placeholder="77.19458"
-                    value={lngText}
-                    onChange={handleLngChange}
-                    onBlur={() => setLngTouched(true)}
-                    error={lngError}
-                  />
-                </div>
-                <p className="text-xs tabular-nums text-muted">
-                  {pin ? `Pinned at ${pin.lat}, ${pin.lng}` : 'No position pinned yet.'}
-                </p>
-              </div>
             </section>
-          </div>
-
-          <div className="space-y-4">
             <section className="space-y-3">
               <h3 className="text-sm font-semibold text-ink">Stream &amp; network</h3>
               <Input
@@ -485,61 +475,59 @@ export function ConfigureCameraModal({
                 </select>
               </label>
             </section>
-
-            <section className="space-y-3">
-              <h3 className="text-sm font-semibold text-ink">Expected stream</h3>
-              <div className="grid grid-cols-4 gap-3">
-                <Input
-                  label="Codec *"
-                  value={form.expectedCodec}
-                  onChange={set('expectedCodec')}
-                />
-                <Input
-                  label="Resolution *"
-                  value={form.expectedResolution}
-                  onChange={set('expectedResolution')}
-                />
-                <Input
-                  label="FPS *"
-                  type="number"
-                  value={form.expectedFps}
-                  onChange={set('expectedFps')}
-                />
-                <Input
-                  label="Bitrate kbps *"
-                  type="number"
-                  value={form.expectedBitrateKbps}
-                  onChange={set('expectedBitrateKbps')}
-                />
-              </div>
-            </section>
           </div>
         </div>
 
-        {probe && (
-          <div
-            className={cn(
-              'rounded-lg border p-3 text-xs',
-              probe.success
-                ? 'border-state-healthy/30 bg-state-healthy-soft text-state-healthy'
-                : 'border-state-critical/30 bg-state-critical-soft text-state-critical'
-            )}
-            data-testid="probe-result"
-          >
-            <p className="flex items-center gap-1.5 font-semibold">
-              {probe.success ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
-              {probe.success ? 'Stream reachable' : 'Probe failed'}
-              {probe.simMode && <span className="font-normal text-muted">(sim mode)</span>}
-            </p>
-            <p className="mt-1">
-              DESCRIBE: {probe.describe.success ? 'ok' : (probe.describe.errorCode ?? 'failed')}{' '}
-              · Video:{' '}
-              {probe.video.success
-                ? `${probe.video.codec ?? '?'} ${probe.video.resolution ?? ''} @${probe.video.fps ?? '?'}fps`
-                : (probe.video.errorMessage ?? probe.video.errorCode ?? 'failed')}
-            </p>
-          </div>
-        )}
+        {probe &&
+          (() => {
+            // Three honest outcomes, because activation now gates on reachability +
+            // auth (DESCRIBE) while the live-video stage is advisory:
+            //   • reachable + video validated  → healthy (green)  — good to go
+            //   • reachable, video unvalidated → warning (amber)  — still activatable;
+            //     health monitoring will track the stream
+            //   • not reachable / auth failed  → critical (red)   — blocks activation
+            const reachable = probe.success;
+            const videoOk = probe.video.success;
+            const tone = !reachable ? 'critical' : videoOk ? 'healthy' : 'warning';
+            const toneClass = {
+              healthy: 'border-state-healthy/30 bg-state-healthy-soft text-state-healthy',
+              warning: 'border-state-warning/30 bg-state-warning-soft text-state-warning',
+              critical: 'border-state-critical/30 bg-state-critical-soft text-state-critical',
+            }[tone];
+            const Icon =
+              tone === 'healthy' ? CheckCircle2 : tone === 'warning' ? AlertTriangle : XCircle;
+            const heading =
+              tone === 'healthy'
+                ? 'Stream reachable'
+                : tone === 'warning'
+                  ? 'Reachable — live video not validated'
+                  : 'Probe failed';
+            return (
+              <div
+                className={cn('rounded-lg border p-3 text-xs', toneClass)}
+                data-testid="probe-result"
+              >
+                <p className="flex items-center gap-1.5 font-semibold">
+                  <Icon size={14} />
+                  {heading}
+                  {probe.simMode && <span className="font-normal text-muted">(sim mode)</span>}
+                </p>
+                <p className="mt-1">
+                  DESCRIBE: {probe.describe.success ? 'ok' : (probe.describe.errorCode ?? 'failed')}{' '}
+                  · Video:{' '}
+                  {videoOk
+                    ? `${probe.video.codec ?? '?'} ${probe.video.resolution ?? ''} @${probe.video.fps ?? '?'}fps`
+                    : (probe.video.errorMessage ?? probe.video.errorCode ?? 'failed')}
+                </p>
+                {tone === 'warning' && (
+                  <p className="mt-1 text-muted">
+                    You can still activate — continuous health monitoring will verify the live
+                    stream.
+                  </p>
+                )}
+              </div>
+            );
+          })()}
       </div>
 
       <div className="flex items-center justify-end gap-2 border-t border-hairline pt-4">

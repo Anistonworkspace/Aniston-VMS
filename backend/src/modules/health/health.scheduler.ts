@@ -150,9 +150,7 @@ const skipped = (why: string): CheckResult => ({
   errorMessage: why,
 });
 
-async function runStages(
-  cam: ConfiguredCameraWithRouter
-): Promise<{
+export async function runStages(cam: ConfiguredCameraWithRouter): Promise<{
   staged: StagedResults;
   signalDbm: number | null;
   // Codec measured on the SUB stream this run (drives the Live Wall transcode
@@ -188,42 +186,47 @@ async function runStages(
   const u = new URL(mainUrl);
   const rtspPortNum = u.port ? Number(u.port) : 554;
 
-  const routerTcp = await withRetry(() =>
-    tcpProbe(cam.router.publicStaticIp, cam.router.managementPort)
-  );
-  if (!routerTcp.success) {
-    return {
-      staged: {
-        routerTcp,
-        rtspPort: skipped('Skipped — router down'),
-        rtspAuth: skipped('Skipped — router down'),
-        video: skipped('Skipped — router down'),
-      },
-      signalDbm: cam.router.signalStrength,
-      detectedSubCodec: null,
-    };
-  }
+  // CAMERA-FIRST probe order. The camera's own RTSP endpoint is the
+  // authoritative reachability signal: if it answers, the network path THROUGH
+  // the router is provably up — regardless of whether the router's HTTPS
+  // management port is reachable (it is usually firewalled off the WAN, and
+  // publicStaticIp can be stale on a CGNAT/DDNS link). The router management
+  // probe is a *diagnosis-label* input only — used solely to tell a site-wide
+  // outage apart from a single dead camera when the camera is unreachable — and
+  // must NEVER gate/skip the camera stages (that caused false SITE_INTERNET_DOWN
+  // storms for cameras that were streaming fine, e.g. verified in VLC).
   const rtspPort = await withRetry(() => tcpProbe(u.hostname, rtspPortNum));
   if (!rtspPort.success) {
+    // Camera unreachable — only NOW probe the router management port so
+    // diagnose() can distinguish SITE_INTERNET_DOWN from CAMERA_OFFLINE.
+    const routerTcp = await withRetry(() =>
+      tcpProbe(cam.router.publicStaticIp, cam.router.managementPort)
+    );
     return {
       staged: {
         routerTcp,
         rtspPort,
-        rtspAuth: skipped('Skipped — camera port closed'),
-        video: skipped('Skipped — camera port closed'),
+        rtspAuth: skipped('Skipped — camera unreachable'),
+        video: skipped('Skipped — camera unreachable'),
       },
       signalDbm: cam.router.signalStrength,
       detectedSubCodec: null,
     };
   }
+  // Camera reachable ⇒ the router path is provably up. Synthesize a successful
+  // router result so scoring/diagnosis never mislabels a streaming camera as
+  // "site internet down" over an unreachable (often firewalled) management port.
+  const routerTcp: CheckResult = {
+    success: true,
+    responseTimeMs: rtspPort.responseTimeMs,
+  };
   const rtspAuth = await withRetry(() => rtspDescribe(mainUrl, username, password));
   if (!rtspAuth.success) {
     // Label the skipped video check by the *actual* RTSP failure. Only genuine
     // auth/path rejections are credential problems; a protocol/session/timeout
     // fault (e.g. RTSP 454) must not be reported as "auth failed".
     const authOrPath =
-      rtspAuth.errorCode === 'INVALID_CREDENTIALS' ||
-      rtspAuth.errorCode === 'INVALID_STREAM_PATH';
+      rtspAuth.errorCode === 'INVALID_CREDENTIALS' || rtspAuth.errorCode === 'INVALID_STREAM_PATH';
     const why = authOrPath
       ? 'Skipped — auth/path failed'
       : `Skipped — RTSP DESCRIBE failed (${rtspAuth.errorCode ?? 'unknown'})`;

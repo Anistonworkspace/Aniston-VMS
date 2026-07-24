@@ -99,7 +99,7 @@ describe('redactRtsp', () => {
 
   it('redacts standard ?query credentials and preserves neighbours', () => {
     const out = redactRtsp(
-      "rtsp://cam/stream?username=root&password=hunter2&token=abc.def&resolution=1080p",
+      'rtsp://cam/stream?username=root&password=hunter2&token=abc.def&resolution=1080p'
     );
     expect(out).not.toContain('hunter2');
     expect(out).not.toContain('abc.def');
@@ -118,7 +118,7 @@ describe('redactRtsp', () => {
   });
 
   it('leaves credential-free diagnostics untouched', () => {
-    const clean = "ffmpeg exited 8: method DESCRIBE failed: 454 Session Not Found";
+    const clean = 'ffmpeg exited 8: method DESCRIBE failed: 454 Session Not Found';
     expect(redactRtsp(clean)).toBe(clean);
   });
 });
@@ -164,15 +164,32 @@ describe('runFfmpegCapture', () => {
     await expect(p).resolves.toEqual(jpeg);
   });
 
+  // Regression guard for the ffmpeg 8.x "-rw_timeout" outage: the RTSP demuxer
+  // rejects -rw_timeout ("Option rw_timeout not found") and exits 8 before opening
+  // the stream, so EVERY capture failed. The demuxer socket-I/O AVOption is
+  // -timeout, and it takes MICROSECONDS (env value is milliseconds).
+  it('spawns ffmpeg with -timeout (microseconds), never the removed -rw_timeout', async () => {
+    const proc = fakeProc();
+    spawnMock.mockReturnValue(proc as never);
+
+    const p = runFfmpegCapture('rtsp://cam/main', 5000);
+    proc.stdout.emit('data', realJpeg(320, 240));
+    proc.emit('close', 0);
+    await p;
+
+    const args = spawnMock.mock.calls[0][1] as string[];
+    expect(args).toContain('-timeout');
+    expect(args).not.toContain('-rw_timeout');
+    // microsecond conversion: 5000 ms -> "5000000"
+    expect(args[args.indexOf('-timeout') + 1]).toBe('5000000');
+  });
+
   it('rejects (502) and redacts credentials when ffmpeg exits non-zero', async () => {
     const proc = fakeProc();
     spawnMock.mockReturnValue(proc as never);
 
     const p = runFfmpegCapture('rtsp://admin:s3cr3t@cam/main', 5000);
-    proc.stderr.emit(
-      'data',
-      Buffer.from("rtsp://admin:s3cr3t@cam/main: Connection refused")
-    );
+    proc.stderr.emit('data', Buffer.from('rtsp://admin:s3cr3t@cam/main: Connection refused'));
     proc.emit('close', 1);
 
     const err = await p.catch((e) => e);
